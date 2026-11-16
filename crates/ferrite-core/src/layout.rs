@@ -60,8 +60,10 @@ pub const TEXT_PACK: Range<u32> = 0x09_0000..0x0A_0000;
 pub const MAILBOX: Range<u32> = 0x0A_0000..0x0B_0000;
 /// Predictive text's words (decision 345): an SPI part, with room for a bigger dictionary.
 pub const DICTIONARY: Range<u32> = 0x0B_0000..0x0C_0000;
+/// SSTV pictures (SSTV-4, decision 403): six slots of 41 sectors ([`crate::sstv`]).
+pub const SSTV: Range<u32> = 0x0C_0000..0x1B_6000;
 /// Free, in one run (what goes here is for a later decision).
-pub const FREE: Range<u32> = 0x0C_0000..0x1C_0000;
+pub const FREE: Range<u32> = 0x1B_6000..0x1C_0000;
 /// Language packs: English plus one other at a time (planned).
 pub const LANGUAGES: Range<u32> = 0x1C_0000..0x24_0000;
 /// The boot animation and custom screens (planned).
@@ -96,7 +98,7 @@ pub static WRITABLE: [Range<u32>; 2] = [LAYOUT_HEADER.start..CALIBRATION.start, 
 pub const DATA: Range<u32> = 0..UPDATE_AREA.start;
 
 /// Every region in address order, with its name as the developer page and the build report show it.
-pub const REGIONS: [(&str, Range<u32>); 27] = [
+pub const REGIONS: [(&str, Range<u32>); 28] = [
     ("Layout header", LAYOUT_HEADER),
     ("Settings and slots", SETTINGS),
     ("User trims", TRIMS),
@@ -117,6 +119,7 @@ pub const REGIONS: [(&str, Range<u32>); 27] = [
     ("Text pack", TEXT_PACK),
     ("Packet mailbox (held)", MAILBOX),
     ("Dictionary", DICTIONARY),
+    ("SSTV pictures", SSTV),
     ("Free", FREE),
     ("Language packs", LANGUAGES),
     ("Boot animation and screens", SCREENS),
@@ -125,6 +128,13 @@ pub const REGIONS: [(&str, Range<u32>); 27] = [
     ("Scratch ring", SCRATCH_RING),
     ("Update area", UPDATE_AREA),
 ];
+
+/// SSTV-4.5: `len` bytes at `addr` lie wholly inside the picture slots: a link write there is a picture's, not an
+/// update's (it doesn't stop the store, LINK-61).
+pub fn in_pictures(addr: u32, len: u32) -> bool {
+    let end = addr as u64 + len as u64;
+    addr >= SSTV.start && end <= SSTV.end as u64
+}
 
 /// Whether `len` bytes at `addr` lie wholly inside one of the writable ranges (the link's raw writes, LINK-60).
 pub fn writable(addr: u32, len: u32) -> bool {
@@ -165,7 +175,7 @@ mod tests {
         for (n, r) in &REGIONS {
             assert!(r.start % 4096 == 0 && r.end % 4096 == 0, "{n}: sector aligned");
         }
-        for r in [CHANNELS, HEARD, MESSAGES, WAYPOINTS, TEXT_PACK, MAILBOX, DICTIONARY, FREE, LANGUAGES, SCREENS, FONTS, EVENT_LOG, SCRATCH_RING, UPDATE_AREA] {
+        for r in [CHANNELS, HEARD, MESSAGES, WAYPOINTS, TEXT_PACK, MAILBOX, DICTIONARY, SSTV, LANGUAGES, SCREENS, FONTS, EVENT_LOG, SCRATCH_RING, UPDATE_AREA] {
             assert_eq!(r.start % 0x1_0000, 0, "{r:x?}: on a 64 KB boundary");
         }
         assert_eq!(CALIBRATION, 0xF000..0x1_0000, "calibration stays at stock's address");
@@ -176,7 +186,8 @@ mod tests {
         assert_eq!((sectors(&CONTACTS) * 127, sectors(&WAYPOINTS) * 127), (1016, 2032));
         assert_eq!((sectors(&HEARD) * 31, sectors(&MESSAGES) * 31, sectors(&EVENT_LOG) * 31), (496, 496, 992));
         assert_eq!(sectors(&SCRATCH_RING), 32);
-        assert_eq!((SSB_PATCH.len(), LANGUAGES.len(), FREE.len()), (16 << 10, 512 << 10, 1024 << 10));
+        assert_eq!((SSB_PATCH.len(), LANGUAGES.len(), FREE.len()), (16 << 10, 512 << 10, 40 << 10));
+        assert_eq!(sectors(&SSTV), 6 * 41, "SSTV-4: six pictures of 41 sectors");
         assert!(!overlaps(&V2_HEADER, &LAYOUT_HEADER) && CHANNELS.contains(&V2_HEADER.start), "layout 2's header sits where channels go now");
         assert_eq!(DATA.end, UPDATE_AREA.start);
     }

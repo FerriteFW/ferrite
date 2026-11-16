@@ -429,6 +429,7 @@ dependencies = [
  "udsc",
  "udsp",
  "upocsag",
+ "usstv",
 ]
 
 [[package]]

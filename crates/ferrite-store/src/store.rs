@@ -121,7 +121,16 @@ pub enum Job {
     /// LINK-62 (decision 339): queued before the first raw write of a power-on: the migration mark, then this
     /// layout's header, so the chip is never without either until the stamp; `from` the layout found.
     DataBegin(u16),
+    /// SSTV-4: a write inside the picture slots (a header, Console's picture): the store's own job, no update.
+    Pic(DataWrite),
+    /// SSTV-4: a received row, from the store's row ring (`i`), to `addr`.
+    PicRow { addr: u32, i: u8 },
+    /// SSTV-4: a picture slot's 41 sectors erased, ready for the next picture.
+    PicErase(u8),
 }
+
+/// SSTV-4: received rows waiting to be written (a row comes every 75 ms at the most, Robot 36's pairs).
+const PIC_RING: usize = 4;
 
 /// The APRS record: the settings (4), the quick messages (each a length, 0xFF for the factory text, and 67
 /// bytes), then the settings added later (path, digipeater, beacon after voice with telemetry as its bit 1
@@ -202,6 +211,9 @@ pub struct FlashStore<N: Nor, D: Data> {
     raw: Cell<bool>,
     begun: Cell<bool>,
     jobs: RefCell<[Option<Job>; QUEUE]>,
+    /// SSTV-4: received rows for [`Job::PicRow`], and the next to fill.
+    pic_rows: RefCell<[[u8; ferrite_core::sstv::ROW_LEN]; PIC_RING]>,
+    pic_next: Cell<u8>,
     head: Cell<u8>,
     queued: Cell<u8>,
     running: Cell<bool>,
@@ -266,6 +278,8 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
             raw: Cell::new(false),
             begun: Cell::new(false),
             jobs: RefCell::new([None; QUEUE]),
+            pic_rows: RefCell::new([[0xFF; ferrite_core::sstv::ROW_LEN]; PIC_RING]),
+            pic_next: Cell::new(0),
             head: Cell::new(0),
             queued: Cell::new(0),
             running: Cell::new(false),
@@ -837,6 +851,21 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
             Job::AprsSave => self.aprs_save(None).await.is_ok(),
             Job::Counts => self.write_counts().await.is_ok(),
             Job::Data(_) | Job::DataBegin(_) => false, // above
+            Job::Pic(w) => !matches!(w, DataWrite::Stamp) && self.data_job(w).await.is_ok(),
+            Job::PicRow { addr, i } => {
+                let row = self.pic_rows.borrow()[i as usize % PIC_RING];
+                self.f.program(addr, &row).await.is_ok()
+            }
+            Job::PicErase(slot) => {
+                let mut ok = slot < ferrite_core::sstv::SLOTS;
+                let a = ferrite_core::sstv::slot_addr(slot);
+                let mut at = a;
+                while ok && at < a + ferrite_core::sstv::SLOT_LEN {
+                    ok = self.f.erase(at).await.is_ok();
+                    at += SECTOR;
+                }
+                ok
+            }
         };
         self.bump();
         ok
@@ -2370,6 +2399,29 @@ impl<N: Nor, D: Data> Data for FlashStore<N, D> {
             }
         }
         self.submit(Job::Data(w))
+    }
+
+    fn picture_write(&self, w: DataWrite) -> bool {
+        self.mounted.get() != Mounted::Failed && !self.raw.get() && self.submit(Job::Pic(w))
+    }
+
+    fn picture_row(&self, addr: u32, row: &[u8]) -> bool {
+        if self.mounted.get() == Mounted::Failed || self.raw.get() || row.len() != ferrite_core::sstv::ROW_LEN {
+            return false;
+        }
+        // a ring slot no queued row still needs: at most PIC_RING rows wait
+        let waiting = self.jobs.borrow().iter().filter(|j| matches!(j, Some(Job::PicRow { .. }))).count();
+        if waiting >= PIC_RING {
+            return false;
+        }
+        let i = self.pic_next.get();
+        self.pic_rows.borrow_mut()[i as usize % PIC_RING].copy_from_slice(row);
+        self.pic_next.set((i + 1) % PIC_RING as u8);
+        self.submit(Job::PicRow { addr, i })
+    }
+
+    fn picture_erase(&self, slot: u8) -> bool {
+        self.mounted.get() != Mounted::Failed && !self.raw.get() && self.submit(Job::PicErase(slot))
     }
 
     fn layout_found(&self) -> u16 {

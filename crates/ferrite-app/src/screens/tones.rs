@@ -5,13 +5,14 @@
 //! BACK puts both back (MENU-20). Typed tones need not be on the lists (TONE-15, as nicFW): any CTCSS from
 //! 60.0 to 260.0 Hz and any DCS code D000-D777.
 //!
-//! On a channel, ▲▼ go on to a second page: the channel's end tone and tail elimination (TONE-10, TONE-17;
-//! decision 86), each Global (the radio's, 0 8 8) or its own. The channel editor's grid has no room for them.
+//! ▲▼ go on to a second page: on a channel its end tone and tail elimination (TONE-10, TONE-17; decision 86), each
+//! Global (the radio's, 0 8 8) or its own, and on a channel or a VFO the open beep (SQL-20.1). The editor's grid
+//! has no room for them.
 
 use super::forms::picker;
 use super::shared::*;
 use super::{Cx, Hints, View};
-use crate::chan::{ChannelStore, END_TONES, TAILS};
+use crate::chan::{ChannelStore, END_TONES, OPEN_BEEPS, TAILS};
 use crate::keys::{KeyEvent, Press};
 use crate::slot::{tone_at, tone_custom, tone_index, tone_text, CTCSS, DCS_FLAG, DCS_INV};
 use crate::{App, Screen, MENU_TIMEOUT_MS};
@@ -30,6 +31,8 @@ pub struct Tones {
     /// Both tones when it opened, and a channel's end tone and tail byte (BACK restores them).
     pub old: (u16, u16),
     pub old_ch: u8,
+    /// The open beep when it opened (SQL-20.1).
+    pub old_ob: u8,
     /// Digits typed so far and when the last came (a pause of [`TYPE_MS`] starts again).
     pub typed: u16,
     pub nt: u8,
@@ -91,7 +94,7 @@ impl Tones {
         let sl = &app.slots[app.active as usize];
         let c = sl.cfg();
         let old_ch = sl.ch.filter(|_| sl.on_channel()).map_or(0, |c| c.tones);
-        Tones { row: 1, old: (c.rx_tone, c.tx_tone), old_ch, typed: 0, nt: 0, at: 0 }
+        Tones { row: 1, old: (c.rx_tone, c.tx_tone), old_ch, old_ob: c.open_beep, typed: 0, nt: 0, at: 0 }
     }
 }
 
@@ -101,20 +104,54 @@ fn channel(app: &App) -> Option<crate::chan::Channel> {
     sl.ch.filter(|_| sl.on_channel())
 }
 
-/// Rows: RX and TX tone, and on a channel its end tone and tail.
+/// Rows: RX and TX tone, on a channel its end tone and tail, and the open beep.
 fn rows(app: &App) -> u8 {
-    if channel(app).is_some() { 4 } else { 2 }
+    if channel(app).is_some() { 5 } else { 3 }
 }
 
-/// The second page's value (row 2 end tone, row 3 tail) and how many there are.
+/// What a second-page row holds.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Row {
+    End,
+    Tail,
+    Open,
+}
+
+fn row_of(app: &App, row: u8) -> Row {
+    match row {
+        2 if channel(app).is_some() => Row::End,
+        3 => Row::Tail,
+        _ => Row::Open,
+    }
+}
+
+/// The second page's value and how many there are.
 fn ch_value(app: &App, row: u8) -> (u8, usize) {
     let c = channel(app).unwrap_or(crate::chan::channel(0, 0, 0, "", crate::slot::DEFAULT_CFG));
-    if row == 2 { (c.end_tone(), END_TONES.len()) } else { (c.tail(), TAILS.len()) }
+    match row_of(app, row) {
+        Row::End => (c.end_tone(), END_TONES.len()),
+        Row::Tail => (c.tail(), TAILS.len()),
+        Row::Open => (app.slots[app.active as usize].cfg().open_beep, OPEN_BEEPS.len()),
+    }
 }
 
 fn set_ch(app: &mut App, row: u8, v: u8) {
+    if row_of(app, row) == Row::Open {
+        return set_open(app, v);
+    }
     super::chedit::edit(app, |c| if row == 2 { c.set_end_tone(v) } else { c.set_tail(v) });
     app.send_slot_tones(); // the Radio task sends what this channel now says (TONE-7, TONE-10)
+}
+
+/// SQL-20.1: the active slot's open beep, live, saved on its channel or with its VFO.
+fn set_open(app: &mut App, v: u8) {
+    let a = app.active;
+    if app.slots[a as usize].cfg().open_beep == v {
+        return;
+    }
+    app.slots[a as usize].cfg_mut().open_beep = v;
+    app.out.push(RadioCmd::SlotParam { slot: a, param: Param::OpenBeep, value: v as i32 });
+    app.save_channel(a, None);
 }
 
 fn get(app: &App, rx: bool) -> u16 {
@@ -240,6 +277,7 @@ impl View for Tones {
                 if channel(app).is_some_and(|c| c.tones != self.old_ch) {
                     super::chedit::edit(app, |c| c.tones = self.old_ch);
                 }
+                set_open(app, self.old_ob);
                 app.undo = None;
                 return app.back();
             }
@@ -264,7 +302,19 @@ impl View for Tones {
     fn render(self, app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
         app.editor_head(lcd, cx);
         let (rx, tx) = (get(app, true), get(app, false));
-        let page = self.row / 2;
+        let page = (self.row >= 2) as u8;
+        // Once per page change: what the other page left outside this one's regions (SQL-20.1's third row).
+        if app.dirty(R_PAGE, page as u32 + 1) {
+            if page == 1 {
+                if channel(app).is_some() {
+                    ferrite_ui::canvas::banded(lcd, 40, 152, 160, 60, BG, |_| {});
+                } else {
+                    ferrite_ui::canvas::banded(lcd, 6, 82, 228, 58, BG, |_| {}); // the TX row and the mode chips
+                }
+            } else {
+                ferrite_ui::canvas::banded(lcd, 6, 118, 228, 34, BG, |_| {});
+            }
+        }
         if page == 1 {
             return self.render_ch(app, lcd, cx);
         }
@@ -315,12 +365,12 @@ impl View for Tones {
             let s: &[u8] = if typed.is_empty() { b"885 is 88.5 Hz; any 60-260 Hz" } else { typed.as_bytes() };
             w::field(lcd, 8, 224, 216, 233, 229, s, &w::st(&UI_12, if typed.is_empty() { DIM } else { TEXT }, BG, Align::Center));
         }
-        let help = if rows(app) == 4 { txt!("RX and TX apart; further down, end tone and tail.") } else { txt!("RX and TX are set apart: any cross mode is a pair.") };
+        let help = if rows(app) == 5 { txt!("RX and TX apart; further down, end tone and tail.") } else { txt!("RX and TX apart; further down, the open beep.") };
         app.help_txt(lcd, 250, 46, help, b"MENU 4");
     }
 
     fn hints(self, app: &App) -> Hints {
-        let rows = if self.row < 2 && rows(app) == 2 { "RX/TX" } else { "Row" };
+        let rows = "Row";
         if self.row < 2 {
             // TONE-2.1: ◀▶ Mode always shows on the tone rows; Undo takes OK's place once there is one
             Hints::new(&[(ARROWS_UD, rows), (ARROWS_LR, "Mode"), if app.undo.is_some() { ("*", "Undo") } else { ("OK", "Keep") }])
@@ -333,20 +383,25 @@ impl View for Tones {
 }
 
 impl Tones {
-    /// The second page (on a channel): its end tone and tail elimination, Global or its own (decision 86).
+    /// The second page: on a channel its end tone and tail elimination, Global or its own (decision 86); on a
+    /// channel or a VFO the open beep (SQL-20.1).
     fn render_ch(self, app: &mut App, lcd: &mut impl Panel, _cx: &Cx<impl ChannelStore>) {
-        for (i, row) in [2u8, 3].into_iter().enumerate() {
+        let list: &[u8] = if channel(app).is_some() { &[2, 3, 4] } else { &[2] };
+        for (i, &row) in list.iter().enumerate() {
             let f = self.row == row;
             let (v, _) = ch_value(app, row);
-            let label = if row == 2 { "End tone" } else { "Tail" };
-            let name = if row == 2 { END_TONES[v as usize] } else { TAILS[v as usize] };
-            if app.dirty(R_ROW + i, Mix::new().h(&1u8).h(&v).h(&f).get()) {
+            let (label, name) = match row_of(app, row) {
+                Row::End => ("End tone", END_TONES[v as usize]),
+                Row::Tail => ("Tail", TAILS[v as usize]),
+                Row::Open => ("Open beep", OPEN_BEEPS[v as usize]),
+            };
+            if app.dirty(R_ROW + i, Mix::new().h(&1u8).h(&v).h(&f).h(&row).get()) {
                 let y = 46 + i as i32 * 36;
                 let (bg, border) = if f { (FOCUS, BLUE) } else { (BG, LINE) };
                 ferrite_ui::canvas::banded(lcd, 6, y, 228, 33, BG, |lcd| {
                     lcd.fill_r(6, y, 228, 33, 2, bg);
-                    w::field(lcd, 14, 70, y + 2, y + 30, y + 21, label.as_bytes(), &w::st(&UI_12, if f { BLUE } else { SUB }, bg, Align::Left));
-                    w::field(lcd, 84, 150, y + 2, y + 30, y + 21, name.as_bytes(), &w::st(&UI_12B, TEXT, bg, Align::Left));
+                    w::field(lcd, 14, 80, y + 2, y + 30, y + 21, label.as_bytes(), &w::st(&UI_12, if f { BLUE } else { SUB }, bg, Align::Left));
+                    w::field(lcd, 104, 126, y + 2, y + 30, y + 21, name.as_bytes(), &w::st(&UI_12B, TEXT, bg, Align::Left));
                     if f {
                         w::knob_mark(lcd, 14 + text4_width(label.as_bytes(), &UI_12) + 4, y + 9, BLUE, bg);
                     }
@@ -355,13 +410,28 @@ impl Tones {
             }
         }
         let (v, n) = ch_value(app, self.row);
-        let end = self.row == 2;
-        if app.dirty(R_SUB, Mix::new().h(&1u8).h(&self.row).h(&v).get()) {
-            picker(lcd, 40, 122, 160, 5, 18, v as i32, n as i32, |i, b| b.set(if end { END_TONES[i as usize] } else { TAILS[i as usize] }.as_bytes()), BG);
+        let kind = row_of(app, self.row);
+        let three = channel(app).is_some();
+        if app.dirty(R_SUB, Mix::new().h(&1u8).h(&self.row).h(&v).h(&three).get()) {
+            let name = |i: i32, b: &mut Buf<16>| {
+                b.set(match kind {
+                    Row::End => END_TONES[i as usize],
+                    Row::Tail => TAILS[i as usize],
+                    Row::Open => OPEN_BEEPS[i as usize],
+                }.as_bytes())
+            };
+            if three {
+                picker(lcd, 40, 156, 160, 3, 18, v as i32, n as i32, name, BG); // below the third row: three choices
+            } else {
+                picker(lcd, 40, 122, 160, 5, 18, v as i32, n as i32, name, BG);
+            }
         }
-        if app.dirty(R_NOTE, Mix::new().h(&1u8).get()) {
-            w::field(lcd, 8, 224, 216, 233, 229, b"Global: the radio's, MENU 0 8 8", const { &w::st(&UI_12, DIM, BG, Align::Center) });
+        let open = kind == Row::Open;
+        if app.dirty(R_NOTE, Mix::new().h(&1u8).h(&open).get()) {
+            let note: &[u8] = if open { b"Plays as the squelch opens" } else { b"Global: the radio's, MENU 0 8 8" };
+            w::field(lcd, 8, 224, 216, 233, 229, note, const { &w::st(&UI_12, DIM, BG, Align::Center) });
         }
-        app.help_txt(lcd, 250, 46, txt!("This channel's end tone and tail elimination."), b"MENU 4");
+        let help = if three { txt!("This channel's end tone, tail and open beep.") } else { txt!("A tone as the squelch opens, over the audio.") };
+        app.help_txt(lcd, 250, 46, help, b"MENU 4");
     }
 }

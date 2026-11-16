@@ -31,6 +31,9 @@ pub struct SlotCfg {
     /// Split (MENU 5, the 4th offset choice): transmit on the absolute frequency in `offset`, whatever RX is
     /// tuned to. Fits the struct's padding: no bigger.
     pub split: bool,
+    /// Open beep (SQL-20, decision 402): 0 off, else the end tone it plays as the squelch opens (an index into
+    /// [`crate::chan::OPEN_BEEPS`] and `tonegen::END_TONES`, which share their order).
+    pub open_beep: u8,
 }
 
 impl SlotCfg {
@@ -85,6 +88,7 @@ pub const DEFAULT_CFG: SlotCfg = SlotCfg {
     busy: 0,
     reverse: false,
     split: false,
+    open_beep: 0,
 };
 
 impl Default for SlotCfg {
@@ -556,7 +560,7 @@ impl Item {
 }
 
 /// Every radio parameter of a config, for when a slot moves to another channel.
-pub fn params(c: &SlotCfg) -> [(Param, i32); 10] {
+pub fn params(c: &SlotCfg) -> [(Param, i32); 11] {
     [
         (Param::Mode, c.mode as i32),
         (Param::Bandwidth, c.narrow as i32),
@@ -568,6 +572,7 @@ pub fn params(c: &SlotCfg) -> [(Param, i32); 10] {
         (Param::BusyLock, c.busy as i32),
         (Param::Reverse, c.reverse as i32),
         (Param::Split, if c.split { c.offset } else { 0 }),
+        (Param::OpenBeep, c.open_beep as i32),
     ]
 }
 

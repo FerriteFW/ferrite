@@ -7,15 +7,14 @@ use crate::freq::Freq10;
 /// One step of a tone sequence: Hz (0 = silence) and how long, ms.
 pub type Step = (u16, u16);
 
-/// The end tone choices (TONE-10), index as 0 8 4's list: 0 off.
-pub const END_TONES: [&[Step]; 6] = [
-    &[],
-    &[(1000, 150)],                           // Beep
-    &[(800, 100), (1200, 100)],               // Two-tone up
-    &[(1200, 100), (800, 100)],               // Two-tone down
-    &[(1000, 60), (1250, 60), (1500, 60)],    // Chirp
-    &[(2475, 250)],                           // Quindar
-];
+/// The end tone choices (TONE-10), index as 0 8 4's list: 0 off. Named statics, each sequence too: the receive tick
+/// reads them for the open beep (SQL-20.3), and unnamed constants land in slow flash.
+pub static END_TONES: [&[Step]; 6] = [&[], &BEEP, &TWO_UP, &TWO_DOWN, &CHIRP, &QUINDAR];
+static BEEP: [Step; 1] = [(1000, 150)];
+static TWO_UP: [Step; 2] = [(800, 100), (1200, 100)];
+static TWO_DOWN: [Step; 2] = [(1200, 100), (800, 100)];
+static CHIRP: [Step; 3] = [(1000, 60), (1250, 60), (1500, 60)];
+static QUINDAR: [Step; 1] = [(2475, 250)];
 
 /// CW ID (VOX-12): 700 Hz at 20 wpm.
 pub const CW_HZ: u16 = 700;

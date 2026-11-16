@@ -57,6 +57,7 @@ pub mod same_rx;
 pub mod sat;
 pub mod scan;
 pub mod settle;
+pub mod openbeep;
 pub mod softsq;
 pub mod aprssq;
 pub mod sqcal;

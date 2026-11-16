@@ -1055,6 +1055,7 @@ fn dump_load_1000_channels() {
             reverse: n % 5 == 0,
             // every 7th a split (odd: RX on one band, TX on another)
             split: n % 7 == 3,
+            open_beep: (n % 6) as u8,
         };
         let cfg = if cfg.split { SlotCfg { offset: mhz(146) as i32 + (n as i32 % 40) * 1250, power: 0, ..cfg } } else { cfg };
         let mut c = Channel { num: n, zone: if n % 31 == 30 { NO_ZONE } else { n % 31 }, rx, name: [0; 16], cfg, flags: (n % 8) as u8 & (FLAG_SKIP | FLAG_APRS | FLAG_RX_ONLY), tones: (n % 7) as u8 | ((n % 3) as u8) << 3 };

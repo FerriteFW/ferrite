@@ -70,7 +70,7 @@ fn channel_page() {
     assert!(matches!(t.screen(), Screen::Tones(Tones { row: 2, .. })));
     t.shows("End tone");
     t.shows("Global: the radio's, MENU 0 8 8");
-    t.shows("This channel's end tone and tail elimination.");
+    t.shows("This channel's end tone, tail and open beep.");
     t.tap(Key::Right);
     t.shows("Off");
     t.knob(1);
@@ -80,8 +80,10 @@ fn channel_page() {
     t.tap(Key::Left);
     t.shows("On");
     t.tap(Key::Hash);
+    t.tap(Key::Down); // open beep
     t.tap(Key::Down); // wraps to RX
     assert!(matches!(t.screen(), Screen::Tones(Tones { row: 0, .. })));
+    t.tap(Key::Up);
     t.tap(Key::Up);
     t.tap(Key::Up);
     t.app.undo = None;
@@ -89,4 +91,63 @@ fn channel_page() {
     t.reads("hints \"^v\" \"Row\" \"Knob\" \"Change\" \"OK\" \"Keep\"");
     t.tap(Key::Exit);
     assert_eq!(t.app.slot(a).ch.unwrap().tones, before, "BACK puts the channel's back");
+}
+
+/// SQL-20.1: on a channel the open beep is the second page's third row; the knob steps the end tones' sounds, live
+/// to the Radio task, saved with the channel; BACK puts it back.
+#[test]
+fn channel_open_beep() {
+    let mut t = T::ready();
+    let a = t.app.active;
+    t.app.set_channel(a, 0, 0, &t.s);
+    t.wait(100);
+    open(&mut t);
+    for _ in 0..3 {
+        t.tap(Key::Down);
+    }
+    assert!(matches!(t.screen(), Screen::Tones(Tones { row: 4, .. })));
+    t.shows("Open beep");
+    t.shows("Plays as the squelch opens");
+    while t.app.pop_cmd().is_some() {}
+    t.knob(4);
+    t.shows("Chirp");
+    assert_eq!(t.app.slot(a).cfg().open_beep, 4);
+    let mut sent = None;
+    while let Some(c) = t.app.pop_cmd() {
+        if let RadioCmd::SlotParam { slot, param: ferrite_core::msg::Param::OpenBeep, value } = c {
+            sent = Some((slot, value));
+        }
+    }
+    assert_eq!(sent, Some((a, 4)), "live to the Radio task");
+    t.tap(Key::Hash);
+    assert_eq!(t.app.slot(a).cfg().open_beep, 0, "# is Off");
+    t.knob(1);
+    t.tap(Key::Menu); // OK keeps
+    assert_eq!(t.app.slot(a).ch.unwrap().cfg.open_beep, 1);
+    open(&mut t);
+    for _ in 0..3 {
+        t.tap(Key::Down);
+    }
+    t.knob(2);
+    t.tap(Key::Exit);
+    assert_eq!(t.app.slot(a).cfg().open_beep, 1, "BACK puts it back");
+}
+
+/// SQL-20.1: a VFO's second page has only the open beep.
+#[test]
+fn vfo_open_beep() {
+    let mut t = T::ready();
+    let a = t.app.active;
+    assert!(t.app.slot(a).vfo_mode);
+    open(&mut t);
+    t.shows("further down, the open beep");
+    t.tap(Key::Down); // it opens on TX
+    assert!(matches!(t.screen(), Screen::Tones(Tones { row: 2, .. })));
+    t.shows("Open beep");
+    t.shows("A tone as the squelch opens, over the audio.");
+    t.knob(-1);
+    t.shows("Quindar");
+    assert_eq!(t.app.slot(a).cfg.open_beep, 5);
+    t.tap(Key::Down); // wraps to RX
+    assert!(matches!(t.screen(), Screen::Tones(Tones { row: 0, .. })));
 }

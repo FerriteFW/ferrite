@@ -255,6 +255,8 @@ pub enum Param {
     Tail,
     /// 1: the slot is on a receive-only channel (CHAN-4): the Radio task refuses its key-ups too (TX audit F11).
     RxOnly,
+    /// The open beep (SQL-20): 0 off, else an index into `tonegen::END_TONES`, played as the squelch opens.
+    OpenBeep,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

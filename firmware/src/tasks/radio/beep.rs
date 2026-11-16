@@ -55,6 +55,37 @@ impl Radio {
         log(b"beep hz ", hz as u32);
     }
 
+    /// SQL-20.3: the open beep's first step from DAC1, over the received audio (the chips stay unmuted, the amp
+    /// comes on with the audio). Skipped while DAC1 has another sound (a beep, a chime, a playback).
+    pub(super) fn open_beep_on(&mut self, beep: u8, now: u32) {
+        if self.path.keyed().is_some() || crate::hal::tone::dac_busy() {
+            return;
+        }
+        let (p, hz) = ferrite_core::openbeep::Player::new(beep, now);
+        if hz != 0 {
+            crate::hal::tone::start(hz as u32, self.beep_level);
+            self.ob_play = Some(p);
+            log(b"open beep ", beep as u32);
+        }
+    }
+
+    /// The open beep's next step on the receive tick, and the DAC off after its last.
+    pub(super) fn open_beep_step(&mut self, now: u32) {
+        let Some(p) = self.ob_play.as_mut() else { return };
+        match p.tick(now) {
+            Some(0) => self.open_beep_off(),
+            Some(hz) => crate::hal::tone::start(hz as u32, self.beep_level),
+            None => {}
+        }
+    }
+
+    /// The open beep stopped (its end, the audio gone, a key-up or another mode); DAC1 left alone if it isn't ours.
+    pub(super) fn open_beep_off(&mut self) {
+        if self.ob_play.take().is_some() {
+            crate::hal::tone::stop();
+        }
+    }
+
     /// APRS-6.1: a message sound, note by note from DAC1 with the amp on throughout (no amp click between notes).
     /// It sounds over received audio as the alert tone does (SND-13): the chips' and the SI4732's audio are muted
     /// under it and come back after. Never while keyed.

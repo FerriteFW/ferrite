@@ -229,7 +229,7 @@ fn dictionary_is_small() {
 
 /// TONE-12, SND-11: tones that go on air come from the BK4829's generator; only local beeps use DAC1, as stock's
 /// key beeps do (decision 100). The DAC tone (`hal::tone`) is used by the board's reset, the bring-up build and
-/// the Radio task's `beep`, `chime` and `boot_sound` only; the tone code (`ferrite_core::tonegen`) never touches the DAC,
+/// the Radio task's `beep`, `chime`, `boot_sound` and the open beep (SQL-20.3) only; the tone code (`ferrite_core::tonegen`) never touches the DAC,
 /// and the Radio task never uses the audio DAC's DMA path (`audio::`). BOOT-18.2 (decision 321): the boot sound is a
 /// local sound like the key beeps, played once at power-on before anything can key, so it joins them; it is the Radio
 /// task's (not the UI's boot path's) because that task owns the speaker amp, which its tick switches every pass.
@@ -248,8 +248,10 @@ fn tones_never_use_the_dac() {
     };
     let (beep, chime) = (span("async fn beep"), span("async fn chime")); // APRS-6.1: the message sound
     let boot = span("async fn boot_sound"); // BOOT-18.2: the boot sound
-    let inside = |i: usize| [beep, chime, boot].iter().any(|s| i > s.0 && i < s.1);
-    assert!(uses.iter().all(|&i| inside(i)), "only the beep, the chime and the boot sound use the DAC tone");
+    // SQL-20.3 (decision 402): the open beep, a local sound over the received audio
+    let open = [span("fn open_beep_on"), span("fn open_beep_step"), span("fn open_beep_off")];
+    let inside = |i: usize| [beep, chime, boot].iter().chain(&open).any(|s| i > s.0 && i < s.1);
+    assert!(uses.iter().all(|&i| inside(i)), "only the beep, the chime, the boot sound and the open beep use the DAC tone");
 }
 
 /// BCR-14: PA7/PC5, the SI4732's input switch, are set only by the Radio task's path state.

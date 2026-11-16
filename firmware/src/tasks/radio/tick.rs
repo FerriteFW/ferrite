@@ -65,6 +65,16 @@ impl Radio {
     }
 
     pub(super) async fn tick(&mut self) {
+        // SQL-20.3: the open beep's tone plays only while the receive tick's audio decision runs; a tick that
+        // returns before it (keyed, scope, HF, asleep, ...) stops it.
+        self.ob_seen = false;
+        self.tick_rx().await;
+        if !self.ob_seen {
+            self.open_beep_off();
+        }
+    }
+
+    async fn tick_rx(&mut self) {
         // SAFE-14: the PTT inputs looked at every tick, so the guard learns they were let go after boot. Looked at
         // only at key-up (as until Oct 13, 2026), PTT is pressed then and every key-up was refused on the radio.
         #[cfg(feature = "tx")]
@@ -336,6 +346,18 @@ impl Radio {
         let monitor_active = self.monitor & !(self.user_mute | self.user_off) & 1 << self.active != 0; // HOME-15: muted or off, not heard
         let audio = if monitor_active { Some(self.active) } else { out.audio };
         let audio_chip = audio.and_then(heard_chip).filter(|&n| monitor_active || toned[n as usize]);
+        // SQL-20: a slot with an open beep holds its audio HOLD_MS more, then the tone plays over it. Not on the
+        // APRS slot, nor for a latched monitor (it opens whatever it hears).
+        let ob = audio.filter(|_| audio_chip.is_some() && !monitor_active);
+        let beep = ob.filter(|&s| self.aprs_slots & 1 << s == 0).map_or(0, |s| self.slots[s as usize % SLOTS].open_beep);
+        let (pass, start) = self.ob_gate.step(now, ob, beep);
+        let audio_chip = audio_chip.filter(|_| pass || monitor_active);
+        self.ob_seen = audio_chip.is_some();
+        if let Some(b) = start {
+            self.open_beep_on(b, now);
+        } else if self.ob_seen {
+            self.open_beep_step(now);
+        }
         // APRS-21.1, APRS-16: a priority slot holding its chip for a packet with nothing on the speaker (muted, or
         // another slot's tone) still sends its audio to the decoder (EARO, PA2); the speaker stays off. Not beside a
         // broadcast, whose audio shares the speaker's path.

@@ -54,10 +54,10 @@ fn start_up_sends_every_slot_whole() {
     assert!(v.contains(&RadioCmd::MicGain(5)), "VOX-15: the default mic gain");
     assert!(v.contains(&RadioCmd::TxTimeout(120)), "TX-30: the default timeout");
     // Ten radio-wide (the SI4732's settings, BCR-32, twice: the region's start-up and the settings'; with the beep volume, the mic gain, the timeout and VOX: SND-3, VOX-15, TX-30.1, VOX-13), the
-    // tones' four (TxTones, the callsign's two chunks, DTMF timing); per slot: tune, ten parameters (split
-    // included), end tone, tail and receive-only (CHAN-4, TX audit F11).
+    // tones' four (TxTones, the callsign's two chunks, DTMF timing); per slot: tune, eleven parameters (split and
+    // the open beep included, SQL-20), end tone, tail and receive-only (CHAN-4, TX audit F11).
     assert!(v.iter().any(|c| matches!(c, RadioCmd::SiOpts(_))), "BCR-32: the SI4732's receive settings");
-    assert_eq!(v.len(), 15 + 3 * 14);
+    assert_eq!(v.len(), 15 + 3 * 15);
     // Stepping through channels faster than the commands drain: the slot goes out once, as it is now.
     let mut t = T::new();
     t.tap(Key::VfoMem);

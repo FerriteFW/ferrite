@@ -169,10 +169,12 @@ struct SlotRx {
     /// Busy lockout (TX-21) and a receive-only channel (CHAN-4): the Radio task refuses key-ups too (TX audit F11).
     busy: bool,
     rx_only: bool,
+    /// SQL-20: the open beep, an index into `tonegen::END_TONES` (0 off).
+    open_beep: u8,
 }
 
 impl SlotRx {
-    const DEFAULT: SlotRx = SlotRx { freq: DEFAULT, narrow: false, rx_tone: 0, clar: 0, sq: 3, am: false, rx_tail: false, busy: false, rx_only: false };
+    const DEFAULT: SlotRx = SlotRx { freq: DEFAULT, narrow: false, rx_tone: 0, clar: 0, sq: 3, am: false, rx_tail: false, busy: false, rx_only: false, open_beep: 0 };
 
     /// The slot's audio opens (WATCH-3): squelch `open` and its tone heard; a tone channel goes quiet when its tone
     /// stops (the tail's phase shift or turn-off code ends it, TONE-6); with no tone and receive tail on, the 55 Hz
@@ -211,6 +213,11 @@ struct Radio {
     sq_regs: [Option<(u16, u16)>; 2],
     /// SQL-18: each chip's software squelch, and the (slot, frequency) it is for (a retune starts it closed).
     soft_sq: [ferrite_core::softsq::SoftSq; 2],
+    /// SQL-20: the open beep's hold on the speaker, its tone while it plays, and whether this tick reached the
+    /// audio decision (any other tick stops the tone).
+    ob_gate: ferrite_core::openbeep::Gate,
+    ob_play: Option<ferrite_core::openbeep::Player>,
+    ob_seen: bool,
     /// SQL-19: the APRS slot's squelch over the chip's, per chip.
     aprs_sq: [ferrite_core::aprssq::AprsSq; 2],
     /// PWR-26.9: the APRS slot's squelch as the DSP task last heard it ([`DspCmd::Squelch`]).
@@ -769,6 +776,9 @@ pub async fn task() {
         sqcal: ferrite_core::sqcal::SqCal::DEFAULT,
         sq_regs: [None; 2],
         soft_sq: [ferrite_core::softsq::SoftSq::DEFAULT; 2],
+        ob_gate: ferrite_core::openbeep::Gate::DEFAULT,
+        ob_play: None,
+        ob_seen: false,
         aprs_sq: [ferrite_core::aprssq::AprsSq::NEW; 2],
         aprs_open_sent: false,
         ssb_at: None,

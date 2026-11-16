@@ -322,6 +322,7 @@ impl Radio {
             // TX audit F11: kept for the key-up's own refusals (TX-21, CHAN-4); nothing to retune.
             Param::BusyLock => return s.busy = value != 0,
             Param::RxOnly => return s.rx_only = value != 0,
+            Param::OpenBeep => return s.open_beep = (value.max(0) as u8).min(tonegen::END_TONES.len() as u8 - 1),
             // The transmit frequency comes with each key-up (RadioCmd::TxPlan).
             Param::Offset | Param::Reverse | Param::Split => return,
         }

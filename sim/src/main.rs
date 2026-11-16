@@ -202,7 +202,7 @@ fn main() {
             *t += 150;
         }
     };
-    use Key::{Digit as D, Down, Exit, Menu, Right, Slot, Star, VfoMem};
+    use Key::{Digit as D, Down, Exit, Menu, Right, Slot, Star, Up, VfoMem};
     press(&mut app, Exit, 800, &mut t);
     tap(&mut app, &mut t, &[D(1), D(4), D(6), D(9), D(4)]); // NAV-4: frequency entry
     run(&mut app, &mut fb, t, &mut t);
@@ -246,6 +246,10 @@ fn main() {
     tap(&mut app, &mut t, &[Exit, D(4), Menu]); // MENU 4, OK: the tone picker
     run(&mut app, &mut fb, t, &mut t);
     save(&fb, "tones", scale);
+    tap(&mut app, &mut t, &[Down]); // the second page: a VFO's open beep (SQL-20.1)
+    run(&mut app, &mut fb, t, &mut t);
+    save(&fb, "tones-open-beep", scale);
+    tap(&mut app, &mut t, &[Up]);
     press(&mut app, Exit, 800, &mut t);
     press(&mut app, VfoMem, 800, &mut t); // hold V/M: save as channel
     run(&mut app, &mut fb, t, &mut t);
@@ -269,7 +273,10 @@ fn main() {
     tap(&mut app, &mut t, &[Down, Down, Down, Right, Right]);
     run(&mut app, &mut fb, t, &mut t);
     save(&fb, "home-edit-ch", scale);
-    tap(&mut app, &mut t, &[Exit, Slot, Slot]);
+    tap(&mut app, &mut t, &[Exit, Menu, D(4), Menu, Down, Down, Down]); // MENU 4, OK, the second page: a channel's open beep
+    run(&mut app, &mut fb, t, &mut t);
+    save(&fb, "tones-channel-open-beep", scale);
+    tap(&mut app, &mut t, &[Exit, Exit, Slot, Slot]);
     press(&mut app, Menu, 800, &mut t); // MENU 0 9 7 2: reset asks first
     tap(&mut app, &mut t, &[D(9), D(8), D(2)]);
     run(&mut app, &mut fb, t, &mut t);

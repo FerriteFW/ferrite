@@ -88,6 +88,7 @@ impl Radio {
 
     /// Key up or unkey a slot (3 = HF mode's frequency); `data`: a data key-up at that power level (APRS).
     pub(super) async fn transmit(&mut self, slot: u8, on: bool, data: Option<u8>) {
+        self.open_beep_off(); // SQL-20.4: never while keyed (and DAC1 may be the packet's)
         let now = now_ms() as u32;
         let mut st = Steps::default();
         if !on {

@@ -119,6 +119,8 @@ pub fn ch_decode(num: u16, b: &[u8; CH_LEN]) -> Option<Channel> {
     };
     cfg.busy = ((flags >> BUSY_SHIFT) & 3 != 0) as u8;
     cfg.reverse = flags & REVERSE != 0;
+    // SQL-20.6: the open beep in byte 31's bits 5-7; 0 (every record before it) is off, as is a value out of range.
+    cfg.open_beep = Some(b[31] >> 5).filter(|&v| (v as usize) < ferrite_app::chan::OPEN_BEEPS.len()).unwrap_or(0);
     // 0 = Global (the slot's level), 1-10 = levels 0-9 (CHAN-14). Records written before Global existed always
     // stored level + 1, so they read the same.
     cfg.squelch = match b[19] {
@@ -176,7 +178,7 @@ pub fn ch_encode(ch: &Channel, old: &[u8; CH_LEN]) -> [u8; CH_LEN] {
     b[16..18].copy_from_slice(&flags.to_le_bytes());
     b[CH_ZONE_LO] = ch.zone as u8;
     b[19] = if c.squelch >= SQ_GLOBAL { 0 } else { c.squelch + 1 };
-    b[31] = ch.end_tone() | ch.tail() << 3;
+    b[31] = ch.end_tone() | ch.tail() << 3 | c.open_beep.min(5) << 5;
     b[32..48].copy_from_slice(&ch.name);
     b[60] = CH_VERSION;
     b[CH_ZONE_HI] = (ch.zone >> 8) as u8;
@@ -575,5 +577,25 @@ mod tests {
         let crc = crc16(&old[..62]);
         old[62..64].copy_from_slice(&crc.to_le_bytes());
         assert_eq!(ch_decode(4, &old).map(|c| (c.end_tone(), c.tail())), Some((0, 0)), "out of range: Global");
+    }
+
+    /// SQL-20.6: the open beep in byte 31's bits 5-7 beside the end tone and tail; an older record reads Off, as
+    /// does a value out of range.
+    #[test]
+    fn open_beep_in_byte_31() {
+        let mut c = Channel { num: 4, zone: 0, rx: 14_652_000, name: [0; 16], cfg: DEFAULT_CFG, flags: 0, tones: 0 };
+        c.set_end_tone(6);
+        c.set_tail(2);
+        c.cfg.open_beep = 5;
+        let b = ch_encode(&c, &[0xFF; CH_LEN]);
+        let d = ch_decode(4, &b).unwrap();
+        assert_eq!((d.end_tone(), d.tail(), d.cfg.open_beep), (6, 2, 5));
+        let mut old = b;
+        for (byte, want) in [(6 | 2 << 3, 0), (7 << 5, 0), (4 << 5, 4)] {
+            old[31] = byte;
+            let crc = crc16(&old[..62]);
+            old[62..64].copy_from_slice(&crc.to_le_bytes());
+            assert_eq!(ch_decode(4, &old).map(|c| c.cfg.open_beep), Some(want), "byte 31 = {byte:#x}");
+        }
     }
 }

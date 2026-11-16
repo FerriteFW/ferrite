@@ -79,6 +79,7 @@ fn source() -> (App, Store) {
             busy: (n % 3) as u8,
             reverse: n % 5 == 0,
             split: n % 7 == 3,
+            open_beep: (n % 6) as u8,
         };
         // a split: TX on 70 cm while RX is on 2 m, low power (the 1.25 m cap goes by TX)
         let cfg = if cfg.split { SlotCfg { offset: mhz(446) as i32 + (n as i32 % 16) * 1250, ..cfg } } else { cfg };

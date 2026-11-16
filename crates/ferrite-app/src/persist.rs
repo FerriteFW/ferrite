@@ -151,7 +151,8 @@ impl Persist for SlotCfg {
         self.step.save(s);
         self.squelch.save(s);
         self.busy.save(s);
-        (self.reverse as u8 | (self.split as u8) << 1).save(s);
+        // SQL-20.6: the open beep in bits 2-4 (0 from an older writer: off)
+        (self.reverse as u8 | (self.split as u8) << 1 | (self.open_beep.min(7)) << 2).save(s);
     }
     fn load(&mut self, r: &mut dyn Source) {
         self.mode.load(r);
@@ -166,6 +167,7 @@ impl Persist for SlotCfg {
         let mut f = self.reverse as u8 | (self.split as u8) << 1;
         f.load(r);
         (self.reverse, self.split) = (f & 1 != 0, f & 2 != 0);
+        self.open_beep = Some(f >> 2 & 7).filter(|&v| (v as usize) < crate::chan::OPEN_BEEPS.len()).unwrap_or(0);
         self.fold_bw(); // VFO-20: a saved FM + narrow reads as NFM
     }
 }

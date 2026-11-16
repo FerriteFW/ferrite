@@ -3,7 +3,7 @@
 //! stops, which is the safe state. Mirrors hal_tone.
 use super::gpio::{pin, Mode, GPIOA};
 use super::regs::*;
-use super::{clock, modify, wr};
+use super::{clock, modify, rd, wr};
 use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
 
 static ACTUAL_HZ: AtomicU32 = AtomicU32::new(0);
@@ -55,6 +55,11 @@ pub fn dac_reset() {
 /// 0 when off; the actual (rounded) frequency.
 pub fn hz() -> u32 {
     ACTUAL_HZ.load(Relaxed)
+}
+
+/// DAC1 is taken: a tone, or the playback (TMR6 runs; SQL-20.3: the open beep waits its turn).
+pub fn dac_busy() -> bool {
+    playing() || rd(CRM_APB1EN) & CRM_APB1_TMR6 != 0 && rd(TMR6 + TMR_CTRL1) & 1 != 0 // CNTEN
 }
 
 /// A tone is playing (TMR6 is the tone's, not the playback's).

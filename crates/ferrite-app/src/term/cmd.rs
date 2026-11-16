@@ -652,13 +652,15 @@ const POWERS: [&str; 3] = ["low", "mid", "high"];
 const BUSY: [&str; 2] = ["off", "on"];
 const BW: [&str; 2] = ["wide", "narrow"];
 /// Channel fields by name, in the order a `ch` line writes them.
-const FIELDS: [&str; 22] = [
+const FIELDS: [&str; 23] = [
     "name", "rx", "offset", "mode", "bw", "tone", "rxtone", "txtone", "power", "zone", "step", "squelch", "busy", "reverse", "skip", "aprs", "rxonly", "tx", "hidden",
-    "priority", "endtone", "tail",
+    "priority", "endtone", "tail", "openbeep",
 ];
 /// A channel's end tone and tail words (crate::chan::END_TONES, TAILS; decision 86).
 const END_WORDS: [&str; 7] = ["global", "off", "beep", "up", "down", "chirp", "quindar"];
 const TAIL_WORDS: [&str; 3] = ["global", "off", "on"];
+/// The open beep's words (crate::chan::OPEN_BEEPS, SQL-20.1): the end tone's, without Global.
+const OPEN_WORDS: [&str; 6] = ["off", "beep", "up", "down", "chirp", "quindar"];
 
 // ---- Channels ----
 
@@ -700,6 +702,10 @@ fn ch_line<S: ChannelStore>(c: &Channel, st: &S, out: &mut Line) {
     if c.tail() != 0 {
         out.push(b" tail=");
         out.push(TAIL_WORDS[c.tail() as usize].as_bytes());
+    }
+    if g.open_beep != 0 {
+        out.push(b" openbeep=");
+        out.push(OPEN_WORDS[g.open_beep as usize % OPEN_WORDS.len()].as_bytes());
     }
     for (on, w) in [
         (g.reverse, "reverse"),
@@ -817,6 +823,7 @@ fn field<S: ChannelStore>(c: &mut Channel, key: &[u8], v: Option<Tok>, st: &S, t
         },
         20 => c.set_end_tone(pick(v, &END_WORDS, "endtone", t)?),
         21 => c.set_tail(pick(v, &TAIL_WORDS, "tail", t)?),
+        22 => g.open_beep = pick(v, &OPEN_WORDS, "openbeep", t)?,
         _ => g.busy = pick(v, &BUSY, "busy", t)?,
     }
     Ok(())

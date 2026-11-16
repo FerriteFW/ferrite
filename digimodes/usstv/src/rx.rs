@@ -4,7 +4,7 @@
 //! period for the sender's clock (slant) and keep the frames in step.
 
 use crate::color::{rgb565, to_rgb};
-use crate::math::{atan2, clamp_u8, cos, sin};
+use crate::math::{atan2, clamp_u8};
 use crate::mode::{Chan, Layout, Mode, Seg, BLACK_HZ, LEADER_HZ, SYNC_HZ, VIS_ONE_HZ, VIS_ZERO_HZ, WHITE_HZ, WIDTH};
 use core::f32::consts::TAU;
 
@@ -38,11 +38,13 @@ pub struct Demod {
 
 impl Demod {
     pub fn new(rate: u32) -> Demod {
-        let w = TAU * LEADER_HZ as f32 / rate as f32;
+        // the mixer's step from the sine table (0.3 Hz at most off): no series at run time
+        let step = (LEADER_HZ as u64 * (1u64 << 32) / rate as u64) as u32;
+        let (c, s) = (crate::math::sin_at(step.wrapping_add(1 << 30)) as f32 / 32767.0, crate::math::sin_at(step) as f32 / 32767.0);
         // two running sums: nulls at 3 and 4 kHz from the centre, where the mixer's image falls
         let l1 = ((rate + 1500) / 3000).clamp(2, BOX as u32) as usize;
         let l2 = ((rate + 2000) / 4000).clamp(2, BOX as u32) as usize;
-        Demod { rate: rate as f32, osc: (1.0, 0.0), rot: (cos(w), sin(w)), n: 0, l1, l2, b1: [(0.0, 0.0); BOX], b2: [(0.0, 0.0); BOX], s1: (0.0, 0.0), s2: (0.0, 0.0), i1: 0, i2: 0, prev: (0.0, 0.0) }
+        Demod { rate: rate as f32, osc: (1.0, 0.0), rot: (c, s), n: 0, l1, l2, b1: [(0.0, 0.0); BOX], b2: [(0.0, 0.0); BOX], s1: (0.0, 0.0), s2: (0.0, 0.0), i1: 0, i2: 0, prev: (0.0, 0.0) }
     }
 
     /// The filters' delay, samples.
@@ -134,6 +136,35 @@ impl Acc {
     }
 }
 
+/// A straight line through (frame, sync centre) points, kept as running means and co-moments of the centre's
+/// deviation from the mode's nominal period: small numbers, so f32 holds them (no soft-float doubles on the radio).
+#[derive(Clone, Copy, Default)]
+struct Fit {
+    n: f32,
+    mx: f32,
+    my: f32,
+    sxx: f32,
+    sxy: f32,
+}
+
+impl Fit {
+    fn add(&mut self, x: f32, y: f32) {
+        self.n += 1.0;
+        let dx = x - self.mx;
+        self.mx += dx / self.n;
+        let dy = y - self.my;
+        self.my += dy / self.n;
+        self.sxx += dx * (x - self.mx);
+        self.sxy += dx * (y - self.my);
+    }
+
+    /// The deviation per frame (slope) and at frame 0; with one point (or all at one frame) the mean, flat.
+    fn line(&self) -> (f32, f32) {
+        let b = if self.sxx > 0.0 { self.sxy / self.sxx } else { 0.0 };
+        (b, self.my - b * self.mx)
+    }
+}
+
 struct Img {
     mode: &'static Mode,
     frame: u16,
@@ -151,9 +182,9 @@ struct Img {
     win: (f32, f32),
     sync_n: u32,
     sync_sum: f32,
-    /// The fit: sums over (frame, sync centre) points, centres relative to `t0`.
-    t0: f64,
-    fit: [f64; 5],
+    /// The fit of the sync centres (samples from `t0`) against the frame: see [`Fit`].
+    t0: u32,
+    fit: Fit,
     missed: u16,
     /// A forced mode before its first sync: the run of sync-low samples so far.
     hunt: Option<u32>,
@@ -296,7 +327,7 @@ impl Decoder {
         let per_us = self.rate as f32 / 1e6;
         let start = image_start + (mode.lead_us() as f32 * per_us) as u32;
         let period = mode.frame_us() as f32 * per_us;
-        let mut img = Img { mode, frame: 0, start, frac: 0.0, period, per_us, seg: 0, seg_start: 0.0, seg_end: 0.0, win: (0.0, 0.0), sync_n: 0, sync_sum: 0.0, t0: start as f64, fit: [0.0; 5], missed: 0, hunt: None, sep: (0.0, 0), sep_bad: 0 };
+        let mut img = Img { mode, frame: 0, start, frac: 0.0, period, per_us, seg: 0, seg_start: 0.0, seg_end: 0.0, win: (0.0, 0.0), sync_n: 0, sync_sum: 0.0, t0: start, fit: Fit::default(), missed: 0, hunt: None, sep: (0.0, 0), sep_bad: 0 };
         Self::layout(&mut img);
         self.acc.clear();
         self.img = Some(img);
@@ -328,7 +359,7 @@ impl Decoder {
             } else if run as f32 >= 0.7 * len as f32 * i.per_us {
                 let centre = self.n as f32 - run as f32 / 2.0;
                 let start = centre - (at as f32 + len as f32 / 2.0) * i.per_us + i.period;
-                (i.start, i.frac, i.t0, i.hunt) = (start as u32, start - (start as u32) as f32, start as u32 as f64, None);
+                (i.start, i.frac, i.t0, i.hunt) = (start as u32, start - (start as u32) as f32, start as u32, None);
                 Self::layout(i);
                 self.acc.clear();
             } else {
@@ -373,23 +404,17 @@ impl Decoder {
     fn end_frame(&mut self, sink: &mut impl Sink) {
         let Some(mut i) = self.img.take() else { return };
         let (at, len) = i.mode.sync();
-        // the sync's centre, if most of it was seen
-        let abs_start = i.start as f64 + i.frac as f64;
+        let nominal = i.mode.frame_us() as f32 * self.rate as f32 / 1e6;
+        // the frame's start, samples from t0 (it can be before t0 after a Robot 36 recount)
+        let rel_start = i.start.wrapping_sub(i.t0) as i32 as f32 + i.frac;
+        // the sync's centre, if most of it was seen: its deviation from the nominal period goes into the fit
         if i.sync_n as f32 >= 0.6 * len as f32 * i.per_us {
-            let c = abs_start + (i.sync_sum / i.sync_n as f32) as f64 - i.t0;
-            let x = i.frame as f64;
-            let nominal = i.mode.frame_us() as f64 * self.rate as f64 / 1e6;
-            let [n, sx, sy, sxx, sxy] = i.fit;
+            let x = i.frame as f32;
+            let y = rel_start + i.sync_sum / i.sync_n as f32 - nominal * x;
             // a point far off the fit (noise in the window) is left out
-            let good = if n >= 4.0 {
-                let b = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-                let a = (sy - b * sx) / n;
-                (c - (a + b * x)).abs() < 0.02 * nominal
-            } else {
-                true
-            };
-            if good {
-                i.fit = [n + 1.0, sx + x, sy + c, sxx + x * x, sxy + x * c];
+            let (b, a) = i.fit.line();
+            if i.fit.n < 4.0 || crate::math::abs(y - (a + b * x)) < 0.02 * nominal {
+                i.fit.add(x, y);
                 i.missed = 0;
             } else {
                 i.missed += 1;
@@ -398,7 +423,7 @@ impl Decoder {
             i.missed += 1;
         }
         // Robot 36: two frames in a row whose separator says the other parity: the count is a frame out (a forced
-        // start, or a missed frame); move it on and fit again
+        // start, or a missed frame); move it on and fit again (the line's constant takes up the offset)
         if i.mode.layout == Layout::Robot && i.sep.1 > 0 {
             let m = i.sep.0 / i.sep.1 as f32;
             let odd = m > LEADER_HZ as f32;
@@ -406,8 +431,7 @@ impl Decoder {
                 i.sep_bad += 1;
                 if i.sep_bad >= 2 && i.frame + 1 < i.mode.frames {
                     i.frame += 1;
-                    i.fit = [0.0; 5];
-                    i.t0 = abs_start - i.frame as f64 * i.period as f64;
+                    i.fit = Fit::default();
                     i.sep_bad = 0;
                 }
             } else {
@@ -417,7 +441,7 @@ impl Decoder {
         self.emit(&i, sink);
         let next = i.frame + 1;
         // a forced mode's lock that keeps missing (Scottie's starting sync taken for a frame's): hunt again
-        if i.missed >= 3 && i.fit[0] < 4.0 && next < i.mode.frames {
+        if i.missed >= 3 && i.fit.n < 4.0 && next < i.mode.frames {
             (i.frame, i.hunt, i.missed) = (next, Some(0), 0);
             Self::layout(&mut i);
             self.acc.clear();
@@ -430,28 +454,26 @@ impl Decoder {
             return;
         }
         // where the next frame starts: from the fit, or one period on
-        let nominal = i.mode.frame_us() as f64 * self.rate as f64 / 1e6;
-        let centre = (at as f64 + len as f64 / 2.0) * self.rate as f64 / 1e6;
-        let [n, sx, sy, sxx, sxy] = i.fit;
-        let next_start = if n >= 4.0 {
-            let mut b = (n * sxy - sx * sy) / (n * sxx - sx * sx);
-            if !(b > nominal * 0.985 && b < nominal * 1.015) {
-                b = nominal;
+        let centre = (at as f32 + len as f32 / 2.0) * self.rate as f32 / 1e6;
+        let rel_next = if i.fit.n >= 4.0 {
+            let (mut b, a) = i.fit.line();
+            if crate::math::abs(b) > 0.015 * nominal {
+                b = 0.0;
             }
-            let a = (sy - b * sx) / n;
-            i.period = b as f32;
-            i.per_us = (b / i.mode.frame_us() as f64) as f32;
-            i.t0 + a + b * next as f64 - centre * b / nominal
-        } else if n >= 1.0 {
-            // too few to fit: the mean offset from the nominal period
-            let a = (sy - nominal * sx) / n;
-            i.t0 + a + nominal * next as f64 - centre
+            let period = nominal + b;
+            i.period = period;
+            i.per_us = period / i.mode.frame_us() as f32;
+            nominal * next as f32 + a + b * next as f32 - centre * period / nominal
+        } else if i.fit.n >= 1.0 {
+            // too few to fit: the mean deviation, the nominal period
+            nominal * next as f32 + i.fit.my - centre
         } else {
-            abs_start + i.period as f64
+            rel_start + i.period
         };
+        let whole = libm_floor(rel_next);
         i.frame = next;
-        i.start = next_start as u32;
-        i.frac = (next_start - i.start as f64) as f32;
+        i.start = i.t0.wrapping_add(whole as i32 as u32);
+        i.frac = rel_next - whole;
         Self::layout(&mut i);
         self.acc.clear();
         self.img = Some(i);
@@ -505,4 +527,10 @@ impl Decoder {
             }
         }
     }
+}
+
+/// floor for f32 without libm.
+fn libm_floor(x: f32) -> f32 {
+    let t = x as i32 as f32;
+    if t > x { t - 1.0 } else { t }
 }

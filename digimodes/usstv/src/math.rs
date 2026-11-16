@@ -38,10 +38,12 @@ const fn sin64(mut x: f64) -> f64 {
     sum
 }
 
+#[cfg(test)]
 pub fn sin(x: f32) -> f32 {
     sin64(x as f64) as f32
 }
 
+#[cfg(test)]
 pub fn cos(x: f32) -> f32 {
     sin64(x as f64 + core::f64::consts::FRAC_PI_2) as f32
 }

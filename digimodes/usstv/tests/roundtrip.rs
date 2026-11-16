@@ -188,6 +188,25 @@ fn forced_mode_without_vis() {
     }
 }
 
+/// A receiver whose audio clips hard (black's ADC at 3 kHz deviation, Nov 16, 2026): square waves, their harmonics
+/// beside the tones. Clipped at a fifth of the peak.
+#[test]
+fn clipped_audio() {
+    for &m in MODES.iter() {
+        let mut audio = air(m, 24_000, 300.0, true);
+        for x in &mut audio {
+            *x = (*x).clamp(-1600, 1600);
+        }
+        let mut d = Decoder::new(24_000);
+        let mut got = Got::default();
+        d.feed(&audio, &mut got);
+        let (mean, worst) = score(m, &got);
+        println!("{:10} clipped: {} lines, mean error {mean:.1}, worst line {worst:.1}", m.name, got.lines.len());
+        assert_eq!(got.lines.len(), m.lines as usize, "{}", m.name);
+        assert!(mean < 12.0, "{}: mean {mean}", m.name);
+    }
+}
+
 #[test]
 fn noise_alone_starts_nothing() {
     let mut nz = Noise(99);

@@ -19,6 +19,34 @@ pub trait Sink {
 
 const BOX: usize = 16;
 
+/// A second-order section (RBJ's cookbook, transposed direct form II).
+#[derive(Clone, Copy)]
+struct Biquad {
+    b: [f32; 3],
+    a: [f32; 2],
+    z: [f32; 2],
+}
+
+impl Biquad {
+    /// Low-pass (`high` false) or high-pass at `hz`, quality `q`; sine and cosine from the table.
+    fn new(rate: u32, hz: u32, q: f32, high: bool) -> Biquad {
+        let step = (((hz as u64) << 32) / rate as u64) as u32;
+        let (sn, cs) = (crate::math::sin_at(step) as f32 / 32767.0, crate::math::sin_at(step.wrapping_add(1 << 30)) as f32 / 32767.0);
+        let alpha = sn / (2.0 * q);
+        let a0 = 1.0 + alpha;
+        let (b0, b1) = if high { ((1.0 + cs) / 2.0, -(1.0 + cs)) } else { ((1.0 - cs) / 2.0, 1.0 - cs) };
+        Biquad { b: [b0 / a0, b1 / a0, b0 / a0], a: [-2.0 * cs / a0, (1.0 - alpha) / a0], z: [0.0; 2] }
+    }
+
+    #[inline]
+    fn step(&mut self, x: f32) -> f32 {
+        let y = self.b[0] * x + self.z[0];
+        self.z[0] = self.b[1] * x - self.a[0] * y + self.z[1];
+        self.z[1] = self.b[2] * x - self.a[1] * y;
+        y
+    }
+}
+
 /// The discriminator: the frequency of each sample.
 pub struct Demod {
     rate: f32,
@@ -34,6 +62,9 @@ pub struct Demod {
     i1: usize,
     i2: usize,
     prev: (f32, f32),
+    /// The band the tones are in (1-2.5 kHz), ahead of the mixer: a receiver whose audio clips (black's ADC at 3 kHz
+    /// deviation, Nov 16, 2026) gives square waves, whose harmonics fell where the running sums don't reject them.
+    band: [Biquad; 3],
 }
 
 impl Demod {
@@ -44,7 +75,11 @@ impl Demod {
         // two running sums: nulls at 3 and 4 kHz from the centre, where the mixer's image falls
         let l1 = ((rate + 1500) / 3000).clamp(2, BOX as u32) as usize;
         let l2 = ((rate + 2000) / 4000).clamp(2, BOX as u32) as usize;
-        Demod { rate: rate as f32, osc: (1.0, 0.0), rot: (c, s), n: 0, l1, l2, b1: [(0.0, 0.0); BOX], b2: [(0.0, 0.0); BOX], s1: (0.0, 0.0), s2: (0.0, 0.0), i1: 0, i2: 0, prev: (0.0, 0.0) }
+        Demod { rate: rate as f32, osc: (1.0, 0.0), rot: (c, s), n: 0, l1, l2, b1: [(0.0, 0.0); BOX], b2: [(0.0, 0.0); BOX], s1: (0.0, 0.0), s2: (0.0, 0.0), i1: 0, i2: 0, prev: (0.0, 0.0), band: [
+            Biquad::new(rate, 1000, 0.707, true),
+            Biquad::new(rate, 2500, 0.541, false),
+            Biquad::new(rate, 2500, 1.307, false),
+        ] }
     }
 
     /// The filters' delay, samples.
@@ -54,7 +89,10 @@ impl Demod {
 
     /// One sample in, its frequency (Hz) out.
     pub fn step(&mut self, x: i16) -> f32 {
-        let x = x as f32;
+        let mut x = x as f32;
+        for b in &mut self.band {
+            x = b.step(x);
+        }
         let z = (x * self.osc.0, -x * self.osc.1);
         let (c, s) = self.osc;
         self.osc = (c * self.rot.0 - s * self.rot.1, c * self.rot.1 + s * self.rot.0);

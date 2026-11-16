@@ -127,3 +127,53 @@ fn console_picture_write_leaves_the_store_running() {
     assert_eq!(headers(&st)[0], Some(h));
     assert_eq!(st.data().layout_found(), 0, "not an update");
 }
+
+/// SSTV-4.1: a slot with no picture but old bytes in it (the range was free before) is erased before a picture
+/// goes in, so the picture isn't programmed over them.
+#[test]
+fn old_bytes_in_a_slot_are_erased_first() {
+    use ferrite_app::data::DataWrite;
+    let st = mount();
+    // old bytes in slot 2, header sector and pixels, no magic
+    for off in [0u32, 4096, 4096 + 100 * 640] {
+        let mut bytes = [0x5Au8; 64];
+        bytes[0] = 0;
+        assert!(st.data().picture_write(DataWrite::Program { addr: sstv::slot_addr(2) + off, len: 64, bytes }));
+    }
+    let mut a = app();
+    a.sstv_open(&st);
+    let c = decoded(8);
+    for (ev, px) in c.0.iter().zip(&c.1) {
+        a.sstv_event(*ev, px, &st);
+    }
+    let h = headers(&st)[2].expect("the picture in slot 2");
+    assert_eq!((h.vis, h.lines, h.complete), (8, Some(240), true));
+    let (_, px) = c.0.iter().zip(&c.1).find(|(e, _)| matches!(e, Event::Line(100, _))).unwrap();
+    let r = row(&st, 2, 100);
+    assert_eq!(u16::from_le_bytes([r[0], r[1]]), px[0], "row 100 is the picture's, not old bytes ANDed in");
+}
+
+/// SSTV-2.6: a picture holds the active slot's squelch open (its monitor) until it ends; a monitor the user latched
+/// is left alone.
+#[test]
+fn a_picture_holds_the_squelch_open() {
+    use ferrite_core::msg::RadioCmd;
+    let st = mount();
+    let mut a = app();
+    a.sstv_open(&st);
+    while a.pop_cmd().is_some() {}
+    let c = decoded(8);
+    let mut on = false;
+    let mut off = false;
+    for (ev, px) in c.0.iter().zip(&c.1) {
+        a.sstv_event(*ev, px, &st);
+        while let Some(cmd) = a.pop_cmd() {
+            match cmd {
+                RadioCmd::Monitor { slot: 0, on: true } => on = true,
+                RadioCmd::Monitor { slot: 0, on: false } => off = on,
+                _ => {}
+            }
+        }
+    }
+    assert!(on && off, "held open at the start, closed at the end");
+}

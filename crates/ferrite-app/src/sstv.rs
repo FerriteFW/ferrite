@@ -55,6 +55,8 @@ pub struct SstvState {
     pub frame: u16,
     /// BACK while sending: the UI task tells the DSP task.
     pub stop: bool,
+    /// SSTV-2.6: the slot whose squelch a picture holds open (its monitor latched for it), plus one; 0 none.
+    pub held: u8,
 }
 
 /// Every slot's header, read from the flash (an empty slot, or no flash: None).
@@ -143,15 +145,33 @@ impl App {
         self.sstv.open = false;
         self.sstv.prep = false;
         self.sstv.rx = None;
+        self.sstv_release();
         self.out.push(RadioCmd::Watch(self.watch_mask()));
     }
 
-    /// SSTV-4.1: the slot the next picture goes into erased now, if an old picture is in it (about 2 s: done long
-    /// before a picture comes, as the screen opens and as each picture ends).
+    /// SSTV-4.1: the slot the next picture goes into erased now unless it is (about 2 s: done long before a picture
+    /// comes, as the screen opens and as each picture ends). Erased means all of it: a slot with no picture in it can
+    /// still hold old bytes (the range was free before decision 403, and a radio's flash had something there).
     fn sstv_ready(st: &impl ChannelStore, hs: &[Option<Header>; SLOTS as usize]) {
         let (slot, _) = sstv::next_rx(hs);
-        if hs[slot as usize].is_some() {
+        if hs[slot as usize].is_some() || !Self::sstv_blank(st, slot) {
             st.data().picture_erase(slot);
+        }
+    }
+
+    /// The slot holds nothing but 0xFF (its CRC; no flash here counts as blank).
+    fn sstv_blank(st: &impl ChannelStore, slot: u8) -> bool {
+        st.data().data_crc(sstv::slot_addr(slot), sstv::SLOT_LEN).is_none_or(|c| c == sstv::ERASED_CRC)
+    }
+
+    /// SSTV-2.6: the squelch a picture held open, closed again.
+    fn sstv_release(&mut self) {
+        if self.sstv.held != 0 {
+            let slot = self.sstv.held - 1;
+            self.sstv.held = 0;
+            if self.monitor & 1 << slot == 0 {
+                self.out.push(RadioCmd::Monitor { slot, on: false });
+            }
         }
     }
 
@@ -170,12 +190,23 @@ impl App {
             Event::Start(vis) => {
                 let hs = headers(st);
                 let (slot, seq) = sstv::next_rx(&hs);
+                if !Self::sstv_blank(st, slot) {
+                    // not ready (it should have been, SSTV-4.1): erased now, the first rows may be lost meanwhile
+                    st.data().picture_erase(slot);
+                }
                 let freq = self.tuned_freq(self.active);
                 let h = Header::receiving(vis, self.sat_now().unwrap_or(0), freq, seq);
                 let mut bytes = [0xFFu8; ferrite_core::link::data::PROGRAM_MAX];
                 bytes.copy_from_slice(&h.encode()[..ferrite_core::link::data::PROGRAM_MAX]);
                 st.data().picture_write(DataWrite::Program { addr: sstv::slot_addr(slot), len: HEADER_LEN as u8, bytes });
                 self.sstv.rx = Some(Rx { vis, slot, lines: 0, at_ms: self.now });
+                // SSTV-2.6: a squelch closing for a moment would cut the picture: held open until it ends (not a
+                // monitor the user latched, which stays theirs)
+                let a = self.active;
+                if self.sstv.held == 0 && self.monitor & 1 << a == 0 {
+                    self.out.push(RadioCmd::Monitor { slot: a, on: true });
+                    self.sstv.held = a + 1;
+                }
                 self.sstv.forced = 0;
                 self.sstv.view = slot;
                 self.sstv.ver = self.sstv.ver.wrapping_add(1);
@@ -193,6 +224,7 @@ impl App {
                 rx.lines = rx.lines.max(y + 1);
             }
             Event::End(whole) => {
+                self.sstv_release();
                 let Some(rx) = self.sstv.rx.take() else { return };
                 // SSTV-4.4: the flags and lines programmed over the header written at the start
                 let l = rx.lines.to_le_bytes();

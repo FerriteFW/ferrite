@@ -12,6 +12,8 @@ pub const SLOT_LEN: u32 = 41 * 4096;
 pub const WIDTH: usize = 320;
 pub const LINES: usize = 256;
 pub const ROW_LEN: usize = WIDTH * 2;
+/// The CRC-32 (ISO-HDLC, as the link's `DATA_READ` CRC and the layout header) of an erased slot: 41 sectors of 0xFF.
+pub const ERASED_CRC: u32 = 0x56FC_74B1;
 /// Where a slot's pixels start, from its header.
 pub const PIXELS: u32 = 4096;
 pub const HEADER_LEN: usize = 64;
@@ -289,6 +291,18 @@ mod tests {
         assert_eq!(test_card(319, 255, &call), (255, 255, 255));
         let empty = [0u8; 10];
         assert!((64..192).any(|y| (0..WIDTH).any(|x| test_card(x, y, &empty) == (255, 255, 255))), "NO CALL");
+    }
+
+    #[test]
+    fn sstv_4_4_erased_crc() {
+        let mut c = 0xFFFF_FFFFu32;
+        for _ in 0..SLOT_LEN {
+            c ^= 0xFF;
+            for _ in 0..8 {
+                c = if c & 1 != 0 { (c >> 1) ^ 0xEDB8_8320 } else { c >> 1 };
+            }
+        }
+        assert_eq!(!c, ERASED_CRC);
     }
 
     #[test]

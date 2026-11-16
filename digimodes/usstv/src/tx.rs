@@ -26,8 +26,14 @@ pub struct Encoder {
     part: Part,
     i: usize,
     seg: Seg,
+    /// Time in µs x rate: a sample is `1_000_000` of them, a segment `us * rate`; no division per sample.
+    t: u64,
     seg_start: u64,
     seg_end: u64,
+    /// A scan's pixels per time unit.
+    px_per: f32,
+    /// Phase steps per Hz (2^32 / rate).
+    inc_per_hz: f32,
     n: u64,
     phase: u32,
 }
@@ -36,9 +42,22 @@ impl Encoder {
     /// `amp`: the peak, full scale 32767.
     pub fn new(mode: &'static Mode, rate: u32, amp: i16) -> Encoder {
         let vis = vis_tones(mode.vis);
-        let mut e = Encoder { mode, rate: rate as u64, amp: amp as i32, vis, part: Part::Vis, i: 0, seg: vis[0], seg_start: 0, seg_end: vis[0].us() as u64 * 1000, n: 0, phase: 0 };
-        e.seg = vis[0];
-        e
+        Encoder {
+            mode,
+            rate: rate as u64,
+            amp: amp as i32,
+            vis,
+            part: Part::Vis,
+            i: 0,
+            seg: vis[0],
+            t: 0,
+            seg_start: 0,
+            seg_end: vis[0].us() as u64 * rate as u64,
+            px_per: 0.0,
+            inc_per_hz: 4_294_967_296.0 / rate as f32,
+            n: 0,
+            phase: 0,
+        }
     }
 
     /// How long the whole transmission is, in samples.
@@ -87,30 +106,30 @@ impl Encoder {
             }
             self.seg = self.segs()[self.i];
             self.seg_start = self.seg_end;
-            self.seg_end += self.seg.us() as u64 * 1000;
+            self.seg_end += self.seg.us() as u64 * self.rate;
+            self.px_per = WIDTH as f32 / (self.seg.us() as u64 * self.rate) as f32;
             return true;
         }
     }
 
     /// The next sample, or None when the picture has gone.
     pub fn next(&mut self, pic: &mut impl Picture) -> Option<i16> {
-        let t = self.n * 1_000_000_000 / self.rate;
-        while t >= self.seg_end {
+        while self.t >= self.seg_end {
             if !self.advance() {
                 return None;
             }
         }
-        let hz_milli: u64 = match self.seg {
-            Seg::Tone(hz, _) => hz as u64 * 1000,
-            Seg::Scan(ch, us) => {
-                let x = ((t - self.seg_start) * WIDTH as u64 / (us as u64 * 1000)).min(WIDTH as u64 - 1) as usize;
-                let v = self.value(pic, ch, x) as u64;
-                BLACK_HZ as u64 * 1000 + v * (WHITE_HZ - BLACK_HZ) as u64 * 1000 / 255
+        let hz = match self.seg {
+            Seg::Tone(hz, _) => hz as f32,
+            Seg::Scan(ch, _) => {
+                let x = (((self.t - self.seg_start) as f32 * self.px_per) as usize).min(WIDTH - 1);
+                let v = self.value(pic, ch, x) as f32;
+                BLACK_HZ as f32 + v * (WHITE_HZ - BLACK_HZ) as f32 / 255.0
             }
         };
-        let inc = (hz_milli << 32) / (self.rate * 1000);
         let s = (sin_at(self.phase) * self.amp) >> 15;
-        self.phase = self.phase.wrapping_add(inc as u32);
+        self.phase = self.phase.wrapping_add((hz * self.inc_per_hz) as u32);
+        self.t += 1_000_000;
         self.n += 1;
         Some(s as i16)
     }

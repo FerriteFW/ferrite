@@ -1,0 +1,14 @@
+[package]
+name = "usstv"
+version = "0.1.0"
+edition = "2021"
+license.workspace = true
+repository.workspace = true
+description = "SSTV for microcontrollers: VIS, Robot 36, Martin M1, Scottie S1, PD90 and PD120 receive with slant correction, and transmit; no_std, no alloc"
+keywords = ["sstv", "ham-radio", "no-std"]
+categories = ["embedded", "no-std"]
+
+[dependencies]
+
+[lints]
+workspace = true

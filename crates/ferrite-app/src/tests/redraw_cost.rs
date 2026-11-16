@@ -152,7 +152,10 @@ fn new_screens_drop_the_clear() {
         // without the clear, most of the area has one write fewer (outlines and rounded corners keep a background)
         let fewer = area.clone().filter(|&i| new.1[i] < old.1[i]).count();
         fresh += (fewer > area.len() / 2) as u32;
-        saved += old.2 - new.2;
+        // a screen too big to record (SSTV's picture, 240 x 192 pushed row by row) may spend a few bytes more on its
+        // windows; its writes are checked above
+        assert!(new.2 <= old.2 + 64, "{dest:?}: {} bytes vs {}", new.2, old.2);
+        saved += old.2.saturating_sub(new.2);
     }
     // the few screens too big to record clear first, as before
     assert!(fresh as usize >= dests.len() * 9 / 10, "{fresh} of {} screens without the clear", dests.len());

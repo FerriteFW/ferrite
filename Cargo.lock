@@ -401,6 +401,7 @@ dependencies = [
  "st7789",
  "ufmt",
  "uradio-bus",
+ "usstv",
  "w25q",
 ]
 

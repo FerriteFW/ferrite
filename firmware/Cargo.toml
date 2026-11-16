@@ -54,6 +54,7 @@ clock-240 = []
 
 [dependencies]
 ferrite-core.workspace = true
+usstv.workspace = true
 ferrite-ui.workspace = true
 ferrite-app.workspace = true
 ferrite-store.workspace = true

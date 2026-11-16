@@ -135,7 +135,7 @@ pub fn mode_name(vis: u8) -> &'static str {
 
 /// A picture to send (SSTV-5): the mode's VIS code, the slot (or [`TEST_CARD`]), the callsign for the test card,
 /// and the audio's peak.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Send {
     pub vis: u8,
     pub src: u8,
@@ -209,14 +209,18 @@ fn text_at(text: &[u8], x0: i32, y0: i32, scale: i32, x: i32, y: i32) -> bool {
 
 /// The test card (SSTV-6), 320 x 256: colour bars over the top, the callsign large in white on black, "FERRITE"
 /// and a grey ramp under it. `call` is 0-padded ("NO CALL" when empty).
+/// The test card's tables: named statics, as the DSP task reads them for every sample (slowcheck).
+static BARS: [(u8, u8, u8); 8] = [(255, 255, 255), (255, 255, 0), (0, 255, 255), (0, 255, 0), (255, 0, 255), (255, 0, 0), (0, 0, 255), (0, 0, 0)];
+static NO_CALL: [u8; 7] = *b"NO CALL";
+static FERRITE: [u8; 7] = *b"FERRITE";
+
 pub fn test_card(x: usize, y: usize, call: &[u8]) -> (u8, u8, u8) {
-    const BARS: [(u8, u8, u8); 8] = [(255, 255, 255), (255, 255, 0), (0, 255, 255), (0, 255, 0), (255, 0, 255), (255, 0, 0), (0, 0, 255), (0, 0, 0)];
     let (xi, yi) = (x as i32, y as i32);
     match y {
         0..=63 => BARS[x * 8 / WIDTH],
         64..=191 => {
             let n = call.iter().position(|&c| c == 0).unwrap_or(call.len());
-            let call: &[u8] = if n == 0 { b"NO CALL" } else { &call[..n] };
+            let call: &[u8] = if n == 0 { &NO_CALL } else { &call[..n] };
             // as big as fits: 6 dots a character at up to 6 pixels a dot
             let scale = (WIDTH as i32 - 16) / (6 * call.len() as i32).max(1);
             let scale = scale.clamp(2, 6);
@@ -224,7 +228,7 @@ pub fn test_card(x: usize, y: usize, call: &[u8]) -> (u8, u8, u8) {
             if text_at(call, (WIDTH as i32 - w) / 2, 80, scale, xi, yi) {
                 return (255, 255, 255);
             }
-            let f = b"FERRITE";
+            let f = &FERRITE;
             if text_at(f, (WIDTH as i32 - (f.len() as i32 * 18 - 3)) / 2, 160, 3, xi, yi) {
                 return (255, 140, 0);
             }

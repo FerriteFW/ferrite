@@ -9,6 +9,7 @@ pub mod input;
 pub mod link;
 pub mod radio;
 pub mod restore;
+pub mod sstv;
 pub mod storage;
 pub mod ui;
 

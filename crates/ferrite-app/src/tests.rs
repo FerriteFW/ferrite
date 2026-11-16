@@ -160,8 +160,9 @@ fn ram_is_small() {
     // queue 16 to 32 commands (MODE-6.5: the power-on burst with APRS mode and C muted is 17), 128, to 1984; when the
     // broadcast slot took the broadcast, for the sleep timer (BCR-5, decision 352: 4 bytes), 8 with padding, to 1992;
     // the shortcut popup as last drawn on home, so home waits under it (HOME-8: 4 bytes), 8 with padding, to 2000;
-    // auto reply's settings in the App's AprsCfg (APRS-57: on and delay, the pattern, the 45-character reply), 56
-    assert!(n <= 2056, "App is {n} bytes");
+    // auto reply's settings in the App's AprsCfg (APRS-57: on and delay, the pattern, the 45-character reply), 56,
+    // to 2056; SSTV's state (chapter 27a: the picture coming in and going out, the one shown, 48 bytes), to 2104
+    assert!(n <= 2104, "App is {n} bytes");
     let s = core::mem::size_of::<crate::settings::Settings>();
     std::println!("Settings: {s} bytes");
     assert!(s <= 512, "Settings is {s} bytes");
@@ -675,7 +676,7 @@ fn every_destination_draws() {
         }
     }
     let ids: std::collections::BTreeSet<_> = ALL.iter().map(|d| d.info().2).collect();
-    assert_eq!(ids.len(), 65, "one inventory ID per destination (B11 FM broadcast: decision 352; groups and lists share D3; B16 weather radio removed: decision 63; C7 sensor reader: decision 75; D18-D20 approvals: decision 104; C5a contacts: decision 226; C3a sent beacons: APRS-53; C19 FM presets: decision 258; D25 finish the update: decision 333; B22 satellites: chapter 28a; A16b auto reply: APRS-57)");
+    assert_eq!(ids.len(), 66, "one inventory ID per destination (B25 SSTV: decision 403; B11 FM broadcast: decision 352; groups and lists share D3; B16 weather radio removed: decision 63; C7 sensor reader: decision 75; D18-D20 approvals: decision 104; C5a contacts: decision 226; C3a sent beacons: APRS-53; C19 FM presets: decision 258; D25 finish the update: decision 333; B22 satellites: chapter 28a; A16b auto reply: APRS-57)");
 }
 
 mod group_a;

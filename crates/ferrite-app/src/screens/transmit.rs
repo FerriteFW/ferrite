@@ -219,6 +219,18 @@ pub fn data_key(app: &mut App, slot: u8, power: u8, what: &[u8]) -> bool {
     true
 }
 
+/// SSTV-5.2: a picture's data transmission on `slot`, any slot (no APRS gate): the automatic transmission's checks
+/// (TX-35), then the plan and the data key-up at `power`. Unkey with [`data_unkey`].
+pub fn sstv_key(app: &mut App, slot: u8, power: u8) -> bool {
+    if app.remote_tx_refused() || !auto_tx(app, slot, b"SSTV") {
+        return false;
+    }
+    let region = txplan::Region::ALL.iter().position(|&r| r == app.set.tx_region()).unwrap_or(0) as u8;
+    app.out.push(RadioCmd::TxPlan { tx: tx_freq(app, slot), region, extend: app.set.extend_tx, confirmed: false });
+    app.out.push(RadioCmd::TransmitData { slot, power, on: true });
+    true
+}
+
 /// An automatic transmission that couldn't be built, in a toast: e.g. a beacon with no position.
 pub fn not_sent(app: &mut App, what: &[u8], why: &[u8]) {
     let mut h = Buf::<20>::new();

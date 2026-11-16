@@ -11,7 +11,7 @@
 //! refuses writes (a link's raw write there fails in the simulator).
 
 use crate::{Nor, NorError, Result, SECTOR};
-use ferrite_core::layout::{EVENT_LOG, MAILBOX, SCRATCH_RING, SCREENS, WRITABLE};
+use ferrite_core::layout::{EVENT_LOG, MAILBOX, SCRATCH_RING, SCREENS, SSTV, WRITABLE};
 
 /// The low part: the chip from 0 to the end of the packet mailbox.
 pub const LOW: usize = MAILBOX.end as usize;
@@ -43,6 +43,9 @@ pub struct SimFlash {
     pub reads: u64,
     pub read_bytes: u64,
     rng: u64,
+    /// SSTV-4: the picture slots, made the first time one is written (empty, they read erased): a megabyte the
+    /// power-cut sweeps' copies don't carry.
+    pics: Vec<u8>,
 }
 
 impl SimFlash {
@@ -63,7 +66,7 @@ impl SimFlash {
 
     /// A blank chip, as after installing (only calibration, which this never touches, would be left).
     pub fn new() -> Self {
-        SimFlash { mem: vec![0xFF; SIZE], ops: 0, cut_at: None, dead: false, dirty: false, erases: vec![0; CHIP / SECTOR as usize], reads: 0, read_bytes: 0, rng: 0x9E37_79B9_7F4A_7C15 }
+        SimFlash { mem: vec![0xFF; SIZE], ops: 0, cut_at: None, dead: false, dirty: false, erases: vec![0; CHIP / SECTOR as usize], reads: 0, read_bytes: 0, rng: 0x9E37_79B9_7F4A_7C15, pics: Vec::new() }
     }
 
     /// A chip holding `bytes` at chip address `at` (what the simulated chip holds of it), blank elsewhere.
@@ -117,6 +120,13 @@ impl SimFlash {
         );
     }
 
+    fn pics(&mut self) -> &mut Vec<u8> {
+        if self.pics.is_empty() {
+            self.pics = vec![0xFF; SSTV.len()];
+        }
+        &mut self.pics
+    }
+
     /// One operation; false when the power goes on it.
     fn tick(&mut self) -> bool {
         self.ops += 1;
@@ -141,6 +151,10 @@ impl Nor for SimFlash {
         }
         match Self::place(addr) {
             Some(a) => buf.copy_from_slice(&self.mem[a..a + buf.len()]),
+            None if SSTV.contains(&addr) && !self.pics.is_empty() => {
+                let a = (addr - SSTV.start) as usize;
+                buf.copy_from_slice(&self.pics[a..a + buf.len()]);
+            }
             None => buf.fill(0xFF),
         }
         self.reads += 1;
@@ -155,7 +169,15 @@ impl Nor for SimFlash {
         assert!(addr / crate::PAGE == (addr + data.len() as u32 - 1) / crate::PAGE, "program at {addr:#x} crosses a page");
         Self::writable(addr, data.len() as u32);
         if Self::place(addr).is_none() {
-            return Err(NorError);
+            if !SSTV.contains(&addr) {
+                return Err(NorError);
+            }
+            let a = (addr - SSTV.start) as usize;
+            let p = self.pics();
+            for (i, &d) in data.iter().enumerate() {
+                p[a + i] &= d;
+            }
+            return Ok(());
         }
         self.dirty = true;
         for (i, &d) in data.iter().enumerate() {
@@ -180,7 +202,13 @@ impl Nor for SimFlash {
         assert_eq!(addr % SECTOR, 0, "erase at {addr:#x}: not a sector");
         Self::writable(addr, SECTOR);
         if Self::place(addr).is_none() {
-            return Err(NorError);
+            if !SSTV.contains(&addr) {
+                return Err(NorError);
+            }
+            self.erases[(addr / SECTOR) as usize] += 1;
+            let a = (addr - SSTV.start) as usize;
+            self.pics()[a..a + SECTOR as usize].fill(0xFF);
+            return Ok(());
         }
         self.dirty = true;
         self.erases[(addr / SECTOR) as usize] += 1;
@@ -227,7 +255,7 @@ mod tests {
         assert!(SimFlash::from_image(&[0; 300]).mem.iter().all(|&b| b == 0xFF), "an image from another layout");
         let mut b = [0u8; 2];
         assert!(f.read(0x10_0000, &mut b).is_ok() && b == [0xFF; 2]);
-        assert!(f.start_erase(0x10_0000).is_err() && f.start_program(0x10_0000, &[0]).is_err());
+        assert!(f.start_erase(0x1B_6000).is_err() && f.start_program(0x1B_6000, &[0]).is_err());
     }
 
     /// The power off: every call fails, nothing changes, until it is back on.

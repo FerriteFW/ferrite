@@ -4,8 +4,9 @@ use crate::color::to_ycc;
 use crate::mode::{vis_tones, Chan, Layout, Mode, Seg, BLACK_HZ, WHITE_HZ, WIDTH};
 use crate::math::sin_at;
 
-/// What the encoder reads: the picture, `WIDTH` wide and `mode.lines` tall, one pixel at a time (keep the line in
-/// hand: the encoder asks for the same line many times in a row).
+/// What the encoder reads: the picture, `WIDTH` wide and `mode.lines` tall (PD120: 496, two lines a frame as a real
+/// sender's, which the receiver averages into its 248), one pixel at a time (keep the line in hand: the encoder asks
+/// for the same line many times in a row).
 pub trait Picture {
     fn rgb(&mut self, x: usize, y: usize) -> (u8, u8, u8);
 }
@@ -141,6 +142,8 @@ impl Encoder {
             Layout::Rgb => (f as usize, f as usize),
             Layout::Robot if f % 2 == 0 => (f as usize, (f as usize + 1).min(last)),
             Layout::Robot => (f as usize - 1, f as usize),
+            // PD120: a frame's two lines are the picture's 2f and 2f + 1 (the receiver gives out their average)
+            Layout::Pd if self.mode.lines == self.mode.frames => (2 * f as usize, 2 * f as usize + 1),
             Layout::Pd => {
                 let l = self.mode.lines_of(f);
                 (l.start as usize, l.end as usize - 1)

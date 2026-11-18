@@ -62,10 +62,25 @@ impl Noise {
     }
 }
 
+/// The picture's height as sent: PD120 sends 496 lines (two a frame), which the receiver averages into its 248.
+fn sent_h(mode: &Mode) -> usize {
+    if mode.layout == usstv::mode::Layout::Pd && mode.lines == mode.frames { 2 * mode.lines as usize } else { mode.lines as usize }
+}
+
+/// What received line `y` should be: the card's line, or for PD120 the average of the two sent for it.
+fn expected(mode: &Mode, card: &Card, x: usize, y: usize) -> (u8, u8, u8) {
+    if sent_h(mode) == mode.lines as usize {
+        return card.px(x, y);
+    }
+    let (a, b) = (card.px(x, 2 * y), card.px(x, 2 * y + 1));
+    let m = |p: u8, q: u8| ((p as u16 + q as u16) / 2) as u8;
+    (m(a.0, b.0), m(a.1, b.1), m(a.2, b.2))
+}
+
 /// The transmission at `tx_rate` (the sender's clock), heard at 24 kHz: noise of `noise` (rms, of 8000 peak).
 fn air(mode: &'static Mode, tx_rate: u32, noise: f32, vis: bool) -> Vec<i16> {
     let mut e = Encoder::new(mode, tx_rate, 8000);
-    let mut card = Card { h: mode.lines as usize };
+    let mut card = Card { h: sent_h(mode) };
     let mut out = Vec::new();
     let mut nz = Noise(7);
     let mut push = |s: f32, out: &mut Vec<i16>| out.push((s + noise * nz.next()).clamp(-32767.0, 32767.0) as i16);
@@ -89,7 +104,8 @@ fn air(mode: &'static Mode, tx_rate: u32, noise: f32, vis: bool) -> Vec<i16> {
 /// Mean absolute error per channel against the card, the edge columns left out; and the worst line's.
 #[allow(clippy::needless_range_loop)] // x is the card's coordinate too
 fn score(mode: &'static Mode, got: &Got) -> (f32, f32) {
-    let card = Card { h: mode.lines as usize };
+    let card = Card { h: sent_h(mode) };
+    let edges = [card.h / 3 * mode.lines as usize / card.h, card.h / 2 * mode.lines as usize / card.h];
     let (mut sum, mut n, mut worst) = (0.0, 0.0, 0.0f32);
     for (y, px) in &got.lines {
         let (mut ls, mut ln) = (0.0, 0.0);
@@ -99,11 +115,11 @@ fn score(mode: &'static Mode, got: &Got) -> (f32, f32) {
                 continue;
             }
             let yy = *y as usize;
-            if [card.h / 3, card.h / 2].iter().any(|&b| yy + 2 >= b && yy < b + 2) {
+            if edges.iter().any(|&b| yy + 2 >= b && yy < b + 2) {
                 continue;
             }
             let (r, g, b) = from565(px[x]);
-            let (r0, g0, b0) = card.px(x, yy);
+            let (r0, g0, b0) = expected(mode, &card, x, yy);
             let e = ((r as f32 - r0 as f32).abs() + (g as f32 - g0 as f32).abs() + (b as f32 - b0 as f32).abs()) / 3.0;
             ls += e;
             ln += 1.0;
@@ -255,4 +271,30 @@ fn pictures() {
         }
         std::fs::write(dir.join(format!("{name}.ppm")), out).unwrap();
     }
+}
+
+/// SSTV-2.3: PD120's two lines a frame (496 sent) come out as their average (248): alternate black and white lines
+/// give a mid grey, not one of the two.
+#[test]
+fn pd120_averages_its_line_pairs() {
+    struct Stripes;
+    impl Picture for Stripes {
+        fn rgb(&mut self, _x: usize, y: usize) -> (u8, u8, u8) {
+            if y.is_multiple_of(2) { (0, 0, 0) } else { (255, 255, 255) }
+        }
+    }
+    let m = &usstv::mode::PD120_MODE;
+    let mut e = Encoder::new(m, 24_000, 8000);
+    let mut audio = vec![0i16; 12_000];
+    while let Some(s) = e.next(&mut Stripes) {
+        audio.push(s);
+    }
+    audio.extend([0i16; 12_000]);
+    let mut d = Decoder::new(24_000);
+    let mut got = Got::default();
+    d.feed(&audio, &mut got);
+    assert_eq!((got.mode, got.end, got.lines.len()), (Some("PD120"), Some(true), 248));
+    let (_, px) = &got.lines[124];
+    let (r, g, b) = from565(px[160]);
+    assert!([r, g, b].iter().all(|&v| (100..=155).contains(&v)), "a mid grey: {r} {g} {b}");
 }

@@ -57,6 +57,10 @@ pub struct SstvState {
     pub stop: bool,
     /// SSTV-2.6: the slot whose squelch a picture holds open (its monitor latched for it), plus one; 0 none.
     pub held: u8,
+    /// SSTV-3.2: the picture that just ended (its slot and lines), for the screen until its header says so: the
+    /// header's lines are written through the store's queue after its last rows. Slot 0 when none (slot 0 is a
+    /// picture to send, never received into).
+    pub ended: (u8, u16),
 }
 
 /// Every slot's header, read from the flash (an empty slot, or no flash: None).
@@ -200,6 +204,7 @@ impl App {
                 bytes.copy_from_slice(&h.encode()[..ferrite_core::link::data::PROGRAM_MAX]);
                 st.data().picture_write(DataWrite::Program { addr: sstv::slot_addr(slot), len: HEADER_LEN as u8, bytes });
                 self.sstv.rx = Some(Rx { vis, slot, lines: 0, at_ms: self.now });
+                self.sstv.ended = (0, 0);
                 // SSTV-2.6: a squelch closing for a moment would cut the picture: held open until it ends (not a
                 // monitor the user latched, which stays theirs)
                 let a = self.active;
@@ -226,6 +231,7 @@ impl App {
             Event::End(whole) => {
                 self.sstv_release();
                 let Some(rx) = self.sstv.rx.take() else { return };
+                self.sstv.ended = (rx.slot, rx.lines);
                 // SSTV-4.4: the flags and lines programmed over the header written at the start
                 let l = rx.lines.to_le_bytes();
                 let mut bytes = [0xFFu8; ferrite_core::link::data::PROGRAM_MAX];

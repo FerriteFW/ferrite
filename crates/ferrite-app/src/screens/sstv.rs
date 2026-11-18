@@ -64,7 +64,8 @@ impl Sstv {
         }
         match header(st, v) {
             Some(h) => {
-                let l = h.lines.unwrap_or(0);
+                // SSTV-3.2: a picture just ended whose header isn't finished yet: the lines it ended with
+                let l = h.lines.or((app.sstv.ended.0 == v && v != 0).then_some(app.sstv.ended.1)).unwrap_or(0);
                 (l, l)
             }
             None => (0, 0),
@@ -224,8 +225,10 @@ impl View for Sstv {
         let st = cx.store;
         // the picture: all of it when the view or its picture changed (about 30 ms), else a received picture's
         // newest rows as they come
-        let key = Mix::new().h(&app.sstv.view).h(&app.sstv.ver).get();
+        // SSTV-3.2: the lines the picture has are in the key too, should they change under the same view (a header
+        // finished later than `ended` covers)
         let (avail, total) = Self::avail(app, st);
+        let key = Mix::new().h(&app.sstv.view).h(&app.sstv.ver).h(&total).get();
         let height = (total as i32 * 3 / 4).min(H);
         let target = (avail as i32 * 3 / 4).min(height);
         if app.dirty(R_FRAME, key) {

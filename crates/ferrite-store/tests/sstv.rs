@@ -178,3 +178,54 @@ fn a_picture_holds_the_squelch_open() {
     }
     assert!(on && off, "held open at the start, closed at the end");
 }
+
+/// The readback's lines (LINK-19) as text.
+fn readback(a: &App, st: &Store) -> Vec<String> {
+    let (dev, live) = (ferrite_core::msg::Device::default(), ferrite_core::msg::LiveAll::default());
+    let mut l = ferrite_app::term::cmd::Line::new();
+    (0..).map_while(|i| ferrite_app::uistate::line(a, st, &dev, &live, i, &mut l).then(|| String::from_utf8_lossy(l.as_bytes()).into_owned())).collect()
+}
+
+fn sstv_line(a: &App, st: &Store) -> String {
+    readback(a, st).into_iter().find(|t| t.starts_with("sstv")).expect("an sstv line")
+}
+
+/// SSTV-3.1: the readback's `sstv` line: the picture shown and what it is, the Send page's mode, a picture coming in.
+#[test]
+fn readback_says_what_the_sstv_screen_shows() {
+    use ferrite_core::keys::Key;
+    let st = mount();
+    let mut a = app();
+    let mut t = 1000;
+    let mut press = |a: &mut App, k: Key| {
+        a.key_down(k, t, &st);
+        a.key_up(k, t + 50, &st);
+        t += 200;
+    };
+    for k in [Key::Menu, Key::Digit(0), Key::Digit(3), Key::Digit(7)] {
+        press(&mut a, k); // MENU 0 3 7 (SSTV-1)
+    }
+    assert!(matches!(a.screen(), ferrite_app::screens::Screen::Sstv(_)), "MENU 0 3 7 opens SSTV");
+    a.sstv_prepare(&st);
+    let t = sstv_line(&a, &st);
+    assert!(t.contains("view=\"card\"") && t.contains("page=\"main\"") && !t.contains(" rx="), "{t}");
+    // a picture coming in: its mode, slot and lines so far; the screen shows its slot
+    let c = decoded(8);
+    let n = c.0.iter().position(|e| matches!(e, Event::Line(19, _))).unwrap();
+    for (ev, px) in c.0.iter().zip(&c.1).take(n + 1) {
+        a.sstv_event(*ev, px, &st);
+    }
+    let t = sstv_line(&a, &st);
+    assert!(t.contains("view=1 slot=\"rx\" mode=\"Robot 36\" lines=\"open\""), "{t}");
+    assert!(t.contains(" rx=\"Robot 36\" rx_slot=1 rx_lines=20") && t.contains(" held=1"), "{t}");
+    for (ev, px) in c.0.iter().zip(&c.1).skip(n + 1) {
+        a.sstv_event(*ev, px, &st);
+    }
+    let t = sstv_line(&a, &st);
+    assert!(t.contains("lines=240 complete=1") && !t.contains(" rx=") && !t.contains("held"), "{t}");
+    // the Send page (OK), the knob's next mode
+    press(&mut a, Key::Menu);
+    a.knob(1, 5000, &st);
+    let t = sstv_line(&a, &st);
+    assert!(t.contains("page=\"send\" send=\"Martin M1\""), "{t}");
+}

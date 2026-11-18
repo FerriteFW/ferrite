@@ -768,6 +768,7 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
         }
         Screen::Hf(h) => hf_lines(app, cx, h, d),
         Screen::Sat(s) => sat_lines(app, &s, d),
+        Screen::Sstv(s) => sstv_lines(app, cx, &s, d),
         Screen::Pin(p) => {
             // PIN-2, PIN-3: the heading, a star per digit typed (never the digits), the wait or attempts left
             if let Some(l) = d.ln() {
@@ -934,6 +935,60 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
             });
         }
         _ => {}
+    }
+}
+
+/// SSTV (chapter 27a, SSTV-3): `sstv view=2 page=main slot="rx" mode="Robot 36" lines=240 complete=1`: the picture
+/// shown (a slot, or `card` for the test card: then no slot, mode or lines), what it is (`rx`, `send` or `empty`), its
+/// mode, lines and whether it came in whole, from its header; `page=send send="Martin M1"` on the Send page; then while
+/// one comes in ` rx="Robot 36" rx_slot=1 rx_lines=20` (lines so far), while one goes out ` tx="PD90" frame=12`, a mode
+/// started by hand ` forced="PD90"`, and ` held=1` while a picture holds the squelch open (SSTV-2.6).
+fn sstv_lines<S: ChannelStore>(app: &App, cx: &Cx<S>, s: &screens::sstv::Sstv, d: &mut Desc) {
+    use crate::sstv::{headers, FORCE_MODES, SEND_MODES, VIEW_CARD};
+    let st = &app.sstv;
+    let Some(l) = d.ln() else { return };
+    l.push(b"sstv");
+    if st.view == VIEW_CARD {
+        kq(l, "view", b"card");
+    } else {
+        kn(l, "view", st.view as u32);
+        let h = headers(cx.store)[st.view as usize % ferrite_core::sstv::SLOTS as usize];
+        match h {
+            None => kq(l, "slot", b"empty"),
+            Some(h) => {
+                kq(l, "slot", if st.view < ferrite_core::sstv::FIRST_RX { b"send" } else { b"rx" });
+                kq(l, "mode", ferrite_core::sstv::mode_name(h.vis).as_bytes());
+                match h.lines {
+                    Some(n) => {
+                        kn(l, "lines", n as u32);
+                        kn(l, "complete", h.complete as u32);
+                    }
+                    None => kq(l, "lines", b"open"),
+                }
+            }
+        }
+    }
+    match s.send {
+        Some(i) => {
+            kq(l, "page", b"send");
+            kq(l, "send", ferrite_core::sstv::mode_name(SEND_MODES[i as usize % SEND_MODES.len()]).as_bytes());
+        }
+        None => kq(l, "page", b"main"),
+    }
+    if let Some(rx) = st.rx {
+        kq(l, "rx", ferrite_core::sstv::mode_name(rx.vis).as_bytes());
+        kn(l, "rx_slot", rx.slot as u32);
+        kn(l, "rx_lines", rx.lines as u32);
+    }
+    if let Some(tx) = st.tx {
+        kq(l, "tx", ferrite_core::sstv::mode_name(tx.vis).as_bytes());
+        kn(l, "frame", st.frame as u32);
+    }
+    if st.forced != 0 {
+        kq(l, "forced", ferrite_core::sstv::mode_name(FORCE_MODES[st.forced as usize - 1]).as_bytes());
+    }
+    if st.held != 0 {
+        kn(l, "held", 1);
     }
 }
 

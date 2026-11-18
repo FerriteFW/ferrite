@@ -166,8 +166,8 @@ fn ram_is_small() {
     // 8, and the picker's band views', 16: a full radio counted 4000 records a redraw), 24, to 2152;
     // the status bar as last drawn gains VOX's mark (SBAR-25: 1 byte), 8 with padding, to 2160; the Radio task's
     // refusal count seen and as at the key-up (TX-50: 2 bytes, an old refusal no longer ends a key-up), 8, to 2168;
-    // SSTV's state (chapter 27a: the picture coming in and going out, the one shown, 48 bytes), to 2216
-    assert!(n <= 2216, "App is {n} bytes");
+    // SSTV's state (chapter 27a: the picture coming in and going out, the one shown, 48 bytes), 56 with padding, to 2224
+    assert!(n <= 2224, "App is {n} bytes");
     let s = core::mem::size_of::<crate::settings::Settings>();
     std::println!("Settings: {s} bytes");
     assert!(s <= 512, "Settings is {s} bytes");

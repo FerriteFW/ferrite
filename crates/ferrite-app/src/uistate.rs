@@ -1374,6 +1374,7 @@ pub fn id(s: Screen) -> &'static str {
         Screen::ChEdit(_) => "ChEdit",
         Screen::Value(_) => "Value",
         Screen::Tones(_) => "Tones",
+        Screen::Sstv(_) => "Sstv",
         Screen::Text(_) => "Text",
         Screen::Save(_) => "Save",
         Screen::Confirm(_) => "Confirm",

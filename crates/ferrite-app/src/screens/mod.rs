@@ -97,6 +97,7 @@ pub mod squelch;
 pub mod status;
 pub(crate) mod table;
 pub mod text;
+pub mod sstv;
 pub mod tones;
 pub mod transmit;
 pub mod value;
@@ -179,6 +180,8 @@ pub enum Screen {
     Dtmf(dtmf::DtmfPad),
     /// Satellite mode (chapter 28a): the pass list, pass page and pointing page.
     Sat(sat::SatScr),
+    /// SSTV pictures (chapter 27a).
+    Sstv(sstv::Sstv),
 }
 
 /// Runs `$e` with `$s` bound to the screen's state: the one place that lists every variant.
@@ -239,6 +242,7 @@ macro_rules! each {
             Screen::AutoReply($s) => $e,
             Screen::Dtmf($s) => $e,
             Screen::Sat($s) => $e,
+            Screen::Sstv($s) => $e,
         }
     };
 }

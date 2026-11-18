@@ -27,7 +27,7 @@ def main():
     link = Link(Port(sys.argv[1]))
     link.hello(b"sstvslot.py")  # the cable to the link first (TERM-2), as ferrite_link.py does
     if len(sys.argv) < 3:
-        for s in range(6):
+        for s in range(4):
             print(s, header(link, s))
         return
     s, out = int(sys.argv[2]), sys.argv[3]

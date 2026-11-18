@@ -22,6 +22,8 @@ pub enum Decoder {
     Pocsag(Pocsag),
     /// Marine DSC, channel 70.
     Dsc(Dsc),
+    /// SSTV pictures (chapter 27a), while the SSTV screen is open.
+    Sstv(usstv::Decoder),
 }
 
 /// What a decoder found, handed to the event bus.
@@ -34,6 +36,25 @@ pub enum Found<'a> {
     Miss(&'a uafsk::Miss),
     Page(&'a upocsag::Message<'a>),
     Call(&'a udsc::Call<'a>),
+    /// SSTV-2: a picture started (its VIS code), a line of it, or its end (whole or not).
+    SstvStart(u8),
+    SstvLine(u16, &'a [u16; usstv::mode::WIDTH]),
+    SstvEnd(bool),
+}
+
+/// The SSTV decoder's lines, to the slot's caller.
+struct SstvOut<'f, F: FnMut(Found)>(&'f mut F);
+
+impl<F: FnMut(Found)> usstv::Sink for SstvOut<'_, F> {
+    fn start(&mut self, mode: &'static usstv::Mode) {
+        (self.0)(Found::SstvStart(mode.vis));
+    }
+    fn line(&mut self, y: u16, px: &[u16; usstv::mode::WIDTH]) {
+        (self.0)(Found::SstvLine(y, px));
+    }
+    fn end(&mut self, complete: bool) {
+        (self.0)(Found::SstvEnd(complete));
+    }
 }
 
 impl Decoder {
@@ -47,6 +68,21 @@ impl Decoder {
 
     pub fn dsc() -> Self {
         Decoder::Dsc(Dsc::new(uafsk::fsk::Config::new(RATE_HZ)))
+    }
+
+    pub fn sstv() -> Self {
+        Decoder::Sstv(usstv::Decoder::new(RATE_HZ))
+    }
+
+    /// SSTV-2.5: a mode started by hand (its VIS code; 0 stops the picture being received).
+    pub fn sstv_force(&mut self, vis: u8, mut found: impl FnMut(Found)) {
+        if let Decoder::Sstv(d) = self {
+            let mut out = SstvOut(&mut found);
+            match usstv::Mode::by_vis(vis) {
+                Some(m) => d.force(m, &mut out),
+                None => d.stop(&mut out),
+            }
+        }
     }
 
     /// The AFSK demodulator's carrier detect: 1200-baud data heard now (APRS-56.4); false for the others.
@@ -72,6 +108,7 @@ impl Decoder {
             }
             Decoder::Pocsag(d) => block.iter().for_each(|&x| d.push(x, |m| found(Found::Page(m)))),
             Decoder::Dsc(d) => block.iter().for_each(|&x| d.push(x, |c| found(Found::Call(c)))),
+            Decoder::Sstv(d) => d.feed(block, &mut SstvOut(&mut found)),
         }
     }
 }

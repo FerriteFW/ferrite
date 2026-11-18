@@ -58,6 +58,7 @@ pub mod sat;
 pub mod scan;
 pub mod settle;
 pub mod softsq;
+pub mod sstv;
 pub mod aprssq;
 pub mod sqcal;
 pub mod sweephold;

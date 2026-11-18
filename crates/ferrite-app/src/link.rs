@@ -1284,7 +1284,13 @@ fn data_write<S: ChannelStore>(st: &S, p: &[u8], o: &mut Out) -> (Status, bool) 
         }
         _ => return (Status::BadArg, false),
     };
-    if !st.data().data_write(w) {
+    // SSTV-4.5: a write inside the picture slots is a picture's: the store's own job, the store left running
+    let pic = match w {
+        DataWrite::Erase(a) => ferrite_core::layout::in_pictures(a, SECTOR),
+        DataWrite::Program { addr, len, .. } => ferrite_core::layout::in_pictures(addr, len as u32),
+        DataWrite::Stamp => false,
+    };
+    if !if pic { st.data().picture_write(w) } else { st.data().data_write(w) } {
         return (Status::Busy, false);
     }
     (Status::Ok, w == DataWrite::Stamp)

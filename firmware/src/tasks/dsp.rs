@@ -468,18 +468,14 @@ pub async fn task() {
                 };
                 // SSTV-1: SSTV's decoder in the slot while its screen is open; the others back after
                 // (`running` says Off meanwhile, so the decoder wanted is made again when SSTV lets go)
+                // (`Decoder::set`: never built here, or this poll's frame holds a whole decoder)
                 if sstv != matches!(slot, Decoder::Sstv(_)) {
-                    slot = if sstv { Decoder::sstv() } else { Decoder::Off };
+                    slot.set(sstv, DecoderKind::Off);
                     running = DecoderKind::Off;
                 }
                 if !sstv && kind != running {
                     running = kind;
-                    slot = match kind {
-                        DecoderKind::Off => Decoder::Off,
-                        DecoderKind::Afsk => Decoder::afsk(),
-                        DecoderKind::Pocsag => Decoder::pocsag(),
-                        DecoderKind::Dsc => Decoder::dsc(),
-                    };
+                    slot.set(false, kind);
                 }
                 // PWR-26.9: AFSK only while the APRS slot's squelch is open, and its tail; the pager decoder always
                 let want = sstv || kind != DecoderKind::Off && (kind != DecoderKind::Afsk || sq || tail != 0) || listen != 0 || meter_on;

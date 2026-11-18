@@ -74,6 +74,24 @@ impl Decoder {
         Decoder::Sstv(usstv::Decoder::new(RATE_HZ))
     }
 
+    /// Puts a new decoder in the slot: SSTV's while its screen is open (SSTV-1), else `kind`. In a frame of its own:
+    /// a decoder is built by value, as large as the slot, and built inline in the DSP task's poll it made that frame
+    /// 12.9 KB on every poll, on top of what the DSP's interrupt preempts. Black faulted receiving SSTV (the stack ran
+    /// into the statics, Nov 17, 2026); here the temporary (9.6 KB for SSTV's) is on the stack only while the slot
+    /// changes, not on every block of audio.
+    #[inline(never)]
+    pub fn set(&mut self, sstv: bool, kind: crate::msg::DecoderKind) {
+        use crate::msg::DecoderKind;
+        *self = Decoder::Off; // the old one dropped first (nothing of it is kept)
+        match (sstv, kind) {
+            (true, _) => *self = Decoder::sstv(),
+            (false, DecoderKind::Off) => {}
+            (false, DecoderKind::Afsk) => *self = Decoder::afsk(),
+            (false, DecoderKind::Pocsag) => *self = Decoder::pocsag(),
+            (false, DecoderKind::Dsc) => *self = Decoder::dsc(),
+        }
+    }
+
     /// SSTV-2.5: a mode started by hand (its VIS code; 0 stops the picture being received).
     pub fn sstv_force(&mut self, vis: u8, mut found: impl FnMut(Found)) {
         if let Decoder::Sstv(d) = self {

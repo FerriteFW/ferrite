@@ -47,7 +47,7 @@ FORBIDDEN = [("calibration", CALIBRATION), ("the update area", UPDATE_AREA), ("t
              ("the migration mark", MIGRATE_MARK)]
 # The layout 3 regions SPI parts may go in (layout.rs): the text pack, the dictionary, language packs, boot screens,
 # fonts.
-PART_REGIONS = [("text pack", (0x090000, 0x0A0000)), ("dictionary", (0x0B0000, 0x0C0000)), ("language packs", (0x1C0000, 0x240000)),
+PART_REGIONS = [("text pack", (0x090000, 0x0A0000)), ("dictionary", (0x0B0000, 0x0C0000)), ("language packs", (0x210000, 0x240000)),
                 ("boot screens", (0x240000, 0x280000)), ("fonts", (0x280000, 0x2C0000))]
 PART_HEADER = 32
 PART_FORMAT = 1

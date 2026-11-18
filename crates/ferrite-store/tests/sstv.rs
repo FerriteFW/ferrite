@@ -80,11 +80,11 @@ fn received_picture_is_saved() {
         a.sstv_event(*ev, px, &st);
     }
     let hs = headers(&st);
-    let h = hs[2].expect("slot 2 holds it");
+    let h = hs[1].expect("slot 1 (the first received) holds it");
     assert_eq!((h.kind, h.vis, h.lines, h.complete, h.seq), (sstv::KIND_RX, 44, Some(256), true, 1));
     // the rows are the decoder's, little-endian RGB565
     let (_, px) = c.0.iter().zip(&c.1).find(|(e, _)| matches!(e, Event::Line(100, _))).unwrap();
-    let r = row(&st, 2, 100);
+    let r = row(&st, 1, 100);
     assert_eq!(u16::from_le_bytes([r[0], r[1]]), px[0]);
     assert_eq!(u16::from_le_bytes([r[638], r[639]]), px[319]);
     // a second picture goes into the next slot, numbered after
@@ -92,8 +92,8 @@ fn received_picture_is_saved() {
         a.sstv_event(*ev, px, &st);
     }
     let hs = headers(&st);
-    assert_eq!(hs[3].map(|h| h.seq), Some(2));
-    assert_eq!(a.sstv.view, 3, "the screen shows the newest");
+    assert_eq!(hs[2].map(|h| h.seq), Some(2));
+    assert_eq!(a.sstv.view, 2, "the screen shows the newest");
 }
 
 /// SSTV-4.1: with all four received slots full, the oldest is erased ready for the next picture.
@@ -108,9 +108,10 @@ fn oldest_received_is_written_over() {
             a.sstv_event(*ev, px, &st);
             }
     }
-    let seqs: Vec<_> = headers(&st)[2..].iter().map(|h| h.map(|h| h.seq)).collect();
-    // the fifth over the first (slot 2); the oldest left (slot 3, the second) already erased for the next one
-    assert_eq!(seqs, vec![Some(5), None, Some(3), Some(4)]);
+    let seqs: Vec<_> = headers(&st)[1..].iter().map(|h| h.map(|h| h.seq)).collect();
+    // three received slots: the fourth over the first, the fifth over the second; the oldest left (the third)
+    // already erased for the next one
+    assert_eq!(seqs, vec![Some(4), Some(5), None]);
 }
 
 /// SSTV-4.5: a link write inside the picture slots is a picture's: the store keeps running (no update state).
@@ -134,11 +135,11 @@ fn console_picture_write_leaves_the_store_running() {
 fn old_bytes_in_a_slot_are_erased_first() {
     use ferrite_app::data::DataWrite;
     let st = mount();
-    // old bytes in slot 2, header sector and pixels, no magic
+    // old bytes in slot 1, header sector and pixels, no magic
     for off in [0u32, 4096, 4096 + 100 * 640] {
         let mut bytes = [0x5Au8; 64];
         bytes[0] = 0;
-        assert!(st.data().picture_write(DataWrite::Program { addr: sstv::slot_addr(2) + off, len: 64, bytes }));
+        assert!(st.data().picture_write(DataWrite::Program { addr: sstv::slot_addr(1) + off, len: 64, bytes }));
     }
     let mut a = app();
     a.sstv_open(&st);
@@ -146,10 +147,10 @@ fn old_bytes_in_a_slot_are_erased_first() {
     for (ev, px) in c.0.iter().zip(&c.1) {
         a.sstv_event(*ev, px, &st);
     }
-    let h = headers(&st)[2].expect("the picture in slot 2");
+    let h = headers(&st)[1].expect("the picture in slot 1");
     assert_eq!((h.vis, h.lines, h.complete), (8, Some(240), true));
     let (_, px) = c.0.iter().zip(&c.1).find(|(e, _)| matches!(e, Event::Line(100, _))).unwrap();
-    let r = row(&st, 2, 100);
+    let r = row(&st, 1, 100);
     assert_eq!(u16::from_le_bytes([r[0], r[1]]), px[0], "row 100 is the picture's, not old bytes ANDed in");
 }
 

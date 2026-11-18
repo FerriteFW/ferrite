@@ -1,12 +1,12 @@
-//! SSTV pictures in the SPI flash (SSTV-4, decision 403): six slots, two to send (Console writes them) and four
-//! received; each a header sector, then 320 x 256 RGB565 rows. Shared by the radio, the simulator and the host
+//! SSTV pictures in the SPI flash (SSTV-4, decisions 403 and 404): four slots past the bootloader's fonts, one to
+//! send (Console writes it) and three received; each a header sector, then 320 x 256 RGB565 rows. Shared by the radio, the simulator and the host
 //! tests, as Console's reader and writer follow the same layout.
 
 use crate::layout::SSTV;
 
-/// Slots, and the first received one.
-pub const SLOTS: u8 = 6;
-pub const FIRST_RX: u8 = 2;
+/// Slots, and the first received one (decision 404: one to send, three received, past the bootloader's fonts).
+pub const SLOTS: u8 = 4;
+pub const FIRST_RX: u8 = 1;
 /// One slot: a header sector and 40 of pixels.
 pub const SLOT_LEN: u32 = 41 * 4096;
 pub const WIDTH: usize = 320;
@@ -270,13 +270,13 @@ mod tests {
     fn sstv_4_1_next_slot() {
         let mut hs = [None; SLOTS as usize];
         hs[0] = Some(Header { kind: KIND_SEND, ..Header::receiving(0, 0, 0, 0) });
-        assert_eq!(next_rx(&hs), (2, 1));
-        for (s, q) in [(2, 5), (3, 9), (4, 3), (5, 4)] {
+        assert_eq!(next_rx(&hs), (1, 1));
+        for (s, q) in [(1, 5), (2, 9), (3, 3)] {
             hs[s] = Some(Header::receiving(8, 0, 0, q));
         }
-        assert_eq!(next_rx(&hs), (4, 10), "the oldest, the next number");
-        hs[5] = None;
-        assert_eq!(next_rx(&hs).0, 5, "an empty one first");
+        assert_eq!(next_rx(&hs), (3, 10), "the oldest, the next number");
+        hs[2] = None;
+        assert_eq!(next_rx(&hs).0, 2, "an empty one first");
     }
 
     #[test]
@@ -307,8 +307,12 @@ mod tests {
 
     #[test]
     fn sstv_4_slots_fit() {
-        assert_eq!(slot_addr(0), 0x0C_0000);
-        assert_eq!(slot_addr(5) + SLOT_LEN, 0x1B_6000);
-        assert_eq!(row_addr(2, 255) + ROW_LEN as u32, slot_addr(3));
+        // decision 404: past the bootloader's fonts, inside the SSTV region
+        assert_eq!(slot_addr(0), crate::layout::BOOT_FONTS.end);
+        assert!(slot_addr(SLOTS - 1) + SLOT_LEN <= SSTV.end);
+        assert_eq!(row_addr(1, 255) + ROW_LEN as u32, slot_addr(2));
+        for s in 0..SLOTS {
+            assert!(crate::layout::writable(slot_addr(s), SLOT_LEN), "slot {s}");
+        }
     }
 }

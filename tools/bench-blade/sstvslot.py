@@ -6,7 +6,7 @@ import os, struct, sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 from ferrite_link import Link, Port  # noqa: E402
 
-BASE, SLOT_LEN, PIXELS, W = 0x0C0000, 41 * 4096, 4096, 320
+BASE, SLOT_LEN, PIXELS, W = 0x15D000, 41 * 4096, 4096, 320
 MODES = {8: "Robot 36", 44: "Martin M1", 60: "Scottie S1", 99: "PD90", 95: "PD120", 0: "-"}
 
 

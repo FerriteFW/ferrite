@@ -253,6 +253,10 @@ pub struct SimCore {
     /// Every render pass's flicker and overdraw, when [`SimCore::watch_passes`] is on (tests, DISP-25).
     pub passes: Vec<PassHit>,
     watch: bool,
+    /// DISP-31: each render's screen against the same state drawn from scratch, when [`SimCore::check_repaint`] is on
+    /// (tests): every difference, as stale pixels the incremental drawing left.
+    pub repaint_misses: Vec<RepaintMiss>,
+    repaint: bool,
     /// The screen the last watched pass drew.
     last_screen: &'static str,
     last_page: u32,
@@ -265,6 +269,18 @@ pub struct SimCore {
     /// `--cut-restart` (decision 339): the store's writes queued as on the radio, and the next restart after a raw
     /// write is a power cut: what the Storage task hadn't done yet is lost (the stamp, when Console sent it last).
     cut_restart: bool,
+}
+
+/// One render whose screen differed from a fresh repaint of the same state ([`SimCore::check_repaint`]).
+#[derive(Clone, Debug)]
+pub struct RepaintMiss {
+    pub at: u32,
+    pub screen: &'static str,
+    /// How many pixels differ, and the box around them (x0, y0, x1, y1).
+    pub pixels: u32,
+    pub area: (u16, u16, u16, u16),
+    /// The first eight misses: the screen as drawn and as drawn from scratch (RGB565, row by row).
+    pub shots: Option<(Vec<u16>, Vec<u16>)>,
 }
 
 /// One render pass as [`SimCore::watch_passes`] records it.
@@ -420,6 +436,8 @@ impl SimCore {
             log_cmds: false,
             passes: Vec::new(),
             watch: false,
+            repaint_misses: Vec::new(),
+            repaint: false,
             last_screen: "",
             last_page: 0,
             last_theme: 0,
@@ -656,6 +674,28 @@ impl SimCore {
                 self.lcd.fb.begin_pass();
             }
             app.render(&mut self.lcd, &radio.live, dev, store);
+            if self.repaint && !app.redraw_deferred() {
+                // DISP-31: the same state drawn from scratch must give the same screen.
+                let before: Vec<u16> = (0..H).flat_map(|y| (0..W).map(move |x| (x, y))).map(|(x, y)| self.lcd.fb.at(x, y)).collect();
+                app.redraw_all();
+                app.render(&mut self.lcd, &radio.live, dev, store);
+                let (mut n, mut b) = (0u32, (u16::MAX, u16::MAX, 0u16, 0u16));
+                for y in 0..H {
+                    for x in 0..W {
+                        if before[(y * W + x) as usize] != self.lcd.fb.at(x, y) {
+                            n += 1;
+                            b = (b.0.min(x as u16), b.1.min(y as u16), b.2.max(x as u16), b.3.max(y as u16));
+                        }
+                    }
+                }
+                if n > 0 {
+                    if std::env::var("FERRITE_REPAINT_DEBUG").is_ok() {
+                        eprintln!("REPAINT miss at {now}: screen {} toast_up {} lock {}", app.screen().name(), app.toast_up(), app.locked());
+                    }
+                    let shots = (self.repaint_misses.len() < 8).then(|| (before, (0..H).flat_map(|y| (0..W).map(move |x| (x, y))).map(|(x, y)| self.lcd.fb.at(x, y)).collect()));
+                    self.repaint_misses.push(RepaintMiss { at: now, screen: app.screen().name(), pixels: n, area: b, shots });
+                }
+            }
             if self.watch {
                 let screen = app.screen().name();
                 let page = app.page_shown();
@@ -1068,6 +1108,12 @@ impl SimCore {
 
     /// Opens screen `i` of [`jump_names`] (0 = home), from home, so BACK returns there.
     /// Record every render pass's flicker and overdraw in [`SimCore::passes`] (tests, DISP-25).
+    /// DISP-31: draw every frame twice, the second time from scratch, and record where they differ
+    /// ([`SimCore::repaint_misses`]). Slower; tests only.
+    pub fn check_repaint(&mut self, on: bool) {
+        self.repaint = on;
+    }
+
     pub fn watch_passes(&mut self, on: bool) {
         self.watch = on;
         self.passes.clear();

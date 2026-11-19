@@ -257,6 +257,9 @@ pub(crate) struct Drawn {
     pub popup_gone: bool,
     /// The quick menu's box just went (HOME-17): its rectangle is drawn again from the screen under it.
     pub qmenu_gone: bool,
+    /// DISP-31: where a table's rows last ended ([`App::table`]): rows that end higher next time clear what was below.
+    /// Two bytes in the padding before `popup`.
+    pub table_end: i16,
     /// HOME-8: the shortcut popup on home as last drawn (its text's hash; 0 none): while it is up home waits under
     /// it, and the popup is drawn again only when its text changes (DISP-25).
     pub popup: u32,
@@ -549,7 +552,7 @@ impl App {
             view_count: (0, 0),
             band_counts: (0, [0; 5]),
             local: local::Local::OFF,
-            drawn: Drawn { screen: None, sbar: None, hash: [0; REGIONS], meter: [None; SLOTS], card: [0; SLOTS], cue: ferrite_ui::widgets::Cue { y: 0, h: 0, ty: 0, th: 0 }, popup_gone: false, qmenu_gone: false, popup: 0 },
+            drawn: Drawn { screen: None, sbar: None, hash: [0; REGIONS], meter: [None; SLOTS], card: [0; SLOTS], cue: ferrite_ui::widgets::Cue { y: 0, h: 0, ty: 0, th: 0 }, popup_gone: false, qmenu_gone: false, table_end: 0, popup: 0 },
             radio: screens::activity::RadioUi::new(),
             set,
             alert_info: alert,
@@ -1597,6 +1600,9 @@ impl App {
     }
 
     fn show_toast(&mut self, head: &[u8], body: &[u8], icon: bool) {
+        // DISP-31: replacing a centred popup (the lock's, say) with a hint-bar toast: the popup's box is cleared and
+        // the screen under it drawn again (it stayed on the screen: the knob while locked)
+        self.drawn.popup_gone |= self.toast.is_some_and(|t| t.center);
         self.toast = Some(Toast { head: Buf::from(head), body: Buf::from(body), icon, center: false, until: self.now.wrapping_add(TOAST_MS) });
     }
 

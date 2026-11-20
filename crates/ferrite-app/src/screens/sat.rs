@@ -598,6 +598,12 @@ fn list(app: &mut App, lcd: &mut impl Panel, s: SatScr) {
         }
         let c = [GREEN, AMBER, RED][lvl as usize % 3];
         let rw = w::field(lcd, 120, 112, 22, 40, 34, r.as_bytes(), &w::st(&UI_12, c, BG, Align::Right));
+        // one satellite's name beside the elements' age didn't fit ("LILACSAT-2 · 4 passes", 147 px in 134): the
+        // count alone then, as each row names it
+        if s.filter != ALL && state != State::Busy && text4_width(l.as_bytes(), &UI_12) > 224 - rw - 6 {
+            l.clear();
+            let _ = uwrite!(l, "{} passes", n);
+        }
         w::field(lcd, 8, 224 - rw - 6, 22, 40, 34, l.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Left) });
     }
     let msg: Option<(&[u8], &[u8])> = match state {

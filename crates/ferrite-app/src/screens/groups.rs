@@ -218,7 +218,7 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
         Entry(concat!("Wait|0 s|", txtc!("Delay before relaying, 0-5 s."))),
     ]),
     ((5, 9), &[
-        Entry(concat!("Path|WIDE1-1,WIDE2-1|", txtc!("None, WIDE1-1, WIDE1-1,WIDE2-1, APRSAT, ARISS, or custom."))),
+        Entry(concat!("Path|WIDE1-1,WIDE2-1|", txtc!("The digipeater path; most use WIDE1-1,WIDE2-1."))),
         Entry(concat!("Custom path|None|", txtc!("Your own path, like WIDE2-2: OK types it."))),
         Entry(concat!("TX delay|300 ms|", txtc!("Carrier before data."))),
         Entry(concat!("TX level|Mid|", txtc!("Modulation level."))),

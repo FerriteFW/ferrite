@@ -973,7 +973,7 @@ impl View for Compose {
                     } else if self.reply_on() {
                         "Sent to who messages you"
                     } else {
-                        "# in the list: the factory text again"
+                        "# in the list: back to factory"
                     };
                     lcd.text4(8, 56, sub.as_bytes(), &UI_12, SUB, BG);
                 });

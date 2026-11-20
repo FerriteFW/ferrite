@@ -1,0 +1,490 @@
+## 30 B17 Alert
+MENU       -> =
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Event log
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 31 B18 Crossband repeater
+MENU       -> =
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> = | TxPlan { tx: 14652000, region: 1, extend: false, confirmed: false }; Crossband(Some(XbCfg { side1: 0, side2: 1, power: 0, timeout_10s: 18, hang_ds: 10, flags: 1 }))
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> =
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> =
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 32 B21 Squelch
+MENU       -> Quick | VoxScreen(false)
+BACK       -> =
+UP         -> = | TuneSlot { slot: 0, freq: 14652500 }
+DOWN       -> = | TuneSlot { slot: 0, freq: 14651500 }
+LEFT       -> = | TuneSlot { slot: 0, freq: 11895000 }; SlotParam { slot: 0, param: Mode, value: 2 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }
+RIGHT      -> = | TuneSlot { slot: 0, freq: 15680000 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }
+ABC        -> = | Active(1)
+V/M        -> = | TuneSlot { slot: 0, freq: 14652000 }; SlotParam { slot: 0, param: Mode, value: 1 }; SlotParam { slot: 0, param: Bandwidth, value: 1 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 0 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }
+STAR       -> = | Mute(1); SlotOff(0); Watch(7) | toast "Slot A muted" "* unmutes, ** off"
+HASH       -> = | PauseWatch(60) | toast "Watch paused" "for 1 min"
+0          -> Frequency entry | VoxScreen(false)
+1          -> Frequency entry | VoxScreen(false)
+2          -> Frequency entry | VoxScreen(false)
+3          -> Frequency entry | VoxScreen(false)
+4          -> Frequency entry | VoxScreen(false)
+5          -> Frequency entry | VoxScreen(false)
+6          -> Frequency entry | VoxScreen(false)
+7          -> Frequency entry | VoxScreen(false)
+8          -> Frequency entry | VoxScreen(false)
+9          -> Frequency entry | VoxScreen(false)
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> Scan | ScanResume { slot: 0, code: 5 }; Scan { slot: 0, on: true }; VoxScreen(false)
+hold MENU  -> More | VoxScreen(false)
+hold BACK  -> =
+hold UP    -> = | TuneSlot { slot: 0, freq: 14652500 }; TuneSlot { slot: 0, freq: 14653000 }; TuneSlot { slot: 0, freq: 14653500 }; TuneSlot { slot: 0, freq: 14654000 }; TuneSlot { slot: 0, freq: 14654500 }
+hold DOWN  -> = | TuneSlot { slot: 0, freq: 14651500 }; TuneSlot { slot: 0, freq: 14651000 }; TuneSlot { slot: 0, freq: 14650500 }; TuneSlot { slot: 0, freq: 14650000 }; TuneSlot { slot: 0, freq: 14649500 }
+hold LEFT  -> = | TuneSlot { slot: 0, freq: 11895000 }; SlotParam { slot: 0, param: Mode, value: 2 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; TuneSlot { slot: 0, freq: 5252500 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; TuneSlot { slot: 0, freq: 710000 }; SlotParam { slot: 0, param: Mode, value: 2 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; TuneSlot { slot: 0, freq: 44600000 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; TuneSlot { slot: 0, freq: 22350000 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 } | toast "Watch off" "HF needs the relay"
+hold RIGHT -> = | TuneSlot { slot: 0, freq: 15680000 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; TuneSlot { slot: 0, freq: 22350000 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; TuneSlot { slot: 0, freq: 44600000 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; TuneSlot { slot: 0, freq: 710000 }; SlotParam { slot: 0, param: Mode, value: 2 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; TuneSlot { slot: 0, freq: 5252500 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 } | toast "Watch off" "HF needs the relay"
+hold ABC   -> Edit | VoxScreen(false)
+hold V/M   -> Zones | VoxScreen(false)
+hold STAR  -> = | VoxScreen(false)
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> = | popup "No home channel" "hold ABC to set"
+hold 1     -> Scope | ScopeCfg { bars: 60, dwell: 100, strip: false }; Sweep { centre: 14652000, step: 2500, on: true }; VoxScreen(false) | popup "Band scope" ""
+hold 2     -> = | SlotParam { slot: 0, param: Power, value: 1 } | popup "TX power" "Mid"
+hold 3     -> Value editor | VoxScreen(false) | popup "Squelch" ""
+hold 4     -> = | Watch(0) | popup "Watch" "off"
+hold 5     -> Tone picker | VoxScreen(false) | popup "Tones" ""
+hold 6     -> = | popup "Step" "6.25 kHz"
+hold 7     -> Value editor | VoxScreen(false) | popup "Shift" ""
+hold 8     -> Frequency entry | VoxScreen(false) | popup "Offset" ""
+hold 9     -> Save as channel | VoxScreen(false) | popup "Save as channel" ""
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> Frequency counter | Counter(true); VoxScreen(false)
+PTT        -> = | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; VoxScreen(false); Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> = | TuneSlot { slot: 0, freq: 14652500 }
+knob -1    -> = | TuneSlot { slot: 0, freq: 14651500 }
+
+## 33 C1 Event log
+MENU       -> Event detail
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> Home | TuneSlot { slot: 0, freq: 14439000 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: -60000 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; VoxScreen(true) | toast "Go: A" "144.390"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 34 C2 Event detail
+MENU       -> =
+BACK       -> Event log
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> Home | TuneSlot { slot: 0, freq: 14439000 }; SlotParam { slot: 0, param: Mode, value: 0 }; SlotParam { slot: 0, param: Bandwidth, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 1000 }; SlotParam { slot: 0, param: Offset, value: -60000 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; VoxScreen(true) | toast "Go: A" "144.390"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 35 C3 APRS heard
+MENU       -> APRS station
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 36 C4 APRS station
+MENU       -> Compose message
+BACK       -> APRS heard
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> = | toast "VE3KPW-9" "saved as a waypoint"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 37 C3a APRS sent
+MENU       -> =
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 38 C5 APRS messages
+MENU       -> APRS message
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> Compose message
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 39 C6 APRS message
+MENU       -> Compose message
+BACK       -> APRS messages
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+

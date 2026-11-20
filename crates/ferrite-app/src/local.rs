@@ -30,7 +30,7 @@ pub const DEFAULT_RANGE: u8 = 4;
 /// Moved this far in latitude or longitude (1e-7 degree: 0.009°, about 1 km north-south) from where the list was
 /// made: made again.
 const MOVE: i32 = 90_000;
-/// CHAN-34.1: the channels quiet this long (ms) before Local is found again for them: a Console write changes them
+/// CHAN-34.6: the channels quiet this long (ms) before Local is found again for them: a Console write changes them
 /// thousands of times, and each find reads every channel record (seconds at 4,000 on the radio).
 pub const SETTLE_MS: u32 = 2000;
 
@@ -56,7 +56,7 @@ pub struct Local {
     /// Where it was made, and the channels as they were ([`ChannelStore::chan_version`]).
     at: Pos,
     ver: u32,
-    /// CHAN-34.1: the channels' version last seen changing, and when (App ms): a change waits until they are quiet.
+    /// CHAN-34.6: the channels' version last seen changing, and when (App ms): a change waits until they are quiet.
     seen: u32,
     seen_at: u32,
 }
@@ -124,7 +124,7 @@ pub fn tick<S: ChannelStore>(app: &mut App, store: &S) {
     if l.state == State::Ready && l.km == km && l.ver == ver && near {
         return;
     }
-    // CHAN-34.1: only the channels changed: found again once they have been quiet SETTLE_MS
+    // CHAN-34.6: only the channels changed: found again once they have been quiet SETTLE_MS
     if l.state == State::Ready && l.km == km && near {
         if l.seen != ver {
             (app.local.seen, app.local.seen_at) = (ver, app.now);
@@ -305,10 +305,10 @@ mod tests {
         let moved = a.local;
         s.apply(ChanWrite::PutPos { ch: crate::chan::channel(201, 0, 14_653_000, "New", crate::slot::DEFAULT_CFG), pos: Some(toward(1.0, 0.0)) });
         tick(&mut a, &s);
-        assert!(!a.local.has(201), "CHAN-34.1: not while the channels are changing");
+        assert!(!a.local.has(201), "CHAN-34.6: not while the channels are changing");
         a.now += SETTLE_MS - 1;
         tick(&mut a, &s);
-        assert!(!a.local.has(201), "CHAN-34.1: not before they're quiet {SETTLE_MS} ms");
+        assert!(!a.local.has(201), "CHAN-34.6: not before they're quiet {SETTLE_MS} ms");
         a.now += 1;
         tick(&mut a, &s);
         assert!(a.local.has(201) && a.local.ver != moved.ver, "a channel written: found again once quiet");
@@ -342,7 +342,7 @@ mod tests {
         // a nearer channel joins: the slot's channel is one further down
         s.apply(ChanWrite::PutPos { ch: crate::chan::channel(202, 0, 14_654_000, "Here", crate::slot::DEFAULT_CFG), pos: Some(HERE) });
         tick(&mut a, &s);
-        a.now += SETTLE_MS; // CHAN-34.1: once the channels are quiet
+        a.now += SETTLE_MS; // CHAN-34.6: once the channels are quiet
         tick(&mut a, &s);
         assert_eq!(a.local.num(0), Some(202));
         assert_eq!((a.slot(0).ch.map(|x| x.num), a.slot(0).pos), (Some(c.num), 2));

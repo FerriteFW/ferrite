@@ -42,7 +42,7 @@ fn refusals_name_what_was_wrong() {
         ("preset 1 \"2 m\" 148 144", "preset: the end must be above the start"),
         ("preset 1 \"2 m\" 144 148 colour=red", "preset: no field colour; they are step, mode, bw, resume"),
         ("home 999", "home: channel 999 doesn't exist"),
-        ("ui frobs", "ui, ui keys or ui status"),
+        ("ui frobs", "ui, ui keys, ui status or ui radio"),
         ("key MENU sideways", "key NAME [long|down|up]: ui keys lists the names"),
         ("xb dance", "xb, xb start or xb stop: the crossband repeater"),
         // a bench build has the module commands, so it lists them instead (decision 151)

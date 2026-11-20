@@ -100,10 +100,10 @@ const ROWS: usize = 11;
 const ROW_Y: i32 = 58;
 const ROW_H: i32 = 22;
 
-/// Local "hh:mm" of UTC seconds.
+/// Local time of UTC seconds: "hh:mm", or "2:32p" with the 12 h clock (MENU 0 6 6, SBAR-2.1).
 fn hhmm(app: &App, utc: u32, b: &mut Buf<8>) {
-    let (m, _) = crate::gpsdata::local_clock(utc, app.settings().tz);
-    let _ = uwrite!(b, "{}{}:{}{}", m / 600, m / 60 % 10, m % 60 / 10, m % 10);
+    let (m, z) = crate::gpsdata::local_clock(utc, app.settings().tz);
+    let _ = uwrite!(b, "{}", ferrite_ui::text::Clock(m, app.settings().clock == 1 && !z));
 }
 
 fn name_of(app: &App, sat: u8) -> Buf<16> {
@@ -598,6 +598,12 @@ fn list(app: &mut App, lcd: &mut impl Panel, s: SatScr) {
         }
         let c = [GREEN, AMBER, RED][lvl as usize % 3];
         let rw = w::field(lcd, 120, 112, 22, 40, 34, r.as_bytes(), &w::st(&UI_12, c, BG, Align::Right));
+        // one satellite's name beside the elements' age didn't fit ("LILACSAT-2 · 4 passes", 147 px in 134): the
+        // count alone then, as each row names it
+        if s.filter != ALL && state != State::Busy && text4_width(l.as_bytes(), &UI_12) > 224 - rw - 6 {
+            l.clear();
+            let _ = uwrite!(l, "{} passes", n);
+        }
         w::field(lcd, 8, 224 - rw - 6, 22, 40, 34, l.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Left) });
     }
     let msg: Option<(&[u8], &[u8])> = match state {

@@ -205,6 +205,8 @@ pub enum List {
     UiStatus,
     /// The readback with the screen as drawn after it (LINK-19.5, the link's `UI` what=3): the link only.
     UiTexts,
+    /// What the radio knows about itself, for a bug report (`ui radio`, the link's `UI` what=4, LINK-19.6).
+    UiRadio,
     /// The satellites held (`sat`, SAT-2), one line each.
     Sats,
 }
@@ -1721,7 +1723,8 @@ fn line_run<S: ChannelStore>(app: &mut App, st: &S, dev: &Device, loading: bool,
             None => Ok(Done::List(List::Ui)),
             Some(Tok::Word(w)) if same(w, b"keys") => Ok(Done::List(List::UiKeys)),
             Some(Tok::Word(w)) if same(w, b"status") => Ok(Done::List(List::UiStatus)),
-            _ => Err(t.say_t(txt!("ui, ui keys or ui status"))),
+            Some(Tok::Word(w)) if same(w, b"radio") => Ok(Done::List(List::UiRadio)),
+            _ => Err(t.say_t(txt!("ui, ui keys, ui status or ui radio"))),
         },
         C::Key => key(app, st, t),
         C::Knob => knob(app, st, t),
@@ -2659,7 +2662,7 @@ pub fn dump_line<S: ChannelStore>(app: &App, st: &S, dev: &Device, p: &mut DumpP
 /// The console's lists: help, the settings not at their defaults, one channel.
 pub fn list_line<S: ChannelStore>(app: &App, st: &S, dev: &Device, live: &ferrite_core::msg::LiveAll, l: List, i: u16, out: &mut Line) -> bool {
     out.clear();
-    if !cfg!(feature = "line-cmds") && !matches!(l, List::Ui | List::UiKeys | List::UiStatus | List::UiTexts) {
+    if !cfg!(feature = "line-cmds") && !matches!(l, List::Ui | List::UiKeys | List::UiStatus | List::UiTexts | List::UiRadio) {
         return false; // decision 347: the text lists are the line commands'; the readback stays
     }
     match l {
@@ -2670,6 +2673,7 @@ pub fn list_line<S: ChannelStore>(app: &App, st: &S, dev: &Device, live: &ferrit
             true
         }
         List::UiStatus => false,
+        List::UiRadio => crate::uistate::radio_line(app, st, dev, i, out),
         List::Help => {
             // UPD-22: the lines are in the text pack; without it, one line saying so
             let i = i as usize;

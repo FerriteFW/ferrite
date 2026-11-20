@@ -136,6 +136,25 @@ impl uDisplay for Zero {
     }
 }
 
+/// A time of day from minutes since midnight (SBAR-2.1): `14:32`, or with 12 h (MENU 0 6 6) `2:32p`:
+/// the hour without its zero and `a` or `p`, as long as `14:32` at most (`12:32p`), so it fits where 24 h does.
+pub struct Clock(pub u16, pub bool);
+impl uDisplay for Clock {
+    fn fmt<W: uWrite + ?Sized>(&self, f: &mut Formatter<'_, W>) -> Result<(), W::Error> {
+        let (h, m) = ((self.0 / 60 % 24) as u32, (self.0 % 60) as u32);
+        if self.1 {
+            ((h + 11) % 12 + 1).fmt(f)?;
+            f.write_str(":")?;
+            Zero(m, 2).fmt(f)?;
+            f.write_str(if h < 12 { "a" } else { "p" })
+        } else {
+            Zero(h, 2).fmt(f)?;
+            f.write_str(":")?;
+            Zero(m, 2).fmt(f)
+        }
+    }
+}
+
 /// `%Nu`: right-aligned with spaces.
 pub struct Wide(pub u32, pub usize);
 impl uDisplay for Wide {
@@ -203,6 +222,13 @@ mod tests {
         let mut b = Buf::<63>::new();
         assert_eq!(v!(b, "key {} {} {}", Wide(7, 2), "matrix", "down"), b"key  7 matrix down");
         assert_eq!(v!(b, "{}:{}:{}", Zero(0, 2), Zero(4, 2), Zero(9, 2)), b"00:04:09");
+        // SBAR-2.1: the clock, 24 h and 12 h; 12 h never longer than 24 h's five characters plus one.
+        assert_eq!(v!(b, "{}", Clock(14 * 60 + 32, false)), b"14:32");
+        assert_eq!(v!(b, "{}", Clock(14 * 60 + 32, true)), b"2:32p");
+        assert_eq!(v!(b, "{}", Clock(5, true)), b"12:05a");
+        assert_eq!(v!(b, "{}", Clock(12 * 60, true)), b"12:00p");
+        assert_eq!(v!(b, "{}", Clock(9 * 60 + 7, true)), b"9:07a");
+        assert_eq!(v!(b, "{}", Clock(5, false)), b"00:05");
         assert_eq!(v!(b, "{} {} {}", Plus(12), Plus(-12), Plus(0)), b"+12 -12 +0");
         assert_eq!(v!(b, "{}", i32::MIN), b"-2147483648");
         assert_eq!(v!(b, "{:x} {:04x} {:06X}", 255u32, 255u32, 0xEF4015u32), b"ff 00ff EF4015");

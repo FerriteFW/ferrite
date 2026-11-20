@@ -879,6 +879,8 @@ pub struct StatusBar {
     pub alert: bool,
     pub clock: Option<u16>,
     pub utc: bool,
+    /// The 12 h clock (MENU 0 6 6, SBAR-2.1): `2:32p`; UTC stays 24 h, as it always is (`14:32Z`).
+    pub h12: bool,
     /// The callsign, drawn in the clock's place while there's no time (SBAR-2); empty with none set. The slot holds
     /// 6 characters (AX.25's, SETUP-13), so a longer callsign keeps its first 6.
     pub call: Buf<6>,
@@ -929,11 +931,11 @@ impl StatusBar {
         if old.is_none_or(|o| !self.left_eq(o)) {
             crate::canvas::banded(lcd, 0, 0, 98, SBAR_H - 1, BG, |b| self.draw_left(b));
         }
-        if old.is_none_or(|o| (o.clock, o.utc, o.call) != (self.clock, self.utc, self.call)) {
+        if old.is_none_or(|o| (o.clock, o.utc, o.h12, o.call) != (self.clock, self.utc, self.h12, self.call)) {
             let mut b = Buf::<8>::new();
             let t = match self.clock {
                 Some(m) => {
-                    let _ = ufmt::uwrite!(b, "{}:{}", crate::text::Zero((m / 60) as u32, 2), crate::text::Zero((m % 60) as u32, 2));
+                    let _ = ufmt::uwrite!(b, "{}", crate::text::Clock(m, self.h12 && !self.utc));
                     if self.utc {
                         b.push(b"Z");
                     }
@@ -1315,6 +1317,11 @@ mod tests {
         assert!(local != none && utc != local && call != none && call != local);
         let ink = |v: &[u16]| v.iter().filter(|&&c| c != BG).count();
         assert!(ink(&utc) > ink(&local), "the Z added");
+        // SBAR-2.1: 12 h draws differently, and not in UTC (which stays 24 h); `12:32p` fits the field.
+        let h12 = field_px(&StatusBar { clock: Some(14 * 60 + 32), h12: true, ..Default::default() });
+        assert!(h12 != local);
+        assert_eq!(field_px(&StatusBar { clock: Some(14 * 60 + 32), utc: true, h12: true, ..Default::default() }), utc);
+        assert!(crate::gfx::text4_width(b"12:32p", &UI_12B) <= 44, "the longest fits the 44 px field");
     }
 
     /// A tag is outlined in its colour; in night red it is filled (red, with black text: DISP-18).

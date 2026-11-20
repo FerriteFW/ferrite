@@ -330,6 +330,7 @@ impl App {
             alert: self.alert & crate::ALERT_UNREAD != 0,
             clock: dev.clock_min,
             utc: dev.utc,
+            h12: self.set.clock == 1, // SBAR-2.1: MENU 0 6 6's 12 h
             // SBAR-2: the callsign stands in for a clock with no time source.
             call: if dev.clock_min.is_none() { Buf::from(self.set.callsign.as_bytes()) } else { Buf::new() },
             gps: dev.gps,

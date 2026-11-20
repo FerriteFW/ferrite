@@ -177,6 +177,9 @@ pub struct FlashStore<N: Nor, D: Data> {
     pub(crate) zcache: Cell<[(ZoneId, u16); ZCACHE]>,
     pub(crate) zcache_next: Cell<u8>,
     pub(crate) dirty: Cell<[u32; DIRTY_WORDS]>,
+    /// CHAN-36.1: some channel may name a zone past the last one (left by a deleted zone, or found at mount), so a
+    /// new zone's count needs a pass; false, a new zone holds none.
+    pub(crate) orphans: Cell<bool>,
     pub(crate) counts_at: Cell<Option<u32>>,
     counts_queued: Cell<bool>,
     pub(crate) at_all: Cell<At>,
@@ -256,6 +259,7 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
             zcache: Cell::new([(FREE, 0); ZCACHE]),
             zcache_next: Cell::new(0),
             dirty: Cell::new([0; DIRTY_WORDS]),
+            orphans: Cell::new(true), // until the mount's pass says
             counts_at: Cell::new(None),
             counts_queued: Cell::new(false),
             at_all: Cell::new(At::NONE),
@@ -1367,12 +1371,25 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
             let sector = zone_addr(z) - zone_addr(z) % SECTOR;
             let first = ((sector - ZONES.start) / SECTOR * ZONES_PER_SECTOR) as ZoneId;
             let last = (first + ZONES_PER_SECTOR as ZoneId).min(MAX_ZONES);
-            let mut took = 0;
+            // Up to ZCACHE of the sector's zones counted: from RAM or a list where known, the rest by one pass
+            // between them (CHAN-36.1)
+            let (mut took, mut pass, mut np) = (0, [FREE; ZCACHE], 0);
             for k in first..last {
                 if self.dirty(k) && took < ZCACHE {
-                    let n = self.zone_len_of(k); // from RAM, its list, or a pass
-                    self.cache_count(k, n);
+                    match self.known_len(k) {
+                        Some(n) => self.cache_count(k, n),
+                        None => {
+                            pass[np] = k;
+                            np += 1;
+                        }
+                    }
                     took += 1;
+                }
+            }
+            if np > 0 {
+                let counts = self.tally_many(&pass);
+                for (k, n) in pass.iter().zip(counts).take(np) {
+                    self.cache_count(*k, n);
                 }
             }
             let snap = self.zcache.get();
@@ -1463,6 +1480,7 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
             self.clear(zone_addr(z), ZONE_LEN as u32).await?;
             self.zones.set(z);
             self.set_dirty(z, false);
+            self.orphans.set(true); // CHAN-36.1: its channels may still name it
         } else if let Some((name, cfg)) = self.read_zone(z) {
             self.write_zone(z, name.as_bytes(), &cfg).await?; // its count, 0 now
         }
@@ -1471,7 +1489,14 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
 
     /// A zone record written with its channel count as it is now (CHAN-36), so it waits for no count write.
     async fn write_zone(&self, z: ZoneId, name: &[u8], cfg: &ZoneCfg) -> Result {
-        let n = if z < self.zones.get() { self.zone_len_of(z) } else { self.tally(z) };
+        // CHAN-36.1: a new zone holds no channel unless some channel names a zone past the last
+        let n = if z < self.zones.get() {
+            self.zone_len_of(z)
+        } else if self.orphans.get() {
+            self.tally(z)
+        } else {
+            0
+        };
         self.put_rec(zone_addr(z), &zone_encode(name, cfg, n)).await?;
         if self.zcache.get().iter().any(|e| e.0 == z && e.1 == n) || !self.dirty(z) {
             self.set_dirty(z, false);

@@ -1471,3 +1471,120 @@ pub fn key_line(i: u16, out: &mut Line) -> bool {
     }
     true
 }
+
+/// LINK-19.6: line `i` of what the radio knows about itself (`ui radio`, the link's `UI` what=4), for Ferrite
+/// Console's debug info: the build, the MCU, the SPI flash and the store's mount, calibration, the chips, what is
+/// stored, power, GPS, Bluetooth and the last restart. No callsign, position or other personal data. False past the
+/// last line.
+pub fn radio_line<S: ChannelStore>(app: &App, st: &S, dev: &Device, i: u16, l: &mut Line) -> bool {
+    use ferrite_core::msg::{CalFault, CalState};
+    let t = &dev.selftest;
+    l.clear();
+    match i {
+        0 => {
+            l.push(b"firmware version=");
+            l.push(ferrite_core::VERSION.as_bytes());
+            kn(l, "tx", dev.tx_built as u32);
+            kn(l, "bench", dev.bench as u32);
+            kn(l, "dry", app.dry_tx() as u32);
+            kn(l, "region", app.set.region as u32);
+        }
+        1 => {
+            let _ = uwrite!(l, "mcu idcode=0x{:x}", t.idcode);
+            kn(l, "ok", t.mcu_ok as u32);
+            l.push(b" uid=");
+            q(l, &ferrite_core::uid::text(t.uid));
+            kn(l, "mhz", dev.mcu.mhz as u32);
+            if let Some(c) = dev.mcu_temp {
+                let _ = uwrite!(l, " temp={}", c);
+            }
+            kn(l, "stack_free", dev.stack_free);
+            kn(l, "ram_statics", dev.ram_statics);
+        }
+        2 => {
+            let _ = uwrite!(l, "flash id=0x{:x}", t.flash_id);
+            kn(l, "mb", t.flash_mb as u32);
+            l.push(match t.store {
+                1 => b" store=mounted".as_slice(),
+                2 => b" store=first_boot",
+                3 => b" store=FAILED",
+                4 => b" store=other_layout",
+                _ => b" store=unknown",
+            });
+            let own = ferrite_core::layout::LAYOUT_VERSION as u32;
+            kn(l, "layout", own);
+            kn(l, "found", match st.data().layout_found() {
+                0 => own,
+                v => v as u32,
+            });
+        }
+        3 => {
+            l.push(match t.cal {
+                CalState::Unknown => b"cal state=unknown".as_slice(),
+                CalState::Ok => b"cal state=ok",
+                CalState::Blank => b"cal state=blank",
+                CalState::Invalid => b"cal state=invalid",
+                CalState::CrcMismatch => b"cal state=crc_mismatch",
+            });
+            l.push(match t.cal_fault {
+                CalFault::None => b" fault=none".as_slice(),
+                CalFault::PaCurve => b" fault=pa_curve",
+                CalFault::LevelOrder => b" fault=level_order",
+                CalFault::Windows => b" fault=windows",
+                CalFault::Trim => b" fault=trim",
+                CalFault::ToneGain => b" fault=tone_gain",
+                CalFault::Unchecked => b" fault=unchecked",
+            });
+            let _ = uwrite!(l, " at={},{},{}", t.cal_at[0], t.cal_at[1], t.cal_at[2]);
+            let _ = uwrite!(l, " battery_trim={}", t.battery_trim);
+        }
+        4 => {
+            let _ = uwrite!(l, "chips bk4829=0x{:x}", t.chips);
+            kn(l, "si4732", t.si4732 as u32);
+            l.push(b" si_rev=");
+            let rev = t.si_rev.map(|c| if c.is_ascii_graphic() { c } else { b'.' });
+            q(l, &rev);
+            kn(l, "ssb_patch", t.ssb_patch as u32);
+        }
+        5 => {
+            l.push(b"data");
+            kn(l, "channels", st.count() as u32);
+            kn(l, "zones", st.zones() as u32);
+            kn(l, "presets", st.data().presets() as u32);
+            kn(l, "lists_gen", crate::link::lists_gen(st));
+        }
+        6 => {
+            l.push(b"power");
+            kn(l, "mv", dev.battery_mv as u32);
+            kn(l, "pct", dev.battery_pct as u32);
+            kn(l, "low", dev.battery_low as u32);
+            kn(l, "cutoff", dev.battery_cutoff as u32);
+            kn(l, "spkmic", dev.spkmic as u32);
+        }
+        7 => {
+            l.push(match dev.gps {
+                GpsState::Off => b"gps state=off".as_slice(),
+                GpsState::Searching => b"gps state=searching",
+                GpsState::Fix => b"gps state=fix",
+            });
+            kn(l, "sats", dev.sats as u32);
+            kn(l, "clock", dev.clock_min.is_some() as u32);
+            kn(l, "bt_on", app.bt_on() as u32);
+            kn(l, "bt", dev.bt as u32);
+        }
+        8 => {
+            l.push(b"restart");
+            l.push(match dev.restart[0] {
+                0 => b" after=start".as_slice(),
+                1 => b" after=hang",
+                _ => b" after=fault",
+            });
+            if dev.restart[0] > 1 {
+                let _ = uwrite!(l, " pc=0x{:x}", dev.restart[0]);
+            }
+            kn(l, "in_a_row", dev.restart[1]);
+        }
+        _ => return false,
+    }
+    true
+}

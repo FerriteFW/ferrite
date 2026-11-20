@@ -1561,8 +1561,37 @@ fn ui_status_line() {
     assert!(st.starts_with("st scr=Crossband ") && st.contains(" mode=xb ") && st.ends_with(" xb=1,1,3"), "{st}");
     status_matches_cards(&full, &st);
     assert!(full.contains("xb running=1 state=1 ") && full.contains(" passes=3 "), "{full}");
-    let (s, _) = pc.ask(msg::UI, &[4]);
+    let (s, _) = pc.ask(msg::UI, &[5]);
     assert_eq!(s, Status::BadArg as u8);
+}
+
+/// LINK-19.6: `UI` what=4 is the radio's own report for Console's debug info: the flash chip and the store's
+/// mount (a user's radio whose writes didn't stay, Nov 19, 2026), calibration, the chips, what is stored, and no
+/// callsign.
+#[test]
+fn ui_radio_report() {
+    let mut pc = Pc::new(true);
+    pc.app.set.set_callsign(b"VE7ABC");
+    let mut dev = Device::default();
+    dev.selftest.flash_id = 0xEF_4016;
+    dev.selftest.flash_mb = 4;
+    dev.selftest.store = 3;
+    dev.selftest.chips = 3;
+    let mut all = std::string::String::new();
+    let mut i = 0;
+    let mut l = crate::term::cmd::Line::new();
+    while crate::uistate::radio_line(&pc.app, &pc.st, &dev, i, &mut l) {
+        all.push_str(core::str::from_utf8(l.as_bytes()).unwrap());
+        all.push('\n');
+        i += 1;
+    }
+    assert!(all.starts_with("firmware version="), "{all}");
+    assert!(all.contains("flash id=0xef4016 mb=4 store=FAILED layout="), "{all}");
+    assert!(all.contains("cal state=unknown") && all.contains("chips bk4829=0x3 ") && all.contains("data channels="), "{all}");
+    assert!(all.contains("restart after=start in_a_row=0"), "{all}");
+    assert!(!all.contains("VE7ABC"), "no callsign: {all}");
+    let (s, _) = pc.ask(msg::UI, &[4]);
+    assert_eq!(s, Status::Ok as u8);
 }
 
 /// LINK-19, APRS-17.4: the APRS card's readback gives what the card shows (the last heard line, the beacon line, the

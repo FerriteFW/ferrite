@@ -175,7 +175,11 @@ impl View for Value {
                 }
                 h.push(item.name().as_bytes());
                 let hw = w::field(b, 14, 120, BOX_Y + 6, BOX_Y + 24, BOX_Y + 19, h.as_bytes(), const { &w::st(&UI_12B, TEXT, BG, Align::Left) });
-                w::field(b, 22 + hw, 204 - hw, BOX_Y + 6, BOX_Y + 24, BOX_Y + 19, def.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Right) });
+                // "default " goes when the whole doesn't fit beside the name ("5 Offset" with "default Simplex ·
+                // channel" was 175 px in 148): the value and whose still read as the default there
+                let d = def.as_bytes();
+                let d = if text4_width(d, &UI_12) > 204 - hw { d.strip_prefix(b"default ".as_slice()).unwrap_or(d) } else { d };
+                w::field(b, 22 + hw, 204 - hw, BOX_Y + 6, BOX_Y + 24, BOX_Y + 19, d, const { &w::st(&UI_12, SUB, BG, Align::Right) });
             });
             for r in [R_FREQ, R_SUB, R_INFO] {
                 app.drawn.hash[r] = 0; // inside the box just cleared

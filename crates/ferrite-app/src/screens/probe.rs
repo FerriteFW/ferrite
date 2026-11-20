@@ -360,7 +360,8 @@ impl View for Counter {
                 }
             });
         }
-        if app.dirty(2, Mix::new().h(&f).get()) {
+        // DISP-31: and whether it is live (white) or the last reading (grey): it stayed white once stale
+        if app.dirty(2, Mix::new().h(&f).h(&(live || self.hold)).get()) {
             ferrite_ui::canvas::banded(lcd, 0, 42, 240, 52, BG, |lcd| {
                 if f == 0 {
                     w::field(lcd, 8, 224, 56, 76, 70, b"Listening...", const { &w::st(&UI_12B, AMBER, BG, Align::Left) });
@@ -370,9 +371,10 @@ impl View for Counter {
             });
         }
         let lit = if f == 0 { 0 } else { w::meter_level(rssi) };
-        if app.dirty(3, Mix::new().h(&lit).get()) {
+        // DISP-31: the level's text and colour as well as its bars (the text stayed "+30" over a "+20" reading)
+        let st = if f == 0 { Buf::new() } else { w::s_text(rssi) };
+        if app.dirty(3, Mix::new().h(&lit).h(&st).h(&live).get()) {
             w::meter(lcd, 8, 104, None, lit, if live { GREEN } else { DIM }, BG);
-            let st = if f == 0 { Buf::new() } else { w::s_text(rssi) };
             w::field(lcd, 208, 24, 98, 116, 112, st.as_bytes(), const { &w::st(&UI_12B, TEXT, BG, Align::Right) });
         }
         if app.dirty(4, 1) {

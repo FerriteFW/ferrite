@@ -89,6 +89,10 @@ impl View for Edit {
         for (i, item) in GRID.into_iter().enumerate() {
             let mut v = Buf::<16>::new();
             item.text(&cfg, false, &mut v);
+            if item == crate::slot::Item::Offset && cfg.split {
+                // "TX 145.920" is 70 px in the 62 px cell: "Split" here; hold 7 shows its TX (VFO-26.6)
+                v.set(b"Split");
+            }
             let focused = i as u8 == cell;
             let grey = app.greyed(item).is_some();
             let (x, y) = (7 + (i as i32 % 3) * 77, 85 + (i as i32 / 3) * 36);
@@ -147,8 +151,12 @@ pub(crate) fn other_slots(app: &mut App, lcd: &mut impl Panel, live: &ferrite_co
         if app.dirty(R_LINE + k, Mix::new().h(&s).h(&t).get()) {
             let y = 268 + k as i32 * 17;
             w::badge(lcd, 7, y, s, false, BG);
-            w::field(lcd, 21, 4, y - 1, y + 16, y + 11, b"", const { &w::st(&UI_12, SUB, BG, Align::Left) });
-            w::field(lcd, 25, 211, y - 1, y + 16, y + 11, t.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Left) });
+            // DISP-31: never into the hint bar's line (y 300): the second line's box reached it, and each scan hit
+            // erased it
+            let y1 = (y + 16).min(w::HINT_Y);
+            w::field(lcd, 21, 4, y - 1, y1, y + 11, b"", const { &w::st(&UI_12, SUB, BG, Align::Left) });
+            // a long channel name with its state ("443.475 · Club repeater · paused", 224 px) is cut on purpose, with "…"
+            w::field(lcd, 25, 211, y - 1, y1, y + 11, w::fit(t.as_bytes(), &UI_12, 211), const { &w::st(&UI_12, SUB, BG, Align::Left) });
         }
     }
 }

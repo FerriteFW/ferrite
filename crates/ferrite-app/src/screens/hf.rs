@@ -951,8 +951,10 @@ impl View for Hf {
         if app.dirty(R_INFO, Mix::new().b(step.as_bytes()).h(&chip1).b(su.as_bytes()).get()) {
             let mut t = Buf::<32>::new();
             let _ = uwrite!(t, "{} step \u{b7} {}", step, if chip1 { "chip 1" } else { "SI4732" });
-            w::field(lcd, 12, 140, 104, 120, 116, t.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Left) });
-            w::field(lcd, 152, 80, 104, 120, 116, su.as_bytes(), const { &w::st(&UI_12B, TEXT, BG, Align::Right) });
+            // DISP-31: to y 119, above the band strip (from 118, its marker from 119): to 120 each signal change cut the
+            // marker's top pixel row
+            w::field(lcd, 12, 140, 104, 119, 116, t.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Left) });
+            w::field(lcd, 152, 80, 104, 119, 116, su.as_bytes(), const { &w::st(&UI_12B, TEXT, BG, Align::Right) });
         }
         // SIDE2's mode row for a moment (HF-12), over the band strip and the meter; else those.
         // HF-3, HF-19: the patch's progress in a box of the same place while it streams.

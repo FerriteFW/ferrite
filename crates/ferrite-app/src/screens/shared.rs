@@ -227,6 +227,14 @@ pub const KNOB_REST_MS: u32 = 400;
 impl App {
     /// HOME-13: the knob stepped within [`KNOB_REST_MS`]. Signed, since a step can carry a time just ahead of
     /// the last tick's.
+    /// DISP-31: some regions wait on purpose now, and a fresh repaint may differ until they don't: the knob turning
+    /// (HOME-13), home under a shortcut's popup (HOME-8) and under the quick menu (HOME-17): each waits until it goes.
+    pub fn redraw_deferred(&self) -> bool {
+        self.knob_busy()
+            || self.screen == crate::Screen::Home && self.drawn.popup != 0 && self.toast.is_some_and(|t| t.center)
+            || super::qmenu::frozen(self)
+    }
+
     pub(crate) fn knob_busy(&self) -> bool {
         self.knob_at.is_some_and(|t| (self.now.wrapping_sub(t) as i32) < KNOB_REST_MS as i32)
     }

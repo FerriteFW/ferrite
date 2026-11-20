@@ -1,0 +1,490 @@
+## 40 C8 Channel browser
+MENU       -> =
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 41 C11 Zones
+MENU       -> Home | TuneSlot { slot: 0, freq: 14652000 }; SlotParam { slot: 0, param: Mode, value: 1 }; SlotParam { slot: 0, param: Bandwidth, value: 1 }; SlotParam { slot: 0, param: Squelch, value: 4 }; SlotParam { slot: 0, param: RxTone, value: 0 }; SlotParam { slot: 0, param: TxTone, value: 0 }; SlotParam { slot: 0, param: Offset, value: 0 }; SlotParam { slot: 0, param: Power, value: 0 }; SlotParam { slot: 0, param: BusyLock, value: 0 }; SlotParam { slot: 0, param: Reverse, value: 0 }; SlotParam { slot: 0, param: Split, value: 0 }; SlotParam { slot: 0, param: EndTone, value: 0 }; SlotParam { slot: 0, param: Tail, value: 0 }; SlotParam { slot: 0, param: RxOnly, value: 0 }; VoxScreen(true) | toast "Slot A" "Simplex"
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> Zone editor
+V/M        -> =
+STAR       -> Confirm
+HASH       -> = | toast "New zone" "Zone 7"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 42 C12 Range presets
+MENU       -> Range preset
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> Confirm
+HASH       -> Range preset
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 43 C13 Skip list
+MENU       -> =
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> = | toast "Skip list" "cleared"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 44 C14 Waypoints
+MENU       -> Go to waypoint
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> = | toast "Waypoint marked" "here"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 45 C15 Go to waypoint
+MENU       -> =
+BACK       -> Waypoints
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> = | toast "Waypoint marked" "here"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 46 C16 GPS position
+MENU       -> GPS satellites
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> GPS satellites
+RIGHT      -> GPS satellites
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> = | toast "Waypoint marked" "here"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> Options
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 47 C18 HF recent
+MENU       -> Home | VoxScreen(true)
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> = | toast "Recent list" "cleared"
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 48 D1 Quick
+MENU       -> Value editor
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> = | SlotParam { slot: 0, param: Squelch, value: 3 }
+RIGHT      -> = | SlotParam { slot: 0, param: Squelch, value: 5 }
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> More
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> = | SlotParam { slot: 0, param: Squelch, value: 3 }; SlotParam { slot: 0, param: Squelch, value: 2 }; SlotParam { slot: 0, param: Squelch, value: 1 }; SlotParam { slot: 0, param: Squelch, value: 0 }; SlotParam { slot: 0, param: Squelch, value: 9 }
+hold RIGHT -> = | SlotParam { slot: 0, param: Squelch, value: 5 }; SlotParam { slot: 0, param: Squelch, value: 6 }; SlotParam { slot: 0, param: Squelch, value: 7 }; SlotParam { slot: 0, param: Squelch, value: 8 }; SlotParam { slot: 0, param: Squelch, value: 9 }
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> = | SlotParam { slot: 0, param: Squelch, value: 5 }
+knob -1    -> = | SlotParam { slot: 0, param: Squelch, value: 3 }
+
+## 49 D2 More
+MENU       -> Settings group
+BACK       -> Home | VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> Status
+1          -> Settings group
+2          -> Settings group
+3          -> Settings group
+4          -> Settings group
+5          -> Settings group
+6          -> Settings group
+7          -> Settings group
+8          -> Settings group
+9          -> Settings group
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+

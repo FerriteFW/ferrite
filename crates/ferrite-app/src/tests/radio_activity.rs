@@ -2187,6 +2187,17 @@ fn squelch_readback_follows_the_signal() {
     t.app.key_up(Key::Side(1), t.t, &s);
 }
 
+/// SBAR-2.1: MENU 0 6 6's 12 h reaches the status bar (it reached only the GPS screen, a user's report Nov 19,
+/// 2026); UTC keeps 24 h.
+#[test]
+fn bar_follows_the_12_hour_clock() {
+    let t = ready();
+    let dev = Device { clock_min: Some(14 * 60 + 32), ..Default::default() };
+    assert!(!t.app.status_bar(&t.live, &dev).h12, "24 h to start");
+    t.app.set.clock = 1;
+    assert!(t.app.status_bar(&t.live, &dev).h12, "12 h");
+}
+
 /// SBAR-2: with no time source the callsign stands in the clock's place (nothing with none set); a clock wins
 /// over it; the readback's `bar` carries it as `call`.
 #[test]

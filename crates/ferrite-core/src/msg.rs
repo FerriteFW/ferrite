@@ -1092,6 +1092,9 @@ pub struct SelfTest {
     pub battery_trim: i8,
     /// SELF-8: the MCU's 96-bit factory unique ID, lowest word first; zeros until read.
     pub uid: [u32; 3],
+    /// LINK-19.6: what the store's mount found: 0 not known (the simulators), 1 mounted, 2 first boot (formatted),
+    /// 3 failed (nothing is saved this power-on), 4 another layout's data (UPD-16).
+    pub store: u8,
 }
 
 /// The link (chapter 29): cable, and a write session's progress.

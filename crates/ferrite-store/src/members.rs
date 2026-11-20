@@ -142,6 +142,7 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
 
     /// Channels under `key` by one pass over the records (a zone's when its count isn't known).
     pub(crate) fn tally(&self, key: ZoneId) -> u16 {
+        ferrite_core::flashstats::add(&ferrite_core::flashstats::PASSES, 1);
         (0..MAX_CHANNELS).filter(|&n| self.member(key, n).is_some()).count() as u16
     }
 
@@ -149,6 +150,7 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
     /// one pass each: a bulk write leaves hundreds of zones to count (one pass reads all 4,000 channel slots).
     #[inline(never)]
     pub(crate) fn tally_many(&self, keys: &[ZoneId; ZCACHE]) -> [u16; ZCACHE] {
+        ferrite_core::flashstats::add(&ferrite_core::flashstats::PASSES, 1);
         let mut n = [0u16; ZCACHE];
         for num in 0..MAX_CHANNELS {
             let [lo, sq] = self.peek(num);

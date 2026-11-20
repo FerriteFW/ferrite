@@ -94,6 +94,7 @@ impl Chip {
             BusyDelay.delay_us(20);
             t += 20;
         }
+        ferrite_core::flashstats::add(&ferrite_core::flashstats::WAIT_US, t);
         Ok(())
     }
 
@@ -103,6 +104,10 @@ impl Chip {
             return Err(NorError);
         }
         let spi = self.spi.as_mut().ok_or(NorError)?;
+        {
+            use ferrite_core::flashstats::*;
+            add(if op == SECTOR_ERASE { &ERASES } else { &PROGRAMS }, 1);
+        }
         Self::command(spi, WRITE_ENABLE);
         spi.select(true);
         Self::command_addr(spi, op, addr);
@@ -146,6 +151,14 @@ impl Nor for Chip {
         Self::command_addr(spi, READ, addr);
         spi.read(buf);
         spi.select(false);
+        {
+            use ferrite_core::flashstats::*;
+            add(&READS, 1);
+            add(&READ_BYTES, buf.len() as u32);
+            if suspended {
+                add(&SUSPENDS, 1);
+            }
+        }
         if suspended {
             Self::command(spi, RESUME);
             BusyDelay.delay_us(T_SUS_US);

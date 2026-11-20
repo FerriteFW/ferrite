@@ -1572,6 +1572,18 @@ pub fn radio_line<S: ChannelStore>(app: &App, st: &S, dev: &Device, i: u16, l: &
             kn(l, "bt_on", app.bt_on() as u32);
             kn(l, "bt", dev.bt as u32);
         }
+        9 => {
+            // where the flash's time goes (counters since power-on)
+            let [r, rb, p, e, s, w, ps] = ferrite_core::flashstats::all();
+            l.push(b"flashwork");
+            kn(l, "reads", r);
+            kn(l, "read_kb", rb / 1024);
+            kn(l, "programs", p);
+            kn(l, "erases", e);
+            kn(l, "suspends", s);
+            kn(l, "wait_ms", w / 1000);
+            kn(l, "passes", ps);
+        }
         8 => {
             l.push(b"restart");
             l.push(match dev.restart[0] {

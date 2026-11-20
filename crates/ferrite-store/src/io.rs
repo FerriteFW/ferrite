@@ -170,11 +170,9 @@ impl<N: Nor> Flash<N> {
     pub async fn erase(&self, addr: u32) -> Result {
         self.mark(addr, 1);
         self.nor.borrow_mut().start_erase(addr)?;
-        let mut r = self.wait().await;
-        // SAFE-1.4: an erase that didn't leave the sector blank failed, whatever the chip's status said.
-        if r.is_ok() && !self.blank(addr, SECTOR)? {
-            r = Err(crate::NorError);
-        }
+        // SAFE-1.4: no blank check here (4 KB read back each erase, Alex Nov 19, 2026: speed): an erase that didn't
+        // take fails the program after it, whose read-back can't match (a program only clears bits).
+        let r = self.wait().await;
         self.mark(addr, 1);
         r
     }
@@ -322,15 +320,16 @@ mod wait_tests {
         async fn pause() {}
     }
 
-    /// SAFE-1.4: a program that didn't take and an erase that left data both fail, though the chip said done (a
-    /// user's radio, Nov 19, 2026: writes "applied" that never stayed).
+    /// SAFE-1.4: a program that didn't take fails, though the chip said done (a user's radio, Nov 19, 2026: writes
+    /// "applied" that never stayed); so does a program after an erase that left data (the erase itself isn't read
+    /// back: its program's read-back catches it).
     #[test]
     fn writes_that_dont_take_fail() {
         let f = Flash::new(Deaf { held: 0xFF });
         assert_eq!(block(f.program(SCRATCH_RING.start, &[0x12; 300])), Err(NorError), "a program that didn't take");
-        assert_eq!(block(f.erase(SCRATCH_RING.start)), Ok(()), "an erase that left it blank is fine");
         let f = Flash::new(Deaf { held: 0x00 });
-        assert_eq!(block(f.erase(SCRATCH_RING.start)), Err(NorError), "an erase that left data");
+        assert_eq!(block(f.erase(SCRATCH_RING.start)), Ok(()), "the erase says done");
+        assert_eq!(block(f.program(SCRATCH_RING.start, &[0x12; 16])), Err(NorError), "the program after it fails");
     }
 }
 

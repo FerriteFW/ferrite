@@ -10,6 +10,8 @@ pub static ERASES: AtomicU32 = AtomicU32::new(0);
 pub static SUSPENDS: AtomicU32 = AtomicU32::new(0);
 pub static WAIT_US: AtomicU32 = AtomicU32::new(0);
 pub static PASSES: AtomicU32 = AtomicU32::new(0);
+/// Local found again (CHAN-34: a record read for every channel).
+pub static LOCAL_FINDS: AtomicU32 = AtomicU32::new(0);
 
 /// Adds `n` to a counter (wrapping).
 pub fn add(c: &AtomicU32, n: u32) {
@@ -17,6 +19,6 @@ pub fn add(c: &AtomicU32, n: u32) {
 }
 
 /// Every counter, in the order above.
-pub fn all() -> [u32; 7] {
-    [&READS, &READ_BYTES, &PROGRAMS, &ERASES, &SUSPENDS, &WAIT_US, &PASSES].map(|c| c.load(Relaxed))
+pub fn all() -> [u32; 8] {
+    [&READS, &READ_BYTES, &PROGRAMS, &ERASES, &SUSPENDS, &WAIT_US, &PASSES, &LOCAL_FINDS].map(|c| c.load(Relaxed))
 }

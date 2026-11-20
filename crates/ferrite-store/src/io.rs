@@ -159,6 +159,7 @@ impl<N: Nor> Flash<N> {
             if rest[..n].iter().any(|&b| b != 0xFF) {
                 self.nor.borrow_mut().start_program(a, &rest[..n])?;
                 self.wait().await?;
+                self.verify(a, &rest[..n])?; // SAFE-1.4
             }
             a += n as u32;
             rest = &rest[n..];
@@ -169,9 +170,25 @@ impl<N: Nor> Flash<N> {
     pub async fn erase(&self, addr: u32) -> Result {
         self.mark(addr, 1);
         self.nor.borrow_mut().start_erase(addr)?;
+        // SAFE-1.4: no blank check here (4 KB read back each erase, Alex Nov 19, 2026: speed): an erase that didn't
+        // take fails the program after it, whose read-back can't match (a program only clears bits).
         let r = self.wait().await;
         self.mark(addr, 1);
         r
+    }
+
+    /// SAFE-1.4: the bytes just programmed at `addr` read back as `data`; else the write failed (a chip that missed
+    /// its write enable, or a program that didn't take, reports nothing itself).
+    fn verify(&self, addr: u32, data: &[u8]) -> Result {
+        let mut buf = [0u8; 64];
+        for (i, want) in data.chunks(64).enumerate() {
+            let got = &mut buf[..want.len()];
+            self.raw_read(addr + (i * 64) as u32, got)?;
+            if got != want {
+                return Err(crate::NorError);
+            }
+        }
+        Ok(())
     }
 
     /// Erases a sector that readers should see as erased from the start (settings reset).
@@ -279,6 +296,40 @@ mod wait_tests {
         assert!(f.nor().polls > WAIT_MAX && f.nor().polls <= WAIT_MAX + 2);
         let f = Flash::new(Stuck { polls: 0 });
         assert_eq!(block(f.program(SCRATCH_RING.start, &[0u8; 16])), Err(NorError));
+    }
+
+    /// A chip that takes every command and does nothing: programs and erases report done, the bytes don't change
+    /// (as a missed write enable leaves them). Its bytes start as `held`.
+    struct Deaf {
+        held: u8,
+    }
+    impl Nor for Deaf {
+        fn read(&mut self, _: u32, buf: &mut [u8]) -> Result {
+            buf.fill(self.held);
+            Ok(())
+        }
+        fn start_program(&mut self, _: u32, _: &[u8]) -> Result {
+            Ok(())
+        }
+        fn start_erase(&mut self, _: u32) -> Result {
+            Ok(())
+        }
+        fn busy(&mut self) -> Result<bool> {
+            Ok(false)
+        }
+        async fn pause() {}
+    }
+
+    /// SAFE-1.4: a program that didn't take fails, though the chip said done (a user's radio, Nov 19, 2026: writes
+    /// "applied" that never stayed); so does a program after an erase that left data (the erase itself isn't read
+    /// back: its program's read-back catches it).
+    #[test]
+    fn writes_that_dont_take_fail() {
+        let f = Flash::new(Deaf { held: 0xFF });
+        assert_eq!(block(f.program(SCRATCH_RING.start, &[0x12; 300])), Err(NorError), "a program that didn't take");
+        let f = Flash::new(Deaf { held: 0x00 });
+        assert_eq!(block(f.erase(SCRATCH_RING.start)), Ok(()), "the erase says done");
+        assert_eq!(block(f.program(SCRATCH_RING.start, &[0x12; 16])), Err(NorError), "the program after it fails");
     }
 }
 

@@ -142,7 +142,31 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
 
     /// Channels under `key` by one pass over the records (a zone's when its count isn't known).
     pub(crate) fn tally(&self, key: ZoneId) -> u16 {
+        ferrite_core::flashstats::add(&ferrite_core::flashstats::PASSES, 1);
         (0..MAX_CHANNELS).filter(|&n| self.member(key, n).is_some()).count() as u16
+    }
+
+    /// CHAN-36.1: the counts of up to [`ZCACHE`] zones (`keys`, [`FREE`] for none) by one pass over the records, not
+    /// one pass each: a bulk write leaves hundreds of zones to count (one pass reads all 4,000 channel slots).
+    #[inline(never)]
+    pub(crate) fn tally_many(&self, keys: &[ZoneId; ZCACHE]) -> [u16; ZCACHE] {
+        ferrite_core::flashstats::add(&ferrite_core::flashstats::PASSES, 1);
+        let mut n = [0u16; ZCACHE];
+        for num in 0..MAX_CHANNELS {
+            let [lo, sq] = self.peek(num);
+            if sq == 0xFF || !keys.iter().any(|&k| k != FREE && k as u8 == lo) {
+                continue;
+            }
+            let b = self.read_ch(num);
+            if !ch_valid(&b) {
+                continue;
+            }
+            let z = zkey(ch_zone(&b));
+            if let Some(i) = keys.iter().position(|&k| k == z) {
+                n[i] += 1;
+            }
+        }
+        n
     }
 
     /// The list holding `zone`, if one does.
@@ -210,6 +234,23 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
 
     /// How many channels are under `key`: [`ALL`], no zone, or a zone (its list, its count in RAM, its record, or
     /// a pass when none of those knows).
+    /// [`Self::zone_len_of`] where it needs no pass (a list, the cache or a clean stored count); None otherwise.
+    pub(crate) fn known_len(&self, key: ZoneId) -> Option<u16> {
+        if key >= MAX_ZONES {
+            return Some(self.zone_len_of(key));
+        }
+        if let Some(k) = self.list_of(key) {
+            return Some(self.lists.borrow()[k].n);
+        }
+        if let Some(&(_, n)) = self.zcache.get().iter().find(|e| e.0 == key) {
+            return Some(n);
+        }
+        if !self.dirty(key) {
+            return self.stored_count(key);
+        }
+        None
+    }
+
     pub(crate) fn zone_len_of(&self, key: ZoneId) -> u16 {
         match key {
             ALL => return self.count.get(),
@@ -301,6 +342,9 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
     /// A channel record changed from zone key `old` to `new` ([`FREE`]: no channel): the totals, the zones' counts,
     /// the slot lists and the cursors follow.
     pub(crate) fn note(&self, num: u16, old: ZoneId, new: ZoneId) {
+        if new < MAX_ZONES && new >= self.zones.get() {
+            self.orphans.set(true); // CHAN-36.1
+        }
         self.at_all.set(At::NONE);
         self.at_zone.set(At::NONE);
         self.cver.set(self.cver.get().wrapping_add(1));
@@ -406,6 +450,8 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         }
         self.count.set(all);
         self.loose.set(loose);
+        // CHAN-36.1: a channel naming a zone past the last one
+        self.orphans.set(per[self.zones.get().min(MAX_ZONES) as usize..].iter().any(|&n| n > 0));
         self.hashes.borrow_mut()[..CH_SECTORS].copy_from_slice(&h);
         self.f.fresh((1u128 << CH_SECTORS) - 1);
         self.dirty.set([0; DIRTY_WORDS]);

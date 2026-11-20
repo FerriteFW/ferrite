@@ -7,7 +7,9 @@
 //! - Every write goes to the store's queue; the Storage task carries it out. Programs and erases are started
 //!   and then waited for on a timer, so the UI runs meanwhile and never waits for an erase.
 //! - A UI read while the chip is busy suspends the program or erase (W25Q Erase/Program Suspend, 0x75), reads,
-//!   and resumes it (0x7A). The store keeps reads away from the bytes being changed ([`ferrite_store::io`]).
+//!   and resumes it (0x7A), on a Winbond chip only (SAFE-1.3: makers put the suspend flag in different places, and
+//!   stock never suspends); on any other chip the read waits for the program or erase to end, as stock does. The
+//!   store keeps reads away from the bytes being changed ([`ferrite_store::io`]).
 //!
 //! The driver here writes only inside ferrite_core::layout::WRITABLE, so calibration, stock's data and the
 //! bootloader's update area are refused below everything else. The chip is set up and identified by uradio's
@@ -37,6 +39,10 @@ const RESUME: u8 = 0x7A;
 const SUS: u8 = 0x80;
 /// tSUS: the longest a suspend takes, and the least time between a resume and the next suspend.
 const T_SUS_US: u32 = 20;
+/// SAFE-1.3: the JEDEC maker byte of the chips whose suspend we know (Winbond: SUS is status 2's bit 7).
+const SUSPEND_MAKER: u8 = 0xEF;
+/// The longest a read waits for a program or erase it can't suspend (several times a slow sector erase).
+const WAIT_READ_US: u32 = 2_000_000;
 
 /// Where writes may go: ferrite_core::layout::WRITABLE, or nowhere in the bring-up build.
 #[cfg(not(feature = "bringup"))]
@@ -50,6 +56,8 @@ pub struct Chip {
     size: u32,
     /// A program or erase was started and hasn't been seen to finish.
     active: bool,
+    /// SAFE-1.3: a Winbond chip, whose program or erase a read may suspend.
+    suspend: bool,
 }
 
 impl Chip {
@@ -76,12 +84,30 @@ impl Chip {
         s
     }
 
+    /// SAFE-1.3: until the chip's program or erase ends (busy-polled, as stock does), or [`WAIT_READ_US`].
+    fn wait_idle(spi: &mut Flash) -> ferrite_store::Result {
+        let mut t = 0;
+        while Self::status(spi, READ_STATUS1) & 1 != 0 {
+            if t >= WAIT_READ_US {
+                return Err(NorError);
+            }
+            BusyDelay.delay_us(20);
+            t += 20;
+        }
+        ferrite_core::flashstats::add(&ferrite_core::flashstats::WAIT_US, t);
+        Ok(())
+    }
+
     fn start(&mut self, op: u8, addr: u32, data: &[u8]) -> ferrite_store::Result {
         // The bring-up build never programs or erases, whatever asks (the store isn't even mounted there).
         if cfg!(feature = "bringup") {
             return Err(NorError);
         }
         let spi = self.spi.as_mut().ok_or(NorError)?;
+        {
+            use ferrite_core::flashstats::*;
+            add(if op == SECTOR_ERASE { &ERASES } else { &PROGRAMS }, 1);
+        }
         Self::command(spi, WRITE_ENABLE);
         spi.select(true);
         Self::command_addr(spi, op, addr);
@@ -99,8 +125,15 @@ impl Nor for Chip {
         }
         let active = self.active;
         let spi = self.spi.as_mut().ok_or(NorError)?;
-        // A program or erase running: suspend it for the read (its own bytes are never read meanwhile).
-        let suspended = active && Self::status(spi, READ_STATUS1) & 1 != 0 && {
+        let busy = active && Self::status(spi, READ_STATUS1) & 1 != 0;
+        // SAFE-1.3: another maker's chip: wait for the program or erase to end (stock's way), then read.
+        if busy && !self.suspend {
+            Self::wait_idle(spi)?;
+            self.active = false;
+        }
+        // A program or erase running on a Winbond chip: suspend it for the read (its own bytes are never read
+        // meanwhile).
+        let suspended = busy && self.suspend && {
             Self::command(spi, SUSPEND);
             let mut t = 0;
             while Self::status(spi, READ_STATUS2) & SUS == 0 && Self::status(spi, READ_STATUS1) & 1 != 0 && t < 4 * T_SUS_US {
@@ -109,10 +142,23 @@ impl Nor for Chip {
             }
             Self::status(spi, READ_STATUS2) & SUS != 0
         };
+        // The suspend didn't take: never read a busy chip (it answers 0xFF or garbage); wait for it instead.
+        if busy && self.suspend && !suspended && Self::status(spi, READ_STATUS1) & 1 != 0 {
+            Self::wait_idle(spi)?;
+            self.active = false;
+        }
         spi.select(true);
         Self::command_addr(spi, READ, addr);
         spi.read(buf);
         spi.select(false);
+        {
+            use ferrite_core::flashstats::*;
+            add(&READS, 1);
+            add(&READ_BYTES, buf.len() as u32);
+            if suspended {
+                add(&SUSPENDS, 1);
+            }
+        }
         if suspended {
             Self::command(spi, RESUME);
             BusyDelay.delay_us(T_SUS_US);
@@ -175,7 +221,8 @@ pub fn make() -> (Option<(u32, u32)>, &'static Store) {
         Err(_) => (None, None),
     };
     let size = id.map_or(0, |i| i.1);
-    let store: &'static Store = cortex_m::singleton!(: Store = FlashStore::new(Chip { spi, size, active: false }, RadioData::new())).unwrap();
+    let suspend = id.is_some_and(|i| (i.0 >> 16) as u8 == SUSPEND_MAKER); // SAFE-1.3
+    let store: &'static Store = cortex_m::singleton!(: Store = FlashStore::new(Chip { spi, size, active: false, suspend }, RadioData::new())).unwrap();
     store.set_deferred(true);
     let _ = STORE.init(Shared(store));
     (id, store)

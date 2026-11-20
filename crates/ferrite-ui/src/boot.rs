@@ -280,7 +280,7 @@ fn card_static(lcd: &mut impl Panel, b: &BootInfo, o: &Owner) {
         }
     }
     lcd.text4(12, 277, b"FERRITE", &UI_12B, TEXT, BG);
-    hint_bar(lcd, &[("Any key", "skip"), ("", "Set in the web app")]);
+    hint_bar(lcd, &[("Any key", "skip"), ("", "Set in Console")]);
 }
 
 #[cfg(test)]

@@ -53,7 +53,7 @@ const PAGES: [(&str, crate::text::Txt, Ask); 8] = [
     ("Region", txt!("Where you may transmit, and defaults like weather alerts."), Ask::Region),
     (
         "Owner card",
-        txt!("Optional. Shown at power on if chosen (MENU 0 7 3 3); later, edit it in the web app."),
+        txt!("Optional. Shown at power on if chosen (MENU 0 7 3 3); later, edit it in Ferrite Console."),
         Ask::Owner,
     ),
     ("Time", txt!("Time zone, clock and units. The GPS sets the time once it has a fix."), Ask::Time),
@@ -517,7 +517,7 @@ fn summary_note(app: &App) -> Buf<160> {
     if app.set.callsign.is_empty() {
         note.push(crate::text::load(txt!("No callsign: automatic transmissions stay off. ")).as_bytes());
     }
-    note.push(crate::text::load(txt!("Add channels with hold 9 on a VFO, or load them with the web app. Run setup again: MENU 0 9 7 1.")).as_bytes());
+    note.push(crate::text::load(txt!("Add channels with hold 9 on a VFO, or load them with Ferrite Console. Run setup again: MENU 0 9 7 1.")).as_bytes());
     note
 }
 

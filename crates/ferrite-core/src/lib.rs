@@ -13,6 +13,7 @@ extern crate std;
 pub mod acc;
 pub mod audio;
 pub mod battery;
+pub mod flashstats;
 pub mod chipid;
 pub mod clocktree;
 pub mod cmdq;

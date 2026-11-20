@@ -674,7 +674,7 @@
   | st scr=Home act=B keyed=- remote=0 mode=off A=off/20 B=-/20 C=off/20 xb=0
 > ui frob
   writes true
-  ! ui, ui keys or ui status
+  ! ui, ui keys, ui status or ui radio
 > key
   writes true
   ! key NAME [long|down|up]: ui keys lists the names

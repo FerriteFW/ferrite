@@ -213,8 +213,9 @@ fn console_writes_the_lists() {
 }
 
 /// LINK-58 (decision 329): a range preset's 48 skipped frequencies written from the link go as four store writes,
-/// each rewriting the presets' sector once; the list lives in the preset's own record, so deleting the preset before
-/// it moves its index, never its list.
+/// queued together, and the four go in one rewrite of the presets' sector (LINK-58.2, decision 227's merge, Nov 19, 2026: four
+/// rewrites before, 128 erases for a Console write of 16 lists); the list lives in the preset's own record, so
+/// deleting the preset before it moves its index, never its list.
 #[test]
 fn console_writes_preset_skips() {
     use ferrite_app::data::{RangePreset, SKIP_CHUNK};
@@ -223,15 +224,24 @@ fn console_writes_preset_skips() {
     assert!(s.add_preset(&pr(b"2 m", 14_400_000)) && s.add_preset(&pr(b"70 cm", 43_000_000)));
     let list: Vec<u32> = (0..48).map(|j| 43_000_000 + 2_500 * (j + 1)).collect();
     let before = s.nor().erases.clone();
+    s.set_deferred(true); // as the link queues them for the Storage task
     for at in (0..48).step_by(SKIP_CHUNK) {
         let mut f = [0; SKIP_CHUNK];
         f.copy_from_slice(&list[at..at + SKIP_CHUNK]);
         assert!(s.request(Op::PresetSkips { preset: 1, at: at as u8, count: 48, f }));
     }
+    let mut runs = 0;
+    while let Some(j) = s.next_job() {
+        assert!(ferrite_store::block(s.run(j)));
+        runs += 1;
+    }
+    s.set_deferred(false);
+    assert_eq!(runs, 1, "the other three merged into the first's rewrite");
     let w = worst(&before, &s.nor().erases);
     println!("48 skipped frequencies: {w:?}");
     let most = w.iter().filter(|(s, _)| region(*s) == "other").map(|x| x.1).max().unwrap_or(0);
-    assert!(most <= 4, "the presets' sector took {most} erases: {w:?}");
+    assert!(most <= 1, "the presets' sector took {most} erases: {w:?}");
+    assert_eq!(s.preset(1).map(|p| (p.name, p.start, p.skips)), Some((Buf::from(b"70 cm"), 43_000_000, 48)), "the header as it was, its count new");
     assert_eq!((0..48).map(|j| s.preset_skip(1, j).unwrap()).collect::<Vec<_>>(), list);
     assert!(s.request(Op::DeletePreset(0)));
     assert_eq!((s.preset(0).map(|p| p.skips), s.preset_skip(0, 47)), (Some(48), Some(list[47])), "with its preset");

@@ -738,6 +738,44 @@ fn display_passes_formatter_errors_on() {
     assert!(write!(Full { room: full }, "{f}").is_ok());
 }
 
+/// Command 12 is ACKMODE: a byte turns it on and off, no byte is ignored, and a report round-trips with
+/// command nibble 0x0C. A window's flags: the first frame carries the TX delay, a later one none, and only
+/// the last frame keeps the three-flag tail (or a longer TX tail the host asked for).
+#[test]
+fn kiss_ackmode_and_window_flags() {
+    use kiss::{Command, Params, ACKMODE};
+    let mut p = Params::default();
+    let r = |data: &'static [u8]| kiss::Received { port: 0, command: ACKMODE, data };
+    assert_eq!(p.apply(&r(&[])), Command::Unknown);
+    assert!(!p.ack_mode);
+    assert_eq!(p.apply(&r(&[1])), Command::Set);
+    assert!(p.ack_mode);
+    assert_eq!(p.apply(&r(&[0])), Command::Set);
+    assert!(!p.ack_mode);
+
+    let frame = [0xC0, 0xDB, 0x7E, 1, 2];
+    let mut wire = Vec::new();
+    kiss::encode_cmd(0, ACKMODE, &frame, |b| wire.push(b));
+    assert_eq!(wire[1], 0x0C);
+    let mut d: kiss::Decoder = kiss::Decoder::new();
+    let mut got = None;
+    for &b in &wire {
+        if let Some(r) = d.push(b) {
+            got = Some((r.port, r.command, r.data.to_vec()));
+        }
+    }
+    assert_eq!(got, Some((0, ACKMODE, frame.to_vec())));
+
+    let p = Params { tx_delay: 30, tx_tail: 0, ..p };
+    assert_eq!(p.frame_flags(true, true), (45, 3));
+    assert_eq!(p.frame_flags(true, false), (45, 1));
+    assert_eq!(p.frame_flags(false, true), (0, 3));
+    assert_eq!(p.frame_flags(false, false), (0, 1));
+    // 10 ms of tail is still under three flags, so the frame keeps three. 40 ms is six.
+    assert_eq!(Params { tx_tail: 1, ..p }.closing_flags(), 3);
+    assert_eq!(Params { tx_tail: 4, ..p }.frame_flags(false, true), (0, 6));
+}
+
 /// KISS-11: command 5 sets full duplex (and back); a default decoder is a new one.
 #[test]
 fn kiss_full_duplex_and_default_decoder() {

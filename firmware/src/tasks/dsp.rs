@@ -9,7 +9,8 @@
 //!   jobs on watched slots (roadmap 6f) will share it more finely.
 //! - **Transmit:** the UI task keys slot C, then hands a frame to [`AFSK_TX`]; it is played from TX delay's
 //!   flags to the end (the flags cover the key-up), PC12 high meanwhile, and [`AFSK_DONE`] says it's out so the
-//!   UI task unkeys. Receiving pauses while it plays.
+//!   UI task unkeys. A KISS window stays keyed: the frames queued behind the first go out in the same key-up,
+//!   one flag between them. Receiving pauses while it plays.
 //! - **Transmit test (TERM-33, TERM-34, the tx-bench build; TERM-38):** the Radio task, after a PTT key-up with `txtest` armed,
 //!   signals [`TXTEST`] with the generator to play (a test signal at the arming's level, made a sample at a time:
 //!   [`ferrite_core::txtest::Gen`]); a new generator while one plays takes over at the next half (the suite's
@@ -23,7 +24,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex as M;
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
 use ferrite_app::aprs_live::FRAME_MAX;
-use ferrite_core::audio::{afsk_tx_at, to_dac, tx_bits, uafsk, Decim, TxBits, BLOCK_DAC, BLOCK_IN, BLOCK_OUT};
+use ferrite_core::audio::{afsk_tx_at, to_dac, tx_bits, uafsk, Decim, BLOCK_DAC, BLOCK_IN, BLOCK_OUT};
 use ferrite_core::decoders::{Decoder, Found, Page};
 use ferrite_core::msg::{DecoderKind, DspCmd};
 
@@ -56,8 +57,9 @@ pub enum Heard {
     Miss(uafsk::Miss, u16),
 }
 
-/// Frames heard, to the UI task's APRS task: two deep (a second waits while the first is read; 672 B).
-pub static APRS_RX: Channel<M, Heard, 2> = Channel::new();
+/// Frames heard, to the UI task's APRS task: eight deep, a connected-mode window (Winlink sends several frames
+/// in one transmission; two deep dropped the rest).
+pub static APRS_RX: Channel<M, Heard, 8> = Channel::new();
 /// A frame to send on the transmission the UI task just keyed, and its "sent" (true) or "not sent" (false).
 pub static AFSK_TX: Signal<M, Frame> = Signal::new();
 pub static AFSK_DONE: Signal<M, bool> = Signal::new();
@@ -595,23 +597,34 @@ pub async fn task() {
     }
 }
 
-/// One frame out of DAC1: both halves filled, then each half refilled as it goes out; mid-scale after the last
-/// sample, and stopped once that has played too.
+/// One transmission out of DAC1: both halves filled, then each half refilled as it goes out; mid-scale after
+/// the last sample, and stopped once that has played too. A KISS window is one modulator, so the tone and the
+/// NRZI state run on through every frame of the key-up.
 async fn play(f: &Frame) {
     // The TX delay's flags first: the transmitter's key-up fits in them. FX.25 (APRS-45) when the frame asks for it.
     let cfg = afsk_tx_at(f.txdelay_10ms as u16 * 10, f.level);
-    let mut enc = None;
-    let mut m = uafsk::Modulator::from_bits(tx_bits(f.bytes(), f.fx25, &cfg, &mut enc), cfg);
-    let fill = |half: usize, m: &mut uafsk::Modulator<TxBits>| -> bool {
-        let mut more = true;
-        for d in &audio::DAC_BUF[half * BLOCK_DAC..(half + 1) * BLOCK_DAC] {
-            let s = if more { m.next() } else { None };
-            more &= s.is_some();
-            d.store(to_dac(s.unwrap_or(0)), Relaxed);
-        }
-        more
-    };
-    let mut more = fill(0, &mut m) && fill(1, &mut m);
+    if super::kissq::take_burst() {
+        let m = uafsk::Modulator::from_bits(super::kissq::KissBits::starting(f.bytes(), cfg.preamble), cfg);
+        play_mod(m).await;
+    } else {
+        let mut enc = None;
+        let m = uafsk::Modulator::from_bits(tx_bits(f.bytes(), f.fx25, &cfg, &mut enc), cfg);
+        play_mod(m).await;
+    }
+}
+
+fn fill_half<B: Iterator<Item = u8>>(half: usize, m: &mut uafsk::Modulator<B>) -> bool {
+    let mut more = true;
+    for d in &audio::DAC_BUF[half * BLOCK_DAC..(half + 1) * BLOCK_DAC] {
+        let s = if more { m.next() } else { None };
+        more &= s.is_some();
+        d.store(to_dac(s.unwrap_or(0)), Relaxed);
+    }
+    more
+}
+
+async fn play_mod<B: Iterator<Item = u8>>(mut m: uafsk::Modulator<B>) {
+    let mut more = fill_half(0, &mut m) && fill_half(1, &mut m);
     clock::for_audio().await; // PWR-26.4
     audio::DAC_HALF.reset();
     audio::play_start();
@@ -620,9 +633,9 @@ async fn play(f: &Frame) {
     while tail > 0 {
         let half = audio::DAC_HALF.wait().await as usize;
         if more {
-            more = fill(half, &mut m);
+            more = fill_half(half, &mut m);
         } else {
-            fill(half, &mut m);
+            fill_half(half, &mut m);
             tail -= 1;
         }
     }

@@ -295,6 +295,35 @@ pub struct Framer<'a> {
 
 const FLAG: u8 = 0x7E;
 
+/// `n` HDLC flags (0x7E), least significant bit first, the same bits [`Framer`] emits for its preamble and
+/// postamble. A KISS window sends the TX tail as these after the last frame's closing flag.
+pub struct FlagBits {
+    left: u16,
+    bit: u8,
+}
+
+impl FlagBits {
+    pub const fn new(n: u16) -> Self {
+        FlagBits { left: n, bit: 0 }
+    }
+}
+
+impl Iterator for FlagBits {
+    type Item = u8;
+    fn next(&mut self) -> Option<u8> {
+        if self.left == 0 {
+            return None;
+        }
+        let b = (FLAG >> self.bit) & 1;
+        self.bit += 1;
+        if self.bit == 8 {
+            self.bit = 0;
+            self.left -= 1;
+        }
+        Some(b)
+    }
+}
+
 impl<'a> Framer<'a> {
     pub fn new(frame: &'a [u8], pre: u16, post: u16) -> Self {
         Framer { frame, fcs: crc16_x25(frame).to_le_bytes(), pre, post, stage: 0, index: 0, bit: 0, ones: 0 }

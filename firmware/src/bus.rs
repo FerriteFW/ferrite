@@ -65,8 +65,12 @@ impl Flash {
     }
 }
 impl Spi for Flash {
+    /// SAFE-1.2: a microsecond after each chip-select edge, as stock waits (its delay around every flash command):
+    /// a flash chip needs its select high for a while between commands (tSHSL, 50-100 ns by maker) or it may miss
+    /// the next one, a write enable among them. Back to back it was tens of ns at 120-240 MHz (to Nov 19, 2026).
     fn select(&mut self, on: bool) {
-        FLASH_CS.write(!on)
+        FLASH_CS.write(!on);
+        time::delay_us(1);
     }
     fn transfer(&mut self, byte: u8) -> u8 {
         spi::spi2_xfer(byte)

@@ -1,4 +1,5 @@
-//! SPI2 master, mode 0, PB13 SCK / PB14 MISO / PB15 MOSI. Chip selects belong to the drivers.
+//! SPI2 master, mode 3 as stock (its CTRL1 0x34F: the clock rests high, data read on the rising edge), PB13 SCK /
+//! PB14 MISO / PB15 MOSI. Chip selects belong to the drivers.
 use super::gpio::{pin, Mode, GPIOB};
 use super::regs::*;
 use super::{modify, rd, wr};
@@ -16,7 +17,8 @@ pub fn spi2_init() {
     pin(GPIOB, 13).output(false, Mode::AfPp);
     pin(GPIOB, 14).config(Mode::InPu);
     pin(GPIOB, 15).output(false, Mode::AfPp);
-    wr(SPI2 + SPI_CTRL1, SPI_CTRL1_MSTEN | SPI_CTRL1_SWCSEN | SPI_CTRL1_SWCSIL | mdiv(super::clock::tree())); // /4 at 120 MHz, mode 0, 8-bit
+    // /4 at 120 MHz, 8-bit, mode 3 (SAFE-1.1: stock's mode; it was mode 0 to Nov 19, 2026)
+    wr(SPI2 + SPI_CTRL1, SPI_CTRL1_MSTEN | SPI_CTRL1_SWCSEN | SPI_CTRL1_SWCSIL | SPI_CTRL1_CLKPOL | SPI_CTRL1_CLKPHA | mdiv(super::clock::tree()));
     modify(SPI2 + SPI_CTRL1, 0, SPI_CTRL1_SPIEN);
 }
 

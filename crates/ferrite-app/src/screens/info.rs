@@ -390,7 +390,7 @@ pub(crate) fn def(p: Page) -> PageDef {
         Page::SsbPatch => PageDef {
             title: "SSB patch",
             rows: &SSB_PATCH,
-            note: Note::Txt(txt!("Import it from your own stock firmware with the flasher (--ssb-from) or the web app. Without it HF mode has AM only.")),
+            note: Note::Txt(txt!("Import it from your own stock firmware with the flasher (--ssb-from) or Ferrite Console. Without it HF mode has AM only.")),
             hints: &BACK_ONLY,
         },
         Page::SsbConfirm => PageDef {

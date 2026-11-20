@@ -120,11 +120,11 @@ impl View for Link {
         match self.page {
             LinkPage::Status => {
                 app.table(lcd, &STATUS, cx.live, dev, &(), None);
-                app.help_txt(lcd, 160, 48, txt!("The web app connects by cable or Bluetooth."), b"");
+                app.help_txt(lcd, 160, 48, txt!("Ferrite Console connects by cable or Bluetooth."), b"");
             }
             LinkPage::Progress => {
                 let pct = dev.link.write_pct.unwrap_or(100);
-                app.message(lcd, b"Writing", b"from the web app", b"Keys are ignored while the web app writes. BACK cancels.", TEXT);
+                app.message(lcd, b"Writing", b"from Ferrite Console", b"Keys are ignored while Console writes. BACK cancels.", TEXT);
                 if app.dirty(R_NOTE, Mix::new().h(&pct).get()) {
                     let mut t = Buf::<8>::new();
                     let _ = uwrite!(t, "{} %", pct);

@@ -282,7 +282,7 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
         Entry(concat!("Shortcuts||", txtc!("What holding each digit on home does."))),
     ]),
     ((9, 2), &[
-        Entry(concat!("Bluetooth|Off|", txtc!("The Bluetooth link to the web app."))),
+        Entry(concat!("Bluetooth|Off|", txtc!("The Bluetooth link to Ferrite Console."))),
         Entry(concat!("Link status||", txtc!("Cable and Bluetooth now."))),
         Entry(concat!("Cable port|Auto|", txtc!("Auto, link or terminal; KISS is 0 5 8."))),
     ]),

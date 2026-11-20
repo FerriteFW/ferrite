@@ -459,7 +459,7 @@ impl Session {
                 // UI: its first frame starts the readback, the rest go on from it (LINK-19's pages)
                 if s.p[4] == 0 {
                     s.p[4] = 1;
-                    self.run = Run::List([List::Ui, List::UiKeys, List::UiStatus, List::UiTexts][s.p[0].min(3) as usize], 0);
+                    self.run = Run::List([List::Ui, List::UiKeys, List::UiStatus, List::UiTexts, List::UiRadio][s.p[0].min(4) as usize], 0);
                 }
                 self.more(app, st, dev, live, &mut o);
                 (Status::Ok, o.a[1] == 1)
@@ -596,10 +596,10 @@ impl Session {
                 Status::Ok
             }
             // LINK-19: what the screen shows, as the terminal's `ui` (or `ui keys`) prints it.
-            // what=2: the compact one-line status (`ui status`), for a slow link.
+            // what=2: the compact one-line status (`ui status`), for a slow link; 4 the radio itself (LINK-19.6).
             msg::UI => match p.first().copied().unwrap_or(0) {
-                w @ (0..=3) => {
-                    self.run = Run::List([List::Ui, List::UiKeys, List::UiStatus, List::UiTexts][w as usize], 0);
+                w @ (0..=4) => {
+                    self.run = Run::List([List::Ui, List::UiKeys, List::UiStatus, List::UiTexts, List::UiRadio][w as usize], 0);
                     self.more(app, st, dev, live, &mut o);
                     Status::Ok
                 }

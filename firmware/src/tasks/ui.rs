@@ -583,6 +583,14 @@ pub async fn task() {
         t.si4732 = CHECK_STATE[crate::tasks::CHECK_SI as usize].load(Relaxed) == PASSED;
         t.si_rev = core::array::from_fn(|i| crate::tasks::SI_REV[i].load(Relaxed)); // SELF-5
         t.ssb_patch = ssb_ok;
+        // LINK-19.6: the store's mount, for Console's debug info
+        t.store = match store.mounted() {
+            _ if cfg!(feature = "bringup") => 0,
+            ferrite_store::store::Mounted::Ok => 1,
+            ferrite_store::store::Mounted::FirstBoot => 2,
+            ferrite_store::store::Mounted::Failed => 3,
+            ferrite_store::store::Mounted::Update(_) => 4,
+        };
         t.cal = cal_state(); // CAL-20: the gate's verdict, not only "not blank"
         (t.cal_fault, t.cal_at) = cal_fault(); // CAL-20.4
     }

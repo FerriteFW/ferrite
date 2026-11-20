@@ -791,6 +791,7 @@ pub fn device_at(secs: u64) -> Device {
             si_rev: *b"6000D", // SELF-5: a sample
             ssb_patch: true,
             battery_trim: 0,
+            store: 1, // LINK-19.6: mounted
         },
         link: LinkLive { cable: true, baud_100: 9216, write_pct: None },
         mcu: Default::default(), // PWR-26.6: no MCU clock in the simulator ("Not measured", `mcu=0`)

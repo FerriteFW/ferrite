@@ -615,16 +615,18 @@ class Link:
         # the store never waits for a round trip. In order: a refusal stops it (frames after it may have gone).
         timeout = 8.0 if getattr(self.p, "slow", False) else 4.0
         sent, flight, k, lost = 0, [], 0, 0
+        early = {}  # answers to frames after the first in flight, when they come in the same read (TCP, a quick radio)
         while k < len(frames) or flight:
             while k < len(frames) and len(flight) < self.window:
                 flight.append((self.send(WRITE_MANY, frames[k]), k))
                 k += 1
             end = time.time() + timeout
-            got = None
+            got = early.pop(flight[0][0], None)
             while got is None and time.time() < end:
                 for t, s, status, rest in self.answers():
-                    if t == WRITE_MANY | 0x80 and s == flight[0][0]:
-                        got = (status, rest)
+                    if t == WRITE_MANY | 0x80:
+                        early[s] = (status, rest)  # kept: dropping a later frame's answer stalled every frame
+                got = early.pop(flight[0][0], None)
             if got is None:
                 # a frame or its answer lost on the way: start the windows over (LINK-51) and send again from the
                 # first frame not answered (writing a record again changes nothing)
@@ -634,6 +636,7 @@ class Link:
                 if lost > 3:
                     raise TimeoutError(f"WRITE_MANY: no answer in {timeout:.0f} s after {sent} written")
                 k, flight = flight[0][1], []
+                early.clear()
                 self.resync()
                 continue
             s, rest = got

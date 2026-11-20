@@ -230,3 +230,103 @@ fn a_power_cut_right_after_the_stamp_loses_nothing() {
     let r = ask(&mut sim, &mut t, msg::DATA_READ, 10, &w(READ, 0x1_0000, &[64]));
     assert_eq!(&r[1..], &rec[..]);
 }
+
+/// LINK-41.1: a bulk channel write with two frames in flight (Console's and the link tool's window), in sessions
+/// of 64 as the limits test sends them: every frame is answered, each in a few steps. A frame left unanswered
+/// stalled the limits test on the simulator (Nov 19, 2026).
+#[test]
+fn windowed_bulk_writes_answer_every_frame() {
+    let mut sim = SimCore::new(1, false);
+    let mut t = 0;
+    while t < 6000 {
+        t += 20;
+        sim.step(t);
+    }
+    assert_eq!(ask(&mut sim, &mut t, msg::HELLO, 1, &[PROTOCOL, 0, 0, 0, 0, 0, 0, 0, 0])[0], 0);
+    let r = ask(&mut sim, &mut t, msg::READ_MANY, 2, &[what::CHANNEL, 0, 0, 1, 0]);
+    let total = r[5] as usize;
+    let tpl = r[6..6 + total].to_vec();
+    let rec = |k: u16| {
+        let mut b = tpl.clone();
+        b[0..2].copy_from_slice(&k.to_le_bytes());
+        b[2..4].copy_from_slice(&(k / 8).to_le_bytes()); // 8 a zone, as the limits test
+        b[4..8].copy_from_slice(&(43_000_000 + k as u32 * 250).to_le_bytes());
+        b
+    };
+    // 64 zones first, as the limits test makes them (8 a frame), over the sample's
+    let r = ask(&mut sim, &mut t, msg::READ_MANY, 3, &[what::ZONE, 0, 0, 1, 0]);
+    let zt = r[6..6 + r[5] as usize].to_vec();
+    let mut seq = 10u8;
+    for s in (0..64u16).step_by(8) {
+        assert_eq!(ask(&mut sim, &mut t, msg::BEGIN, seq, &8u16.to_le_bytes())[0], 0);
+        let mut p = vec![what::ZONE];
+        for z in s..s + 8 {
+            let mut b = zt.clone();
+            b[..16].copy_from_slice(format!("{:<16}", format!("LIMZONE {z:03}")).as_bytes());
+            p.extend_from_slice(&z.to_le_bytes());
+            p.push(b.len() as u8);
+            p.extend_from_slice(&b);
+        }
+        assert_eq!(ask(&mut sim, &mut t, msg::WRITE_MANY, seq.wrapping_add(1), &p)[0], 0, "zones from {s}");
+        assert_eq!(ask(&mut sim, &mut t, msg::END, seq.wrapping_add(2), &[])[0], 0);
+        seq = seq.wrapping_add(3);
+    }
+    for session in 0..5u16 {
+        assert_eq!(ask(&mut sim, &mut t, msg::BEGIN, seq, &64u16.to_le_bytes())[0], 0);
+        seq = seq.wrapping_add(1);
+        // 13 frames of 5, two in flight
+        let frames: Vec<(u8, Vec<u8>)> = (0..13u16)
+            .map(|f| {
+                let mut p = vec![what::CHANNEL];
+                for k in (session * 64 + f * 5)..(session * 64 + (f * 5 + 5).min(64)) {
+                    let b = rec(k);
+                    p.extend_from_slice(&k.to_le_bytes());
+                    p.push(b.len() as u8);
+                    p.extend_from_slice(&b);
+                }
+                let s = seq.wrapping_add(f as u8);
+                (s, p)
+            })
+            .collect();
+        seq = seq.wrapping_add(13);
+        let mut sent = 0;
+        let mut answered = 0;
+        let mut out = Vec::new();
+        let mut steps = 0;
+        while answered < frames.len() {
+            while sent < frames.len() && sent < answered + 2 {
+                let mut w = [0u8; MAX_WIRE];
+                let n = wire::build(msg::WRITE_MANY, frames[sent].0, &frames[sent].1, &mut w).unwrap();
+                let mut bytes = vec![0u8];
+                bytes.extend_from_slice(&w[..n]);
+                sim.term_feed(&bytes);
+                sent += 1;
+            }
+            t += 5;
+            sim.step(t);
+            steps += 1;
+            out.extend(sim.term_take());
+            while let Some(end) = out.iter().position(|&b| b == 0) {
+                let mut fr: Vec<u8> = out.drain(..=end).collect();
+                fr.pop();
+                if fr.is_empty() {
+                    continue;
+                }
+                let f = wire::parse(&mut fr).expect("a good frame");
+                assert_eq!(f.ty, msg::WRITE_MANY | wire::ANSWER);
+                assert_eq!(f.seq, frames[answered].0, "session {session}: answers in order");
+                assert_eq!(f.payload[0], 0, "session {session} frame {answered}: status");
+                answered += 1;
+            }
+            assert!(steps < 2000, "session {session}: frame {answered} of 13 unanswered after {steps} steps");
+        }
+        assert_eq!(ask(&mut sim, &mut t, msg::END, seq, &[])[0], 0);
+        seq = seq.wrapping_add(1);
+        // quiet long enough for the zone counts' save (CHAN-36: 2 s after the last channel write)
+        for _ in 0..50 {
+            t += 50;
+            sim.step(t);
+        }
+        sim.term_take();
+    }
+}

@@ -12,6 +12,7 @@ use crate::keys::{KeyEvent, Press};
 use crate::{App, Screen};
 use ferrite_core::keys::Key;
 use ferrite_core::msg::{Device, LiveAll};
+use ferrite_ui::gfx::{Gfx, BG};
 use ferrite_ui::panel::Panel;
 use ferrite_ui::text::Buf;
 use ferrite_ui::widgets::{self as w, KvStyle};
@@ -86,6 +87,13 @@ impl App {
             let c = f(&Ctx { app: self, live, dev, x }, &mut b);
             y = self.kv(lcd, i - top, y, t.h as i32, &t.style, label.as_bytes(), b.as_bytes(), c, sel == Some(i as u8));
         }
+        // DISP-31: rows that end higher than last time (shorter values, another station) clear what the old ones left
+        // below; only on the same screen (a new screen's regions are all forgotten, R_SCROLL among them).
+        let was = self.drawn.table_end as i32;
+        if self.drawn.hash[R_SCROLL] != 0 && was > y {
+            lcd.fill(0, y, 240, was.min(TABLE_END) - y, BG);
+        }
+        self.drawn.table_end = y as i16;
         // DISP-24: rows above or below the page. Each row draws its own part of the cue (w::kv), so a row's
         // change doesn't send the whole cue again: no rows for the cue's hash.
         let more = shown < n;

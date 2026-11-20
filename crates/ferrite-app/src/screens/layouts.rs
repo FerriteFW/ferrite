@@ -57,7 +57,8 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
             } else if state == "RX muted" {
                 // HOME-15.3: the RX tag, "Muted" left of it
                 w::tag(lcd, 232, 24, b"RX", GREEN, BG);
-                w::field(lcd, 26 + hw, 200 - 26 - hw, 22, 40, 36, b"Muted", &w::st(&UI_12, sc, BG, Align::Right));
+                // to x 204, 4 px short of the tag: with the header at its 140 px least, to 200 cut "Muted" (35 px in 34)
+                w::field(lcd, 26 + hw, 204 - 26 - hw, 22, 40, 36, b"Muted", &w::st(&UI_12, sc, BG, Align::Right));
             } else if matches!(state, "RX" | "TX" | "MON" | "FM") {
                 w::tag(lcd, 232, 24, state.as_bytes(), sc, BG);
             } else if state != "idle" {

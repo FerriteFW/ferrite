@@ -213,7 +213,7 @@ fn console_writes_the_lists() {
 }
 
 /// LINK-58 (decision 329): a range preset's 48 skipped frequencies written from the link go as four store writes,
-/// queued together, and the four go in one rewrite of the presets' sector (decision 227's merge, Nov 19, 2026: four
+/// queued together, and the four go in one rewrite of the presets' sector (LINK-58.2, decision 227's merge, Nov 19, 2026: four
 /// rewrites before, 128 erases for a Console write of 16 lists); the list lives in the preset's own record, so
 /// deleting the preset before it moves its index, never its list.
 #[test]

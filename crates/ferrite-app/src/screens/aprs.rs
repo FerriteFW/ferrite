@@ -450,6 +450,9 @@ fn station(app: &mut App, lcd: &mut impl Panel, s: &Station, data: &dyn Data, li
                     lcd.text4(8, 117, if s.pos.is_none() { b"No position".as_slice() } else { b"No GPS fix here" }, &UI_12, SUB, BG);
                 }
             }
+            // DISP-31, DISP-25: the line under the heading, in its band (y 121), not on the table's first row (122):
+            // there each row redraw erased it, and drawing it again after was flicker
+            lcd.fill(0, 121, 156, 1, LINE);
         });
     }
     if app.dirty(R_NOTE, Mix::new().h(&where_.map(|w| w.1)).get()) {
@@ -457,6 +460,6 @@ fn station(app: &mut App, lcd: &mut impl Panel, s: &Station, data: &dyn Data, li
     }
     app.table(lcd, &STATION, live, dev, s, None);
     if app.dirty(R_HELP, 1) {
-        lcd.fill(0, 122, 240, 1, LINE);
+        lcd.fill(156, 121, 84, 1, LINE); // the line's right part, beside the compass (nothing else paints y 121 there)
     }
 }

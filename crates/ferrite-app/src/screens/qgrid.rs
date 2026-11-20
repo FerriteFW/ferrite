@@ -34,7 +34,7 @@ const APRS: [Cell; 9] = [
     ("Beacon", &[5, 6, 1]),
     ("Power", &[5, 6, 3]),
     ("Frequency", &[5, 4]),
-    ("Path", &[5, 9, 1]),
+    ("Path", &[5, 8, 1]),
     ("Digipeat", &[5, 7, 1]),
     ("Bcn text", &[5, 5, 3]), // the beacon comment (APRS-50); "Beacon text" is two characters too wide
     ("Text rate", &[5, 6, 5]), // APRS-50.1: how often the beacon text goes (0 5 6 5)

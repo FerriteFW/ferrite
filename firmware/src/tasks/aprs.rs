@@ -145,9 +145,10 @@ impl Aprs {
         extra.aprs.readings(dev.battery_mv, dev.mcu_temp, app.aprs_freq()); // APRS-54: the values in our position reports
         let me = app.aprs_call(); // APRS-30: callsign and SSID
         extra.set_callsign(me.as_bytes());
-        // KISS-6: the cable (0 9 2 3 on KISS, or 0 5 8 on Cable) or Bluetooth (0 5 8, with Bluetooth on).
+        // KISS-6: the cable (0 9 2 3 on KISS, or 0 3 7 on Cable) or Bluetooth (0 3 7, with Bluetooth on).
         let kiss_cable = app.settings().kiss_on_cable();
         let kiss_on = app.kiss_on(); // PWR-24: none in Low Power Mode. KISS-9: C is the APRS slot meanwhile (`App::aprs_c`)
+        let heard_at = if kiss_on { app.kiss_freq() } else { app.aprs_freq() };
         let on = app.aprs_on();
         let send = app.aprs_sending();
         let decode = on || kiss_on || app.aprs_flag_decode(); // APRS-22
@@ -175,10 +176,10 @@ impl Aprs {
             let mut block;
             let (f, fx) = match h {
                 Heard::Frame(ref f) => (f.bytes(), None),
-                // APRS-56: heard, not decoded; logged only with 0 5 9 8 on, read (no badge: a diagnosis, not news)
+                // APRS-56: heard, not decoded; logged only with 0 5 8 8 on, read (no badge: a diagnosis, not news)
                 Heard::Miss(m, peak) => {
                     if app.settings().decode_log && ferrite_app::aprs_live::miss_logged(&m) {
-                        let mut e = log_event(app.aprs_freq(), b"", b"");
+                        let mut e = log_event(heard_at, b"", b"");
                         ferrite_app::aprs_live::miss_text(&m, peak, &mut e.name, &mut e.text);
                         e.unread = false;
                         store.log(&e);
@@ -190,7 +191,7 @@ impl Aprs {
                     let Some(d) = block.decode() else {
                         super::dsp::FX25_FAILED.fetch_add(1, core::sync::atomic::Ordering::Relaxed); // APRS-56
                         if app.settings().decode_log {
-                            let mut e = log_event(app.aprs_freq(), b"?", b"Not decoded: FX.25 block, too many errors");
+                            let mut e = log_event(heard_at, b"?", b"Not decoded: FX.25 block, too many errors");
                             e.unread = false;
                             store.log(&e);
                         }
@@ -230,7 +231,7 @@ impl Aprs {
             if let Some((from, text)) = rx.inbound.filter(|(f, t)| !store.message_heard(f.as_bytes(), rx.inbound_id.as_bytes(), t.as_bytes())) {
                 app.notify_message(from.as_bytes(), text.as_bytes()); // INBOX-3.1
                 store.message_to_us(from.as_bytes(), text.as_bytes(), rx.inbound_id.as_bytes());
-                store.log(&log_event(app.aprs_freq(), from.as_bytes(), text.as_bytes())); // INBOX-6
+                store.log(&log_event(heard_at, from.as_bytes(), text.as_bytes())); // INBOX-6
             }
             if let Some((peer, text, st)) = rx.state {
                 store.message_state(peer.as_bytes(), text.as_bytes(), st);
@@ -240,7 +241,7 @@ impl Aprs {
             }
             if let Some(by) = rx.echo {
                 msgs::digipeated(app, by.as_bytes()); // APRS-36
-                store.log(&log_event(app.aprs_freq(), by.as_bytes(), b"digipeated our frame")); // APRS-36.1: findable later
+                store.log(&log_event(heard_at, by.as_bytes(), b"digipeated our frame")); // APRS-36.1: findable later
             }
             if rx.changed || rx.state.is_some() {
                 extra.changed();
@@ -352,8 +353,8 @@ impl Aprs {
                     extra.changed();
                 }
                 if t.len > 0 {
-                    // APRS-45: our own frames as FX.25 when 0 5 9 5 says so (a digipeat goes out plain).
-                    // APRS-48, APRS-49: 0 5 9 3's delay and 0 5 9 4's level for our own frames (KISS's frames keep the host's)
+                    // APRS-45: our own frames as FX.25 when 0 5 8 5 says so (a digipeat goes out plain).
+                    // APRS-48, APRS-49: 0 5 8 3's delay and 0 5 8 4's level for our own frames (KISS's frames keep the host's)
                     self.frame = Frame { len: t.len as u16, txdelay_10ms: cfg.txdelay_10ms(), fx25: cfg.fx25_for(t.what), level: cfg.tx_level.min(2), b: [0; FRAME_MAX] };
                     self.frame.b[..t.len].copy_from_slice(&out[..t.len]);
                     self.clear.start(now_ms);

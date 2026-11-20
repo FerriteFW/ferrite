@@ -196,8 +196,8 @@ fn power_on_message_round_trip_and_boot_line() {
     assert_eq!(c.boot_line(), None, "text, but none written");
 }
 
-/// SQL-18.3, SQL-18.7: 0 9 5 is stored at the record's end. A 0.9.4 record (one byte shorter, its old 0 9 5 byte in
-/// place) loads as Chip whatever it had, and the fields after the old byte stay where they were.
+/// SQL-18.3, SQL-18.7: 0 9 5 is stored just before 0 3 7 2's frequency. A 0.9.4 record (those three bytes shorter,
+/// its old 0 9 5 byte in place) loads as Chip whatever it had, and the fields after the old byte stay where they were.
 #[test]
 fn squelch_setting_from_a_0_9_4_record_is_chip() {
     struct V(Vec<u8>);
@@ -214,8 +214,9 @@ fn squelch_setting_from_a_0_9_4_record_is_chip() {
         full.load(&mut SliceSource(&v.0));
         assert!(full.sq_soft, "this build's record keeps Software");
         let mut b = crate::settings::Settings::DEFAULT;
-        b.load(&mut SliceSource(&v.0[..v.0.len() - 1]));
+        b.load(&mut SliceSource(&v.0[..v.0.len() - 3])); // sq_soft, then kiss_f5k (u16)
         assert!(!b.sq_soft, "0.9.4 with {}: Chip", if old_chip { "Chip" } else { "Software" });
+        assert_eq!(b.kiss_f5k, 0, "0.9.4 keeps the region's KISS frequency");
         assert_eq!((b.sat_min_el, b.decode_log), (23, true), "the fields before it in place");
     }
 }

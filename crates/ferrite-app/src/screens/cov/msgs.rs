@@ -96,6 +96,7 @@ fn stop_and_send_again() {
     t.s.call.set(Some(Buf::from(b"VA7FER")));
     t.app.set.bt = true;
     t.app.set.kiss_port = 2;
+    t.app.back[0] = Some(Screen::Kiss(crate::screens::kiss::Kiss));
     msgs::stop_or_resend(&mut t.app, &t.s, false);
     assert_eq!(t.toast(), "Not sent / KISS on: the app sends");
     t.app.set.kiss_port = 0;
@@ -259,6 +260,7 @@ fn send_refusals() {
     assert_eq!(t.toast(), "Callsign over 6 / no APRS");
     t.app.set.bt = true;
     t.app.set.kiss_port = 2;
+    t.app.back[0] = Some(Screen::Kiss(crate::screens::kiss::Kiss));
     msgs::send(&mut t.app, &t.s);
     assert_eq!(t.toast(), "Not sent / KISS on: the app sends");
 }

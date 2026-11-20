@@ -24,6 +24,8 @@ cargo sim         # every screen to target/sim/*.png
 cargo simweb      # the simulator as wasm for a web page (sim-web/README.md)
 ```
 
+`make test`, `make sim`, `make simw` and `make simweb` run those. `make` on its own lists every target. The Makefile only calls Cargo; the commands above are the build. Extra simulator flags: `make simw ARGS=--fresh`.
+
 The terminal (manual chapter 37) runs in the simulator too:
 
 - `cargo simw` opens a pseudo-terminal as the radio's cable and prints how to connect (`screen /dev/ttys006 115200`, then Enter).
@@ -39,12 +41,16 @@ tools/mkbtf.sh tx-bench    # target/ferrite-txbench.ffw: plus bench commands, Dr
 tools/mkbtf.sh reader      # target/ferrite-reader.btf: the read-only backup reader Console loads
 ```
 
+`make venv`, `make tx`, `make tx-bench` and `make reader` run those. `make fw` is the receive-only image. A clock build is `make tx-bench CLOCK=clock-240`.
+
 - `mkbtf.sh` builds, checks what must sit in fast flash (`tools/slowcheck.py`), packs the image for the stock bootloader and the `.ffw` update file.
 - Install your build with Ferrite Console (Install › Advanced, or Firmware Update), or over the cable: `.venv/bin/python tools/flash.py PORT target/ferrite-tx.ffw --backup backup.bin --dev-unsigned` (it refuses without a whole-chip backup).
 - Your own builds aren't signed: Console takes them with "Allow unsigned files" ticked, `flash.py` with `--dev-unsigned`.
 - Flash the `.ffw`, not the bare `.btf`: the `.btf` leaves out the text and other parts kept in SPI flash.
 
 ## Before a commit
+
+`make check` runs the `cargo` lines below (tests and clippy, including the bench feature set). The UI test stays separate: `make uitest`.
 
 ```sh
 cargo test

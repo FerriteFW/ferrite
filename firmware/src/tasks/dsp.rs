@@ -336,7 +336,7 @@ fn feed(slot: &mut Decoder, x: &[i16], level: u16, heard: &mut bool, since_cap: 
         }
         Found::Miss(m) => {
             // APRS-56.1: an AX.25 address field, a packet missed; none, a packet whose start was lost (or chance
-            // flags in noise): counted apart, both logged (0 5 9 8; rare, Alex, Nov 4)
+            // flags in noise): counted apart, both logged (0 5 8 8; rare, Alex, Nov 4)
             if m.addresses { &MISSED } else { &NOISE }.fetch_add(1, Relaxed);
             let _ = APRS_RX.try_send(Heard::Miss(*m, level)); // only for the log: a full queue skips it
         }

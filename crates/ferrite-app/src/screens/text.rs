@@ -45,12 +45,12 @@ pub enum TextFor {
     Capcode,
     /// 0 6 6: the clock set by hand (GPS-23), 12 digits YYYYMMDDhhmm in local time.
     Clock,
-    /// 0 5 9 2: a custom APRS path (APRS-26), capitals and digits, # for the comma.
+    /// 0 5 8 2: a custom APRS path (APRS-26), capitals and digits, # for the comma.
     AprsPath,
     /// A new contact's callsign, then a contact's name (APRS-37): the App keeps the callsign between them.
     ContactCall,
     ContactName,
-    /// 0 5 9 9: who auto reply answers (APRS-57.1): capitals, digits and `-`, * typing the wildcard.
+    /// 0 5 8 9: who auto reply answers (APRS-57.1): capitals, digits and `-`, * typing the wildcard.
     ReplyTo,
 }
 

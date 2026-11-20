@@ -136,26 +136,30 @@ fn aprs_card_mode() {
     assert!(matches!(a.app.screen(), Screen::Aprs(_)), "the heard list: {:?}", a.app.screen().name());
 }
 
-/// APRS-17.1 – APRS-17.4, KISS-9 (decision 181): KISS's card: "APRS KISS", the port, the frames sent and heard.
+/// The TNC is the mode screen, not the home card. The port alone holds nothing; the mode holds C and counts frames.
 #[test]
-fn aprs_card_kiss() {
+fn kiss_mode_holds_c() {
     let mut a = A::new();
     a.app.set.bt = true;
-    a.app.set.kiss_port = 2; // 0 5 8 on Bluetooth
+    a.app.set.kiss_port = 2;
+    a.tick();
+    assert_ne!(a.app.aprs_holder(), Some(Holder::Kiss));
+    a.app.open(crate::screens::nav::Dest::KissMode);
     a.tick();
     a.s.kiss_frame(true);
     a.s.kiss_frame(false);
     a.s.kiss_frame(false);
-    let k = a.app.aprs_card(&a.s).expect("KISS holds C");
+    assert_eq!(a.app.screen().name(), "KISS");
+    assert_eq!(a.hints().as_slice(), [("0-9", "Freq"), ("SIDE2", "Port"), ("BACK", "Back")]);
+    let k = a.app.aprs_card(&a.s).expect("the mode holds C");
     assert_eq!(k.holder, Holder::Kiss);
     assert_eq!(k.right.as_bytes(), b"Bluetooth");
     assert_eq!(k.line.as_bytes(), "Sent 1 \u{b7} Heard 2".as_bytes());
-    let l = a.card_line();
-    assert!(l.contains("head=\"APRS KISS \u{b7} VHF\"") && l.contains("holder=kiss") && l.contains("port=\"Bluetooth\"") && l.contains("sent=1") && l.contains("frames=2"), "{l}");
-    a.app.set.kiss_port = 1; // the cable
+    a.app.set.kiss_port = 1;
     assert_eq!(a.app.aprs_card(&a.s).unwrap().right.as_bytes(), b"Cable");
-    a.c_active();
-    assert_eq!(a.hints()[1], ("OK", "Heard"));
+    a.app.back();
+    a.tick();
+    assert_ne!(a.app.aprs_holder(), Some(Holder::Kiss), "BACK gives C back");
 }
 
 /// APRS-17.1 – APRS-17.4, APRS-29 (decision 181): beacons alone: "APRS Beacon", the countdown to the next beacon (m:ss) or why
@@ -411,6 +415,7 @@ fn kiss_suspends_the_radios_own_aprs() {
     a.tick();
     assert!(a.app.aprs_on() && a.app.beacons_on());
     a.app.set.kiss_port = 1; // the cable
+    a.app.open(crate::screens::nav::Dest::KissMode);
     a.tick();
     assert!(!a.app.aprs_on() && !a.app.beacons_on(), "suspended");
     assert!(a.app.set.aprs_mode && a.app.aprs_cfg().beacons_on(), "the settings kept");

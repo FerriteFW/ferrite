@@ -1,4 +1,4 @@
-//! FX.25 on the radio's APRS path (APRS-44, APRS-45): what the DSP task transmits for a frame with 0 5 9 5 set,
+//! FX.25 on the radio's APRS path (APRS-44, APRS-45): what the DSP task transmits for a frame with 0 5 8 5 set,
 //! and what the decoder slot hands the APRS task for an FX.25 transmission with errors.
 
 use ferrite_core::audio::{afsk_tx, tx_bits, uafsk, TxBits};

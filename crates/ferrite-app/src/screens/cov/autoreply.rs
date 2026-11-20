@@ -1,4 +1,4 @@
-//! Auto reply's page (APRS-57, MENU 0 5 9 9): on and off, the pattern typed with * as the wildcard, the delay
+//! Auto reply's page (APRS-57, MENU 0 5 8 9): on and off, the pattern typed with * as the wildcard, the delay
 //! round its four steps, the reply typed in the message editor; and the menu row's value and knob.
 
 use super::*;
@@ -64,9 +64,9 @@ fn menu_row() {
     let mut c = t.app.aprs_cfg();
     c.reply_text[..4].copy_from_slice(b"Away");
     t.app.set_aprs(c);
-    assert!(!crate::screens::groups::change(&mut t.app, &[5, 9, 9], 1) || t.app.aprs_cfg().reply_on());
+    assert!(!crate::screens::groups::change(&mut t.app, &[5, 8, 9], 1) || t.app.aprs_cfg().reply_on());
     assert!(t.app.aprs_cfg().reply_on(), "the knob turned it on");
-    crate::screens::groups::change(&mut t.app, &[5, 9, 9], 1);
+    crate::screens::groups::change(&mut t.app, &[5, 8, 9], 1);
     assert!(!t.app.aprs_cfg().reply_on(), "and off");
     assert_eq!(t.app.aprs_cfg().reply_text(), b"Away", "the text kept");
 }

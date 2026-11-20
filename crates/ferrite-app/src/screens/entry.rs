@@ -51,6 +51,8 @@ pub enum EntryFor {
 pub enum FreqSet {
     /// 0 5 4, the APRS frequency (64-300 MHz, 5 kHz steps).
     Aprs,
+    /// 0 3 7 2, the KISS TNC's frequency (64-300 MHz, 5 kHz steps). Not the APRS frequency.
+    Kiss,
     /// 0 4 2 2, the pager frequency (136-520 MHz).
     Pager,
     /// A range preset's start or end (0 1 4, A11; 18-1300 MHz).
@@ -63,6 +65,7 @@ impl FreqSet {
     pub fn set_setting(self, app: &mut App, f: Freq10) -> Result<(), &'static str> {
         match self {
             FreqSet::Aprs => app.set_aprs_freq(f),
+            FreqSet::Kiss => app.set_kiss_freq(f),
             FreqSet::Pager if !(mhz(136)..=mhz(520)).contains(&f) => Err("Out of range: pagers take 136-520 MHz"),
             FreqSet::Pager => {
                 app.set.pocsag_freq = f; // saved with the settings, as the knob's change
@@ -105,6 +108,7 @@ impl FreqSet {
     pub fn label(self) -> &'static [u8] {
         match self {
             FreqSet::Aprs => b"APRS frequency, MHz",
+            FreqSet::Kiss => b"KISS frequency, MHz",
             FreqSet::Pager => b"Pager frequency, MHz",
             FreqSet::RangeStart(_) => b"Range start, MHz",
             FreqSet::RangeEnd(_) => b"Range end, MHz",
@@ -114,7 +118,7 @@ impl FreqSet {
     /// What it takes, for the entry's row.
     pub fn takes(self) -> &'static str {
         match self {
-            FreqSet::Aprs => "64-300 MHz, 5k",
+            FreqSet::Aprs | FreqSet::Kiss => "64-300 MHz, 5k",
             FreqSet::Pager => "136-520 MHz",
             FreqSet::RangeStart(_) | FreqSet::RangeEnd(_) => "18-1300 MHz",
         }
@@ -124,6 +128,7 @@ impl FreqSet {
     pub fn current(self, app: &App, store: &impl ChannelStore) -> Option<Freq10> {
         match self {
             FreqSet::Aprs => Some(app.aprs_freq()),
+            FreqSet::Kiss => Some(app.kiss_freq()),
             FreqSet::Pager => Some(app.set.pocsag_freq),
             FreqSet::RangeStart(i) => store.data().preset(i).map(|p| p.start),
             FreqSet::RangeEnd(i) => store.data().preset(i).map(|p| p.end),
@@ -133,7 +138,7 @@ impl FreqSet {
     /// Sets it to `f`, or says why not as "head: body" (nothing changes then).
     pub fn set(self, app: &mut App, store: &impl ChannelStore, f: Freq10) -> Result<(), &'static str> {
         match self {
-            FreqSet::Aprs | FreqSet::Pager => self.set_setting(app, f),
+            FreqSet::Aprs | FreqSet::Kiss | FreqSet::Pager => self.set_setting(app, f),
             FreqSet::RangeStart(i) | FreqSet::RangeEnd(i) => {
                 let data = store.data();
                 let Some(p) = data.preset(i) else { return Err("No preset: deleted meanwhile") };
@@ -432,10 +437,14 @@ impl View for Entry {
             // VFO-26.5: ▲ makes the offset +, ▼ makes it -; the TX row follows at once
             (Key::Up | Key::Down, Press::Short) if s.to == EntryFor::OffsetAmount => s.sign = if e.key == Key::Up { 1 } else { -1 },
             (Key::Exit, Press::Short) if s.n == 0 => return app.back(),
-            // APRS-15.1: # with nothing typed puts the APRS frequency back on the region's (MENU-18's #, here too)
-            (Key::Hash, Press::Short) if s.n == 0 && s.to == EntryFor::Setting(FreqSet::Aprs) => {
-                app.set_aprs(crate::aprs::AprsCfg { f5k: 0, ..app.aprs_cfg() });
-                let f = crate::slot::mhz3(app.aprs_freq());
+            // # with nothing typed puts the APRS or KISS frequency back on the region's (MENU-18's #, here too)
+            (Key::Hash, Press::Short) if s.n == 0 && matches!(s.to, EntryFor::Setting(FreqSet::Aprs | FreqSet::Kiss)) => {
+                if s.to == EntryFor::Setting(FreqSet::Kiss) {
+                    let _ = app.set_kiss_freq(crate::aprs::region_freq(app.set.region()));
+                } else {
+                    app.set_aprs(crate::aprs::AprsCfg { f5k: 0, ..app.aprs_cfg() });
+                }
+                let f = crate::slot::mhz3(if s.to == EntryFor::Setting(FreqSet::Kiss) { app.kiss_freq() } else { app.aprs_freq() });
                 app.show_toast(b"Region default", f.as_bytes(), false);
                 return app.back();
             }
@@ -503,7 +512,7 @@ impl View for Entry {
             Hints::new(&[(if self.three() == 130 { "0" } else { "0-9" }, range), back])
         } else if self.to == EntryFor::OffsetAmount && !self.accepts_star() {
             Hints::new(&[("^v", "+/-"), ("OK", "Go"), back]) // VFO-26.5
-        } else if self.n == 0 && self.to == EntryFor::Setting(FreqSet::Aprs) {
+        } else if self.n == 0 && matches!(self.to, EntryFor::Setting(FreqSet::Aprs | FreqSet::Kiss)) {
             Hints::new(&[("#", "Region default"), ("OK", "Go"), back]) // APRS-15.1
         } else if self.freq_mode() {
             Hints::new(&[("*", "Point"), ("OK", "Go"), back])

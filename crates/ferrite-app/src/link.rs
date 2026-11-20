@@ -1370,7 +1370,7 @@ fn radio_apply(app: &mut App, rec: &[u8]) -> Status {
 }
 
 /// Settings the link never changes (LINK-5): the region, Extend TX, the PIN, setup, the cable port (the link
-/// would lose its own port), the KISS port and the spare bytes. Dry TX (TX-48) isn't in the record at all. A written
+/// would lose its own port), the KISS port, the KISS frequency and the spare bytes. Dry TX (TX-48) isn't in the record at all. A written
 /// record keeps the radio's. The callsign is written, in capitals as on the radio (LINK-26, decision 77: as nicFW's
 /// RMS writes it). Low Power Mode and its Auto level are written (PWR-24.1, decision 328).
 fn keep_protected(new: &mut Settings, old: &Settings) {
@@ -1382,6 +1382,7 @@ fn keep_protected(new: &mut Settings, old: &Settings) {
     new.setup_done = old.setup_done;
     new.cable_port = old.cable_port;
     new.kiss_port = old.kiss_port; // KISS-7: turning KISS on is the owner's consent, made on the radio
+    new.kiss_f5k = old.kiss_f5k;
     new.spare_tokens = [0; 30];
     new.spare_temp = 0;
     new.spare_lock = 0;

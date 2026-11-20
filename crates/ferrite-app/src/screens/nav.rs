@@ -68,7 +68,7 @@ pub enum Dest {
     ZoneEdit,
     /// A13: SAME location codes (MENU 0 4 5 2).
     LocationCodes,
-    /// A16b: APRS auto reply (MENU 0 5 9 9, APRS-57).
+    /// A16b: APRS auto reply (MENU 0 5 8 9, APRS-57).
     AutoReply,
     /// A14: DTMF dialer (MENU 0 8 5 1).
     DtmfDialer,
@@ -104,6 +104,8 @@ pub enum Dest {
     BandScope,
     /// B12, B13: HF mode (MENU 0 3 3 only).
     HfMode,
+    /// B23: KISS TNC (MENU 0 3 7). On only while its screen is up.
+    KissMode,
     /// B14: tone search (MENU 0 3 5).
     ToneSearch,
     /// B22-B24: satellite mode (MENU 0 3 6).
@@ -224,6 +226,7 @@ impl Dest {
             Scan => ("Scan", "14", "B9"),
             BandScope => ("Band scope", "21", "B10"),
             HfMode => ("HF mode", "20a", "B12"),
+            KissMode => ("KISS TNC", "26", "B23"),
             ToneSearch => ("Tone search", "22", "B14"),
             Satellites => ("Satellites", "28a", "B22"),
             Counter => ("Frequency counter", "22", "B15"),
@@ -302,12 +305,12 @@ impl Dest {
 }
 
 /// Every destination once (groups and lists by one example each), for tests and the screen inventory.
-pub const ALL: [Dest; 69] = {
+pub const ALL: [Dest; 70] = {
     use Dest::*;
     [
         Entry(1), ChannelEdit, Value(Item::Squelch), Tones, Text(super::text::TextFor::Callsign), PositionEntry, SaveChannel, AddRepeater, RangePreset,
         ZoneEdit, LocationCodes, DtmfDialer, DtmfMemories, Compose, QuickMessages, Contacts, Pin, Confirm, ExtendTx, Setup, ShortcutMap,
-        Transmit, TxRefused, Emergency, Scan, BandScope, HfMode, ToneSearch, Counter, Alert,
+        Transmit, TxRefused, Emergency, Scan, BandScope, HfMode, KissMode, ToneSearch, Counter, Alert,
         Crossband, Squelch, EventLog, EventDetail, AprsHeard, AprsStation, AprsSent, AprsMessages, AprsMessage,
         Browse, Zones, RangePresets, SkipList, Waypoints, WaypointGo, GpsPosition, HfRecent, Quick,
         Advanced, Group(5), Sub(9, 1), Status, About, Calibration, KeyTest, AdvSquelch, SsbConfirm, SsbPatch,
@@ -318,7 +321,7 @@ pub const ALL: [Dest; 69] = {
 
 /// MENU 0 paths that open a screen or a third-level list (manual Appendix A). Every other path
 /// is a plain value, edited in its group's list.
-pub const MENU0: [(&[u8], Dest); 54] = [
+pub const MENU0: [(&[u8], Dest); 55] = [
     (&[1, 6], Dest::Sub(1, 6)),
     (&[1, 4], Dest::RangePresets),
     (&[1, 5], Dest::SkipList),
@@ -333,16 +336,17 @@ pub const MENU0: [(&[u8], Dest); 54] = [
     (&[3, 4], Dest::Crossband),
     (&[3, 5], Dest::ToneSearch),
     (&[3, 6], Dest::Satellites), // SAT-1
+    (&[3, 7], Dest::KissMode), // KISS TNC: the mode screen. 0 3 7 1 and 0 3 7 2 stay settings.
     (&[4, 1], Dest::EventLog),
     (&[4, 2], Dest::Sub(4, 2)),
     (&[4, 5], Dest::Sub(4, 5)),
     (&[4, 5, 2], Dest::LocationCodes),
-    (&[5, 9, 9], Dest::AutoReply),
+    (&[5, 8, 9], Dest::AutoReply),
     (&[5, 1], Dest::AprsHeard),
     (&[5, 2], Dest::AprsMessages),
     (&[5, 5], Dest::Sub(5, 5)),
     (&[5, 6], Dest::Sub(5, 6)),
-    (&[5, 9], Dest::Sub(5, 9)),
+    (&[5, 8], Dest::Sub(5, 8)),
     (&[5, 7], Dest::Sub(5, 7)),
     (&[6, 2], Dest::GpsPosition),
     (&[6, 7], Dest::Waypoints),
@@ -465,6 +469,7 @@ pub fn enter(dest: Dest, app: &mut App) -> Screen {
         Dest::LinkStatus => Screen::Link(Link::new(LinkPage::Status)),
         Dest::WriteProgress => Screen::Link(Link::new(LinkPage::Progress)),
         Dest::HfMode => hf::open(app),
+        Dest::KissMode => kiss::open(app),
         Dest::Satellites => sat::open(app),
         Dest::Alert => Screen::Alert(super::alert::Alert { silenced: false }),
         // Every destination has its own screen now; a new one shows the placeholder until it is built.

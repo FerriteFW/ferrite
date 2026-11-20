@@ -136,7 +136,7 @@ pub fn run(scale: u32) {
     s.save("aprs-beacon-list");
     s.press(Key::Exit, 800);
     s.save_rx("aprsmode-card-rx-big");
-    // 0 5 9 7 A·B first: amber
+    // 0 5 8 7 A·B first: amber
     s.app.settings_mut().aprs_share = 1;
     s.run(200);
     s.save("aprsmode-card-abfirst-big");
@@ -203,14 +203,13 @@ pub fn run(scale: u32) {
     s.press(Key::Slot, 800);
     s.save("qpage-aprs-beacons");
     s.press(Key::Exit, 80);
-    // KISS on Bluetooth: "APRS KISS", the port and the frames counted.
+    // KISS mode: its own screen, the port and the frames counted.
     s.app.settings_mut().bt = true;
     s.app.settings_mut().kiss_port = 2;
     for sent in [true, false, false, true, false] {
         s.store.kiss_frame(sent);
     }
+    s.app.open(Dest::KissMode);
     s.run(4000);
-    s.save("aprskiss-card-big");
-    s.keys(&[Key::Slot]); // A
-    s.save("aprskiss-card");
+    s.save("kiss-mode");
 }

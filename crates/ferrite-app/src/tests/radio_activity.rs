@@ -1672,6 +1672,7 @@ fn stops(m: Mode, c: &RadioCmd) -> bool {
         Mode::Hf => matches!(c, RadioCmd::Hf { on: false, .. }),
         Mode::Xb => matches!(c, RadioCmd::Crossband(None)),
         Mode::Sat => matches!(c, RadioCmd::SatRx(0)),
+        Mode::Kiss => false,
         Mode::Off => false,
     }
 }
@@ -1697,12 +1698,13 @@ fn start(t: &mut T, m: Mode) {
             t.tap(Key::Hash);
         }
         Mode::Sat => t.open(Dest::Satellites),
+        Mode::Kiss => t.open(Dest::KissMode),
         Mode::Off => {}
     }
     assert_eq!(t.app.radio.mode, m, "{m:?} runs");
 }
 
-const MODES: [Mode; 8] = [Mode::Scope, Mode::Strip, Mode::Tone, Mode::Counter, Mode::Fm, Mode::Hf, Mode::Xb, Mode::Sat];
+const MODES: [Mode; 9] = [Mode::Scope, Mode::Strip, Mode::Tone, Mode::Counter, Mode::Fm, Mode::Hf, Mode::Xb, Mode::Sat, Mode::Kiss];
 /// The modes a screen runs (decision 352: FM broadcast is a slot in the band, which plays until it is tuned out).
 const SCREEN_MODES: [Mode; 7] = [Mode::Scope, Mode::Strip, Mode::Tone, Mode::Counter, Mode::Hf, Mode::Xb, Mode::Sat];
 
@@ -1969,7 +1971,7 @@ fn random_use_keeps_modes_in_step() {
         Key::Menu, Key::Exit, Key::Up, Key::Down, Key::Left, Key::Right, Key::Slot, Key::VfoMem, Key::Digit(0),
         Key::Digit(1), Key::Digit(3), Key::Digit(7), Key::Star, Key::Hash, Key::Side(1), Key::Side(2),
     ];
-    const DESTS: [Dest; 8] = [Dest::BandScope, Dest::ToneSearch, Dest::Counter, Dest::HfMode, Dest::Crossband, Dest::Scan, Dest::Squelch, Dest::Satellites];
+    const DESTS: [Dest; 9] = [Dest::BandScope, Dest::ToneSearch, Dest::Counter, Dest::HfMode, Dest::Crossband, Dest::Scan, Dest::Squelch, Dest::Satellites, Dest::KissMode];
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum Kind {
         Sweep,
@@ -1990,6 +1992,7 @@ fn random_use_keeps_modes_in_step() {
             Mode::Hf => Some(Kind::Hf),
             Mode::Xb => Some(Kind::Xb),
             Mode::Sat => Some(Kind::Sat),
+            Mode::Kiss => None,
         }
     }
     // the Radio task's view: what a command starts (Some) or stops (None)
@@ -2115,7 +2118,7 @@ fn random_use_keeps_modes_in_step() {
                 assert_eq!(m, Mode::Strip, "seed {seed} step {step} ({what}): only home's strip sweeps beside a broadcast");
                 assert!(!t.app.in_bcast_band(t.app.active), "seed {seed} step {step} ({what}): not with the broadcast slot active (HOME-14)");
             }
-            let mode_screen = |s: &Screen| matches!(s, Screen::Scope(_) | Screen::ToneSearch(_) | Screen::Counter(_) | Screen::Hf(_) | Screen::Crossband(_) | Screen::Sat(_));
+            let mode_screen = |s: &Screen| matches!(s, Screen::Scope(_) | Screen::ToneSearch(_) | Screen::Counter(_) | Screen::Hf(_) | Screen::Crossband(_) | Screen::Sat(_) | Screen::Kiss(_));
             if t.app.screen() == Screen::Home && t.app.set.layout == 0 && !t.app.back.iter().flatten().any(mode_screen) {
                 let want = if t.app.bcast_slot().is_some() && t.app.radio.keyed.is_none() { Mode::Fm } else { Mode::Off };
                 assert_eq!(m, want, "seed {seed} step {step} ({what}): home is normal receive, or the broadcast slot's");
@@ -2644,7 +2647,7 @@ fn timeout_beeps_after_the_unkey() {
     t.app.key_up(Key::PTT, t.t, &s);
 }
 
-/// APRS-2, APRS-15.2: 0 5 9 6 Mute speaker decides whether APRS mode mutes C; \* on C in APRS mode flips the
+/// APRS-2, APRS-15.2: 0 5 8 6 Mute speaker decides whether APRS mode mutes C; \* on C in APRS mode flips the
 /// setting, and the setting changed in the menu mutes or unmutes C at once. Without APRS mode \* on C is quick
 /// mute alone.
 #[test]
@@ -2661,7 +2664,7 @@ fn aprs_mute_follows_the_setting_and_star() {
     t.app.set_aprs_mode(false);
     t.app.set_aprs_mode(true);
     assert_eq!(t.app.mute & c, 0, "kept off: APRS mode comes back heard");
-    crate::screens::groups::change(&mut t.app, &[5, 9, 6], 1);
+    crate::screens::groups::change(&mut t.app, &[5, 8, 6], 1);
     assert!(t.app.set.aprs_mute);
     assert_ne!(t.app.mute & c, 0, "the menu mutes C at once");
     t.app.set_aprs_mode(false);

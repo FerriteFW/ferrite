@@ -199,15 +199,16 @@ impl App {
         self.set.dtmf_rx && !self.low_power()
     }
 
-    /// PWR-24: KISS on (KISS-6), never in the mode.
     /// PWR-24.10: when a key or the knob was last used (ms, the App's clock): Low Power Mode's core runs at full
     /// speed for a moment after, so menus and the knob keep up.
     pub fn last_input(&self) -> u32 {
         self.last_input
     }
 
+    /// The TNC is on only while its screen is up (or under the screen up), on Cable or on Bluetooth with
+    /// Bluetooth on, and never in Low Power Mode. The saved port alone does not start it.
     pub fn kiss_on(&self) -> bool {
-        self.set.kiss_on() && !self.low_power()
+        crate::screens::kiss::up(self) && self.set.kiss_on() && !self.low_power()
     }
 
     /// PWR-26.1: why the core should run at the build's speed now (`ferrite_core::clocktree::why` bits; the

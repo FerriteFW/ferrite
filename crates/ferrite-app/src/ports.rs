@@ -12,7 +12,7 @@
 //!   back if a phone left it open. Bluetooth takes it when the cable's terminal is closed; while the cable has
 //!   it, Bluetooth's terminal bytes are dropped. A link session never takes or blocks the terminal.
 //! - **KISS** needs neither, so it runs on its port alongside the other one (KISS-6): the cable by 0 9 2 3 on
-//!   KISS or 0 5 8 on Cable, Bluetooth by 0 5 8 on Bluetooth. Its bytes go back to the caller.
+//!   KISS or 0 3 7 on Cable, Bluetooth by 0 3 7 on Bluetooth. Its bytes go back to the caller.
 //! - **Trust:** the cable is trusted (TERM-3, LINK-7). On Bluetooth, while the radio's PIN lock is on, the
 //!   terminal and the link each ask for the PIN first (LINK-30); `BAUD` takes only its two rates (LINK-15.1, LINK-25).
 //! - **A Bluetooth connection** ends when it has been quiet for [`BT_IDLE_MS`]: the module tells the radio
@@ -197,10 +197,11 @@ impl Ports {
         } else {
             self.cable_last = Some(now);
         }
-        let kiss = match port {
-            Port::Cable => app.set.kiss_on_cable(),
-            Port::Bt => app.set.kiss_on_bt(),
-        };
+        let kiss = app.kiss_on()
+            && match port {
+                Port::Cable => app.set.kiss_on_cable(),
+                Port::Bt => app.set.kiss_on_bt(),
+            };
         if kiss {
             return To::Kiss;
         }

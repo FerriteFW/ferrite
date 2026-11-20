@@ -339,6 +339,7 @@ fn keyed_remote_mode(app: &App, live: &LiveAll, l: &mut Line) {
         Mode::Hf => b"hf",
         Mode::Xb => b"xb",
         Mode::Sat => b"sat",
+        Mode::Kiss => b"kiss",
     });
 }
 
@@ -768,6 +769,13 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
         }
         Screen::Hf(h) => hf_lines(app, cx, h, d),
         Screen::Sat(s) => sat_lines(app, &s, d),
+        Screen::Kiss(_) => {
+            if let Some(l) = d.ln() {
+                let mut b = ferrite_ui::text::Buf::<80>::new();
+                screens::kiss::line(app, cx.live, cx.store, &mut b);
+                l.push(b.as_bytes());
+            }
+        }
         Screen::Pin(p) => {
             // PIN-2, PIN-3: the heading, a star per digit typed (never the digits), the wait or attempts left
             if let Some(l) = d.ln() {
@@ -1415,6 +1423,7 @@ pub fn id(s: Screen) -> &'static str {
         Screen::AutoReply(_) => "AutoReply",
         Screen::Dtmf(_) => "Dtmf",
         Screen::Sat(s) => screens::sat::page_id(&s),
+        Screen::Kiss(_) => "Kiss",
     }
 }
 

@@ -665,7 +665,7 @@ fn quiet_sent(app: &mut App, s: u8, word: &[u8], then: &[u8]) {
     app.out.push(RadioCmd::SlotOff(app.off));
     app.out.push(RadioCmd::Watch(app.watch_mask())); // WATCH-2.1: an off slot's turns go to the others
     if s == crate::aprs::APRS_SLOT && app.set.aprs_mode {
-        app.set.aprs_mute = app.mute & 1 << s != 0; // APRS-2: \* on C in APRS mode is 0 5 9 6
+        app.set.aprs_mute = app.mute & 1 << s != 0; // APRS-2: \* on C in APRS mode is 0 5 8 6
     }
     let mut t = Buf::<16>::new();
     t.set(b"Slot ");
@@ -821,7 +821,7 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
         let hw = if wide { 226 - ww - 34 } else { (226 - 6 - head_right_w(big, state, &clr) - 34).max(if aprs { 0 } else { 120 }) };
         let sx = 34 + hw;
         let hb_ = head.as_bytes();
-        // the holder is what comes before " · " ("APRS Mode", "APRS KISS")
+        // the holder is what comes before " · " ("APRS Mode", "KISS")
         let split = hb_.windows(3).position(|w| w == " \u{b7}".as_bytes());
         if let Some(n) = split.filter(|_| aprs) {
             // APRS-17: the holder ("APRS Mode") bold in C's colour, " · VHF" as any header; with APRS-21's

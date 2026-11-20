@@ -24,6 +24,8 @@ pub enum Mode {
     Xb,
     /// Satellite mode (SAT-1): both chips, the downlink tuned.
     Sat,
+    /// KISS TNC (MENU 0 3 7). No radio command of its own: slot C follows the holder.
+    Kiss,
 }
 
 /// One remembered hit: what (a frequency, or a tone word), when it was last heard and when that stop began
@@ -275,13 +277,14 @@ impl App {
         let under = self.back.iter().rev().flatten().copied();
         for s in core::iter::once(self.screen).chain(under) {
             let m = match s {
-                // PWR-24.4: no scope, counter, broadcast, HF mode or crossband in Low Power Mode
+                // PWR-24.4: no scope, counter, broadcast, HF mode, KISS or crossband in Low Power Mode
                 Screen::Scope(_) | Screen::Counter(_) if self.low_power() => continue,
                 Screen::Scope(_) => Mode::Scope,
                 Screen::ToneSearch(_) => Mode::Tone,
                 Screen::Counter(_) => Mode::Counter,
-                Screen::Hf(_) | Screen::Crossband(_) if self.low_power() => continue,
+                Screen::Hf(_) | Screen::Crossband(_) | Screen::Kiss(_) if self.low_power() => continue,
                 Screen::Hf(_) => Mode::Hf,
+                Screen::Kiss(_) => Mode::Kiss,
                 Screen::Sat(_) => Mode::Sat,
                 Screen::Crossband(_) if self.radio.xb_on => Mode::Xb,
                 _ => continue,
@@ -372,6 +375,7 @@ impl App {
             Mode::Fm => {} // the broadcast's start is the reconciler's (MODE-5)
             Mode::Hf => super::hf::send(self),
             Mode::Sat => self.sat_start(),
+            Mode::Kiss => {} // slot C follows the holder; the host keys the transmitter
             Mode::Xb => {
                 super::xb::send_start(self);
                 self.radio.xb_log = Some(super::xb::XbLog { on: true, by: self.radio.xb_by, why: 0 }); // XB-20.6
@@ -398,6 +402,7 @@ impl App {
             Mode::Fm => {} // the broadcast's stop is the reconciler's (MODE-5)
             Mode::Hf => self.out.push(RadioCmd::Hf { freq: self.set.hf.freq, mode: self.set.hf.mode, on: false }),
             Mode::Sat => self.out.push(RadioCmd::SatRx(0)),
+            Mode::Kiss => {}
             Mode::Xb => {
                 self.out.push(RadioCmd::Crossband(None));
                 if self.radio.xb_by & super::xb::LISTEN != 0 {

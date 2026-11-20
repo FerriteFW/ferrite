@@ -36,6 +36,7 @@ fn beacon_now() {
     t.s.call.set(Some(Buf::from(b"VA7FER")));
     t.app.set.bt = true;
     t.app.set.kiss_port = 2;
+    t.app.back[0] = Some(Screen::Kiss(crate::screens::kiss::Kiss));
     opts::beacon_now(&mut t.app, &t.s);
     assert_eq!(t.toast(), "Not sent / KISS on: the app sends");
 }

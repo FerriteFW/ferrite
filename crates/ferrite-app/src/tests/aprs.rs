@@ -140,8 +140,8 @@ fn aprs_slot_is_locked() {
 }
 
 /// KISS-9 (decision 173): KISS on (Bluetooth with Bluetooth on, or the cable) makes C the APRS slot with APRS mode
-/// off: tuned to the APRS frequency, watched and awake, locked with KISS's message, a data key-up's frequency the
-/// APRS one; KISS off gives C back unless APRS mode is on.
+/// off: tuned to the KISS frequency (the region's until 0 3 7 2 is set), watched and awake, locked with KISS's
+/// message; KISS off gives C back unless APRS mode is on.
 #[test]
 fn kiss_on_makes_c_the_aprs_slot() {
     let mut a = A::new();
@@ -150,22 +150,19 @@ fn kiss_on_makes_c_the_aprs_slot() {
     a.cmds();
     assert!(!a.app.aprs_slot(APRS_SLOT));
     a.app.set.bt = true;
-    a.app.set.kiss_port = 2; // 0 5 8 on Bluetooth
+    a.app.set.kiss_port = 2; // 0 3 7 on Bluetooth
+    a.tick();
+    assert!(!a.app.kiss_on(), "the port alone does not start the TNC");
+    a.app.open(crate::screens::nav::Dest::KissMode);
     a.tick();
     assert!(a.app.aprs_slot(APRS_SLOT) && !a.app.aprs_on(), "C is the APRS slot, APRS mode still off");
     let c = a.cmds();
-    assert!(c.contains(&RadioCmd::TuneSlot { slot: 2, freq: 14_439_000 }), "tuned to APRS: {c:?}");
+    assert!(c.contains(&RadioCmd::TuneSlot { slot: 2, freq: 14_439_000 }), "tuned to the KISS frequency: {c:?}");
     assert!(c.contains(&RadioCmd::Watch(0b100)) && c.contains(&RadioCmd::Awake(0b100)) && c.contains(&RadioCmd::AprsSlot(0b100)));
-    assert_eq!(crate::screens::transmit::tx_freq(&a.app, APRS_SLOT), 14_439_000, "frames go out on the APRS frequency");
-    // Locked as APRS-19, with KISS's message.
-    a.tap(Key::Slot);
-    a.tap(Key::Slot);
-    assert_eq!(a.app.active(), 2);
+    assert_eq!(crate::screens::transmit::tx_freq(&a.app, APRS_SLOT), 14_439_000, "frames go out on the KISS frequency");
+    // Locked as APRS-19, with KISS's message. SLOT on the mode screen does nothing, so the check is the slot itself.
+    a.app.active = 2;
     assert_eq!(a.app.greyed(Item::Mode), Some("Slot C held by KISS"));
-    a.cmds();
-    a.tap(Key::Up);
-    assert!(a.app.toast_up());
-    assert!(!a.cmds().iter().any(|c| matches!(c, RadioCmd::TuneSlot { .. })), "C stays put");
     // APRS mode on and off again while KISS holds C: C stays APRS.
     a.mode(true);
     a.mode(false);
@@ -177,7 +174,7 @@ fn kiss_on_makes_c_the_aprs_slot() {
     let c = a.cmds();
     assert!(!a.app.aprs_slot(APRS_SLOT));
     assert!(c.contains(&RadioCmd::TuneSlot { slot: 2, freq: own }) && c.contains(&RadioCmd::Watch(0)), "{c:?}");
-    // The cable's KISS (0 5 8 on Cable) does it too, and APRS mode keeps C when KISS goes off.
+    // The cable's KISS (0 3 7 on Cable) does it too, and APRS mode keeps C when KISS goes off.
     a.app.set.kiss_port = 1;
     a.tick();
     assert!(a.app.aprs_slot(APRS_SLOT));
@@ -186,6 +183,83 @@ fn kiss_on_makes_c_the_aprs_slot() {
     a.app.set.kiss_port = 0;
     a.tick();
     assert!(a.app.aprs_slot(APRS_SLOT), "APRS mode still has C");
+}
+
+/// The radio's APRS frequency and the KISS frequency are saved apart. KISS holds C on its own frequency; with
+/// KISS off, APRS mode holds C on the APRS frequency.
+#[test]
+fn kiss_frequency_is_not_the_aprs_frequency() {
+    let mut a = A::new();
+    assert!(a.app.set_aprs_freq(14_480_000).is_ok());
+    assert!(a.app.set_kiss_freq(14_509_000).is_ok());
+    assert_eq!((a.app.aprs_freq(), a.app.kiss_freq()), (14_480_000, 14_509_000));
+    a.app.set.bt = true;
+    a.app.set.kiss_port = 2;
+    a.app.set_aprs_mode(true);
+    a.tick();
+    assert_eq!(a.app.tuned_freq(APRS_SLOT), 14_480_000, "the port alone leaves C on the APRS frequency");
+    a.app.open(crate::screens::nav::Dest::KissMode);
+    a.tick();
+    assert_eq!(a.app.tuned_freq(APRS_SLOT), 14_509_000, "the mode holds C on the KISS frequency");
+    assert_eq!(a.app.aprs_freq(), 14_480_000, "the APRS frequency is unchanged");
+    assert!(a.app.set_aprs_freq(14_439_000).is_ok());
+    assert_eq!(a.app.tuned_freq(APRS_SLOT), 14_509_000, "changing the APRS frequency does not move C");
+    a.app.back();
+    a.tick();
+    assert!(!a.app.kiss_on());
+    assert_eq!(a.app.tuned_freq(APRS_SLOT), 14_439_000, "APRS mode holds C on the APRS frequency");
+    assert_eq!(a.app.kiss_freq(), 14_509_000);
+}
+
+/// The mode screen: the knob, the keypad and # tune the KISS frequency, SIDE2 flips the port, OK opens the
+/// box, PTT does nothing, and Low Power Mode will not open it.
+#[test]
+fn kiss_mode_screen() {
+    use crate::screens::Screen;
+    let mut a = A::new();
+    let region = a.app.kiss_freq();
+    a.app.open(crate::screens::nav::Dest::KissMode);
+    assert!(matches!(a.app.screen(), Screen::Kiss(_)));
+    assert_eq!(a.app.set.kiss_port, 1, "Off opens on Cable");
+    a.tick();
+    assert!(a.app.kiss_on());
+    a.tap(Key::Up);
+    assert_eq!(a.app.kiss_freq(), region + 500);
+    a.tap(Key::Hash);
+    assert_eq!(a.app.kiss_freq(), region);
+    a.tap(Key::Side(2));
+    assert_eq!(a.app.set.kiss_port, 2);
+    a.tick();
+    assert!(!a.app.kiss_on(), "Bluetooth chosen while Bluetooth is off: the screen stays, the TNC does not start");
+    a.tap(Key::Side(2));
+    assert_eq!(a.app.set.kiss_port, 1);
+    a.tap(Key::Digit(1));
+    assert!(matches!(a.app.screen(), Screen::Entry(e) if e.n == 1 && e.buf[0] == b'1'), "a digit starts the frequency");
+    assert!(a.app.kiss_on(), "the mode stays under the box");
+    for d in [4, 5, 0, 9, 0] {
+        a.tap(Key::Digit(d));
+    }
+    if !matches!(a.app.screen(), Screen::Kiss(_)) {
+        a.tap(Key::Menu); // OK keeps a frequency the slot's step would not enter by itself
+    }
+    assert!(matches!(a.app.screen(), Screen::Kiss(_)), "the frequency returns to the mode");
+    assert_eq!(a.app.kiss_freq(), 14_509_000);
+    assert!(a.app.kiss_on());
+    a.tap(Key::Menu);
+    assert!(matches!(a.app.screen(), Screen::Entry(_)), "OK types the frequency");
+    assert!(a.app.kiss_on(), "the mode stays under the box");
+    a.tap(Key::Exit);
+    assert!(matches!(a.app.screen(), Screen::Kiss(_)));
+    a.app.key_down(Key::PTT, a.t, &a.s);
+    assert!(a.app.radio.keyed.is_none());
+    assert!(matches!(a.app.screen(), Screen::Kiss(_)));
+    a.app.key_up(Key::PTT, a.t + 50, &a.s);
+    a.app.set_lpm_mode(1);
+    a.tick();
+    assert!(a.app.low_power());
+    assert!(!a.app.kiss_on());
+    a.app.open(crate::screens::nav::Dest::KissMode);
+    assert_eq!(a.app.screen(), Screen::Home, "Low Power Mode refuses the mode");
 }
 
 /// APRS-29, APRS-21.1, APRS-19, KISS-9 (decision 181): automatic beacons with APRS mode off hold C as the APRS slot
@@ -230,6 +304,7 @@ fn beacons_alone_hold_c_without_priority() {
     // KISS on beside the beacons: KISS holds C, with priority; off, the beacons again.
     a.app.set.bt = true;
     a.app.set.kiss_port = 2;
+    a.app.open(crate::screens::nav::Dest::KissMode);
     a.tick();
     assert_eq!(a.app.aprs_holder(), Some(Holder::Kiss));
     assert!(a.cmds().contains(&RadioCmd::Awake(0b100)), "KISS: priority");
@@ -450,22 +525,22 @@ fn card_text() {
     a.app.render(&mut fb, &a.live, &dev, &a.s);
 }
 
-/// APRS-26, APRS-26.1, APRS-27: 0 5 6 2, 0 5 9 1 (with the APRSAT and ARISS presets) and 0 5 7 change the APRS
+/// APRS-26, APRS-26.1, APRS-27: 0 5 6 2, 0 5 8 1 (with the APRSAT and ARISS presets) and 0 5 7 change the APRS
 /// settings, and # puts each back.
 #[test]
 fn path_digipeater_and_after_voice_settings() {
     use crate::screens::groups::{change, reset};
     let mut a = A::new();
     assert_eq!(&*a.app.aprs_cfg().path(), &[b"WIDE1-1".as_slice(), b"WIDE2-1"]);
-    change(&mut a.app, &[5, 9, 1], 1);
+    change(&mut a.app, &[5, 8, 1], 1);
     assert_eq!(&*a.app.aprs_cfg().path(), &[b"APRSAT".as_slice()], "APRS-26.1: WIDE1-1,WIDE2-1 then APRSAT");
-    change(&mut a.app, &[5, 9, 1], 1);
+    change(&mut a.app, &[5, 8, 1], 1);
     assert_eq!(&*a.app.aprs_cfg().path(), &[b"ARISS".as_slice()], "then ARISS");
-    change(&mut a.app, &[5, 9, 1], 1);
+    change(&mut a.app, &[5, 8, 1], 1);
     assert!(a.app.aprs_cfg().path().is_empty(), "then None");
-    change(&mut a.app, &[5, 9, 1], 1);
+    change(&mut a.app, &[5, 8, 1], 1);
     assert_eq!(&*a.app.aprs_cfg().path(), &[b"WIDE1-1".as_slice()]);
-    reset(&mut a.app, &[5, 9, 1]);
+    reset(&mut a.app, &[5, 8, 1]);
     assert_eq!(a.app.aprs_cfg().path().len(), 2);
     assert!(!a.app.aprs_cfg().digi_on(), "APRS-12: off by default");
     change(&mut a.app, &[5, 7, 1], 1);
@@ -482,7 +557,7 @@ fn path_digipeater_and_after_voice_settings() {
     assert!(a.s.aprs_cfg() == a.app.aprs_cfg());
 }
 
-/// APRS-45: 0 5 9 5, FX.25 on transmit: 16 check bytes by default (decision 230), then 32, 64 and Off; # puts it
+/// APRS-45: 0 5 8 5, FX.25 on transmit: 16 check bytes by default (decision 230), then 32, 64 and Off; # puts it
 /// back; kept by the APRS store's owner.
 #[test]
 fn fx25_on_transmit_setting() {
@@ -490,12 +565,12 @@ fn fx25_on_transmit_setting() {
     let mut a = A::new();
     assert_eq!(a.app.aprs_cfg().fx25, 16);
     for (d, want) in [(1, 32), (1, 64), (1, 0), (1, 16), (-1, 0)] {
-        change(&mut a.app, &[5, 9, 5], d);
+        change(&mut a.app, &[5, 8, 5], d);
         assert_eq!(a.app.aprs_cfg().fx25, want);
     }
     a.tick();
     assert_eq!(a.s.aprs_cfg().fx25, 0, "written back");
-    reset(&mut a.app, &[5, 9, 5]);
+    reset(&mut a.app, &[5, 8, 5]);
     assert_eq!(a.app.aprs_cfg().fx25, 16);
 }
 
@@ -576,7 +651,7 @@ fn station_shows_its_last_message() {
     assert!(s.msg.is_empty());
 }
 
-/// APRS-26: 0 5 9 2's custom path: checked, kept, chosen at once, offered by 0 5 9 1 after the presets, and # forgets
+/// APRS-26: 0 5 8 2's custom path: checked, kept, chosen at once, offered by 0 5 8 1 after the presets, and # forgets
 /// it (the path going back to the default when it was in use).
 #[test]
 fn custom_path() {
@@ -592,23 +667,23 @@ fn custom_path() {
     // APRS-26: custom keeps value 3 (a radio set to it before APRSAT and ARISS were added still is); unset, it's skipped
     assert!(!a.app.aprs_cfg().path_ok(PATH_CUSTOM), "no custom path: not a choice");
     a.app.set_aprs(crate::aprs::AprsCfg { path: 2, ..a.app.aprs_cfg() });
-    change(&mut a.app, &[5, 9, 1], 1);
+    change(&mut a.app, &[5, 8, 1], 1);
     assert_eq!(a.app.aprs_cfg().path, 4, "WIDE1-1,WIDE2-1 then APRSAT, Custom skipped");
-    change(&mut a.app, &[5, 9, 1], 1);
+    change(&mut a.app, &[5, 8, 1], 1);
     assert_eq!(a.app.aprs_cfg().path, 5, "then ARISS");
-    change(&mut a.app, &[5, 9, 1], 1);
+    change(&mut a.app, &[5, 8, 1], 1);
     assert_eq!(a.app.aprs_cfg().path, 0, "then round to None");
     a.app.set_aprs_custom_path(b"WIDE2-2");
     let c = a.app.aprs_cfg();
     assert_eq!((c.path, &*c.path()), (PATH_CUSTOM, &[b"WIDE2-2".as_slice()][..]));
     assert_eq!(c.path_name(), b"WIDE2-2");
-    change(&mut a.app, &[5, 9, 1], 1);
+    change(&mut a.app, &[5, 8, 1], 1);
     assert_eq!(a.app.aprs_cfg().path, 4, "Custom then APRSAT");
-    change(&mut a.app, &[5, 9, 1], -1);
+    change(&mut a.app, &[5, 8, 1], -1);
     assert_eq!(a.app.aprs_cfg().path, PATH_CUSTOM);
     a.app.set_aprs_custom_path(b"WIDE1-1,WIDE2-2");
     assert_eq!(&*a.app.aprs_cfg().path(), &[b"WIDE1-1".as_slice(), b"WIDE2-2"]);
-    reset(&mut a.app, &[5, 9, 2]);
+    reset(&mut a.app, &[5, 8, 2]);
     let c = a.app.aprs_cfg();
     assert!(c.custom_text().is_empty());
     assert_eq!(c.path, PATH_DEFAULT, "forgetting the path in use goes back to the default");

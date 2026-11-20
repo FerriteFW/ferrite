@@ -2,7 +2,7 @@
 //! clarifier, the APRS card's large rows, and the steps.
 
 use super::*;
-use crate::aprs::{AprsCfg, APRS_SLOT};
+use crate::aprs::AprsCfg;
 use ferrite_core::freq::mhz;
 use ferrite_core::msg::ModeLive;
 
@@ -127,13 +127,11 @@ fn aprs_card_large_rows() {
     let mut t = T::ready();
     t.app.set.bt = true;
     t.app.set.kiss_port = 2;
-    t.wait(100);
-    while t.app.active() != APRS_SLOT {
-        t.tap(Key::Slot);
-    }
-    t.wait(3500);
+    t.app.open(crate::screens::nav::Dest::KissMode);
+    t.draw();
     t.shows("Bluetooth");
-    t.app.set.kiss_port = 0;
+    t.app.go_home();
+    t.wait(100); // the APRS settings load once, then a beacon interval sticks
     t.app.set_aprs(AprsCfg { beacon: 5, ..t.app.aprs_cfg() });
     t.s.aprs_tick(10, true, true);
     t.wait(100);

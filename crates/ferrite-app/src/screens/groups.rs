@@ -90,13 +90,14 @@ const G2: [Entry; 6] = [
     Entry(concat!("Local zone|50 km|", txtc!("A zone of the channels within this range of you, nearest first. Needs a GPS fix or the fixed position (0 6 9)."))),
     Entry(concat!("FM broadcast||", txtc!("Step, AGC, radio monitor, sleep timer."))),
 ];
-const G3: [Entry; 6] = [
+const G3: [Entry; 7] = [
     Entry(concat!("Band scope|60 bars|", txtc!("Bars, step, speed, trigger, waterfall."))),
     Entry(concat!("Frequency counter||", txtc!("Find a nearby transmitter's frequency."))),
     Entry(concat!("HF mode||", txtc!("Below 64 MHz. Everything else pauses."))),
     Entry(concat!("Crossband repeater||", txtc!("Repeat one slot's band on another's."))),
     Entry(concat!("Tone search||", txtc!("Find the CTCSS or DCS in use."))),
     Entry(concat!("Satellites||", txtc!("Passes, pointing and Doppler for FM satellites."))),
+    Entry(concat!("KISS TNC||", txtc!("Packet TNC on its own frequency. Cable or Bluetooth."))),
 ];
 const G4: [Entry; 5] = [
     Entry(concat!("Event log||", txtc!("Every decode and alert."))),
@@ -105,7 +106,7 @@ const G4: [Entry; 5] = [
     Entry(concat!("Popups|On|", txtc!("A 3 s toast for each decode."))),
     Entry(concat!("Weather alerts|On|", txtc!("SAME and your location codes."))),
 ];
-const G5: [Entry; 9] = [
+const G5: [Entry; 8] = [
     Entry(concat!("Heard||", txtc!("Stations heard, newest first."))),
     Entry(concat!("Messages||", txtc!("Messages sent to you and by you."))),
     Entry(concat!("APRS mode|Off|", txtc!("Slot C becomes the APRS slot."))),
@@ -113,8 +114,6 @@ const G5: [Entry; 9] = [
     Entry(concat!("My station|SSID 9|", txtc!("SSID, symbol, comment, position."))),
     Entry(concat!("Beacon|Off|", txtc!("When to beacon: manual, timed, smart."))),
     Entry(concat!("Digipeat|Off|", txtc!("Relay others' packets."))),
-    // The KISS TNC (the mailbox beside it waits until it is built, decision 245).
-    Entry(concat!("KISS TNC|Off|", txtc!("Raw KISS on the cable or Bluetooth."))),
     Entry(concat!("Advanced||", txtc!("Path, TX delay and level, FX.25."))),
 ];
 const G6: [Entry; 9] = [
@@ -166,7 +165,7 @@ pub(crate) const GROUP_ITEMS: [&[Entry]; 9] = [&G1, &G2, &G3, &G4, &G5, &G6, &G7
 const SHORT: [&str; 9] = ["Scan", "Channels", "Tools", "Decoders", "APRS", "GPS", "Display", "Transmit", "System"];
 
 /// The third-level lists, by group and item.
-pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
+pub(crate) const SUBS: [((u8, u8), &[Entry]); 23] = [
     ((1, 6), &[
         Entry(concat!("Pause time|1 min|", txtc!("# on home pauses watch this long."))),
         Entry(concat!("Direction|Up|", txtc!("Scan up or down."))),
@@ -186,6 +185,10 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
         Entry(concat!("Trigger|Off|", txtc!("Over the line: monitor or log."))),
         Entry(concat!("Waterfall row|Off|", txtc!("History under the scope."))),
         Entry(concat!("Open band scope||", txtc!("Sweep around the active slot. Home: hold 1."))),
+    ]),
+    ((3, 7), &[
+        Entry(concat!("Port|Off|", txtc!("Raw KISS on the cable or Bluetooth."))),
+        Entry(concat!("Frequency|144.390|", txtc!("OK types it; # the region's. APRS keeps its own."))),
     ]),
     ((4, 2), &[
         Entry(concat!("Decode|Off|", txtc!("Pagers on a slot tuned to the frequency."))),
@@ -217,7 +220,7 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
         Entry(concat!("Aliases|WIDE1-1|", txtc!("WIDE1-1, and your call if chosen."))),
         Entry(concat!("Wait|0 s|", txtc!("Delay before relaying, 0-5 s."))),
     ]),
-    ((5, 9), &[
+    ((5, 8), &[
         Entry(concat!("Path|WIDE1-1,WIDE2-1|", txtc!("The digipeater path; most use WIDE1-1,WIDE2-1."))),
         Entry(concat!("Custom path|None|", txtc!("Your own path, like WIDE2-2: OK types it."))),
         Entry(concat!("TX delay|300 ms|", txtc!("Carrier before data."))),
@@ -284,7 +287,7 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
     ((9, 2), &[
         Entry(concat!("Bluetooth|Off|", txtc!("The Bluetooth link to the web app."))),
         Entry(concat!("Link status||", txtc!("Cable and Bluetooth now."))),
-        Entry(concat!("Cable port|Auto|", txtc!("Auto, link or terminal; KISS is 0 5 8."))),
+        Entry(concat!("Cable port|Auto|", txtc!("Auto, link or terminal; KISS is 0 3 7."))),
     ]),
     ((9, 3), &[
         Entry(concat!("PIN lock|Off|", txtc!("Ask for the PIN at power on, or unlock too."))),
@@ -379,7 +382,7 @@ pub(crate) fn items(g: u8, sub: u8) -> &'static [Entry] {
 pub(crate) fn greyed(app: &App, p: &[u8]) -> Option<&'static str> {
     match p {
         [4, 5, ..] if !app.set.wx_region() => Some("US/CA only"), // WX-3
-        [5, 3] | [5, 6, 1] if app.set.kiss_on() => app.kiss_holds_aprs(), // KISS-10
+        [5, 3] | [5, 6, 1] if app.kiss_on() => app.kiss_holds_aprs(), // KISS-10
         [8, 8, 5] if !app.radio.tx_built => Some("not in this build"), // TX-48
         [8, 8, 5] if app.remote_in => Some("on the radio only"), // TX-48: never the link's (LINK-19)
         _ => None,
@@ -475,7 +478,7 @@ pub(crate) fn all_values() -> std::vec::Vec<([u8; 3], std::vec::Vec<std::string:
 /// that change only on the radio: PIN, region, Extend TX), and for most of them all the menu needs. A new
 /// setting is one row here (and its field, default and place in `persist.rs`).
 #[cfg_attr(target_os = "none", link_section = ".slow_rodata")]
-static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
+static SETTINGS: [Setting; 99 + cfg!(feature = "bench") as usize] = [
     field!([1, 1, 0], special),
     field!([1, 2, 0], special),
     field!([1, 3, 0], scan_prio: u8, Kind::Round(6, prio_text), Nothing),
@@ -494,6 +497,8 @@ static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
     field!([3, 1, 3], special),
     field!([3, 1, 4], scope_trig: u8, Kind::Pick(&SCOPE_TRIGGERS), Nothing),
     field!([3, 1, 5], scope_wf: bool, Kind::Flip(&ON_OFF), Nothing),
+    field!([3, 7, 1], kiss_port: u8, Kind::Pick(&crate::settings::KISS_PORTS), Nothing),
+    field!([3, 7, 2], special), // the KISS frequency, not the APRS frequency
     field!([4, 2, 1], pocsag_on: bool, Kind::Flip(&ON_OFF), Nothing),
     field!([4, 2, 2], special),
     field!([4, 2, 3], special),
@@ -516,16 +521,15 @@ static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
     field!([5, 7, 1], special),
     field!([5, 7, 2], special),
     field!([5, 7, 3], special),
-    field!([5, 8, 0], kiss_port: u8, Kind::Pick(&crate::settings::KISS_PORTS), Nothing),
-    field!([5, 9, 1], special),
-    field!([5, 9, 2], special),
-    field!([5, 9, 3], special), // APRS-48: TX delay
-    field!([5, 9, 4], special), // APRS-49: TX level
-    field!([5, 9, 5], special), // APRS-45
-    field!([5, 9, 6], aprs_mute: bool, Kind::Flip(&ON_OFF), AprsMute), // APRS-2
-    field!([5, 9, 7], aprs_share: u8, Kind::Pick(&crate::settings::APRS_SHARE), Nothing), // WATCH-17.3
-    field!([5, 9, 8], decode_log: bool, Kind::Flip(&ON_OFF), Nothing), // APRS-56
-    field!([5, 9, 9], special), // APRS-57: auto reply's page
+    field!([5, 8, 1], special),
+    field!([5, 8, 2], special),
+    field!([5, 8, 3], special), // APRS-48: TX delay
+    field!([5, 8, 4], special), // APRS-49: TX level
+    field!([5, 8, 5], special), // APRS-45
+    field!([5, 8, 6], aprs_mute: bool, Kind::Flip(&ON_OFF), AprsMute), // APRS-2
+    field!([5, 8, 7], aprs_share: u8, Kind::Pick(&crate::settings::APRS_SHARE), Nothing), // WATCH-17.3
+    field!([5, 8, 8], decode_log: bool, Kind::Flip(&ON_OFF), Nothing), // APRS-56
+    field!([5, 8, 9], special), // APRS-57: auto reply's page
     // GPS-1: Off, Auto, On in menu order (stored 0, 2, 1: the old on/off byte reads as it was, GPS-1.4)
     Setting {
         path: [6, 1, 0],
@@ -837,17 +841,17 @@ pub(crate) fn wired(app: &App, dev: &Device, p: &[u8], b: &mut Buf<24>) -> Optio
             app.aprs_cfg().text_every != 0
         }
         // The group rows show their setting too (APRS-26).
-        [5, 9, 1] => {
+        [5, 8, 1] => {
             b.set(app.aprs_cfg().path_name());
             app.aprs_cfg().path != crate::aprs::PATH_DEFAULT
         }
-        [5, 9, 2] => {
+        [5, 8, 2] => {
             let c = app.aprs_cfg();
             b.set(if c.custom_text().is_empty() { b"None".as_slice() } else { c.custom_text() });
             !c.custom_text().is_empty()
         }
         // APRS-57: on or off; its settings are on its page
-        [5, 9, 9] => {
+        [5, 8, 9] => {
             let on = app.aprs_cfg().reply_on();
             b.set(if on { b"On" } else { b"Off" });
             on
@@ -867,6 +871,10 @@ pub(crate) fn wired(app: &App, dev: &Device, p: &[u8], b: &mut Buf<24>) -> Optio
         [5, 4] => {
             b.set(crate::slot::mhz3(app.aprs_freq()).as_bytes());
             app.aprs_cfg().f5k != 0
+        }
+        [3, 7, 2] => {
+            b.set(crate::slot::mhz3(app.kiss_freq()).as_bytes());
+            s.kiss_f5k != 0
         }
         [7, 5, 5] => {
             pick(b, &ferrite_core::tonegen::CHIME_NAMES, app.aprs_cfg().sound);
@@ -898,15 +906,15 @@ pub(crate) fn wired(app: &App, dev: &Device, p: &[u8], b: &mut Buf<24>) -> Optio
             pick(b, &crate::aprs::MIC_E_NAMES, app.aprs_cfg().mic_e);
             app.aprs_cfg().mic_e != 0
         }
-        [5, 9, 3] => {
+        [5, 8, 3] => {
             let _ = uwrite!(b, "{} ms", app.aprs_cfg().txdelay_10ms() as u16 * 10);
             app.aprs_cfg().txdelay_10ms() != crate::aprs::TXDELAY_DEFAULT
         }
-        [5, 9, 4] => {
+        [5, 8, 4] => {
             pick(b, &crate::aprs::TX_LEVELS, app.aprs_cfg().tx_level);
             app.aprs_cfg().tx_level != 1
         }
-        [5, 9, 5] => {
+        [5, 8, 5] => {
             pick(b, &crate::aprs::FX25_NAMES, app.aprs_cfg().fx25_index());
             app.aprs_cfg().fx25 != crate::aprs::FX25_DEFAULT
         }
@@ -1051,7 +1059,7 @@ pub(crate) fn change(app: &mut App, p: &[u8], d: i32) -> bool {
         [5, 6, 2] => app.set_aprs(crate::aprs::AprsCfg { after_voice: !app.aprs_cfg().after_voice, ..app.aprs_cfg() }),
         [5, 6, 4] => app.set_aprs(crate::aprs::AprsCfg { telemetry: !app.aprs_cfg().telemetry, ..app.aprs_cfg() }),
         [5, 6, 5] => app.set_aprs(crate::aprs::AprsCfg { text_every: cycle(app.aprs_cfg().text_every, d, 4), ..app.aprs_cfg() }),
-        [5, 9, 1] => {
+        [5, 8, 1] => {
             let c = app.aprs_cfg();
             app.set_aprs(crate::aprs::AprsCfg { path: c.path_step(d), ..c });
         }
@@ -1063,6 +1071,7 @@ pub(crate) fn change(app: &mut App, p: &[u8], d: i32) -> bool {
             app.set_aprs(crate::aprs::AprsCfg { digi: c.digi & 0x0F | w << 4, ..c });
         }
         [5, 4] => app.step_aprs_freq(d),
+        [3, 7, 2] => app.step_kiss_freq(d),
         [7, 5, 5] => {
             // APRS-6.1: each choice plays as it is picked
             let sound = cycle(app.aprs_cfg().sound, d, ferrite_core::tonegen::CHIMES.len());
@@ -1083,21 +1092,21 @@ pub(crate) fn change(app: &mut App, p: &[u8], d: i32) -> bool {
             let mic_e = (app.aprs_cfg().mic_e as i32 + d).clamp(0, crate::aprs::MIC_E_NAMES.len() as i32 - 1) as u8;
             app.set_aprs(crate::aprs::AprsCfg { mic_e, ..app.aprs_cfg() })
         }
-        [5, 9, 3] => {
+        [5, 8, 3] => {
             let c = app.aprs_cfg();
             let txdelay = (c.txdelay_10ms() as i32 + d * 5).clamp(crate::aprs::TXDELAY_MIN as i32, crate::aprs::TXDELAY_MAX as i32) as u8;
             app.set_aprs(crate::aprs::AprsCfg { txdelay, ..c })
         }
-        [5, 9, 4] => {
+        [5, 8, 4] => {
             let tx_level = (app.aprs_cfg().tx_level as i32 + d).clamp(0, 2) as u8;
             app.set_aprs(crate::aprs::AprsCfg { tx_level, ..app.aprs_cfg() })
         }
-        [5, 9, 5] => {
+        [5, 8, 5] => {
             let i = cycle(app.aprs_cfg().fx25_index(), d, crate::aprs::FX25_CHECKS.len());
             app.set_aprs(crate::aprs::AprsCfg { fx25: crate::aprs::FX25_CHECKS[i as usize], ..app.aprs_cfg() })
         }
         // APRS-57: the knob turns auto reply on and off; OK opens its page
-        [5, 9, 9] => app.set_aprs(crate::aprs::AprsCfg { reply: app.aprs_cfg().reply ^ 1, ..app.aprs_cfg() }),
+        [5, 8, 9] => app.set_aprs(crate::aprs::AprsCfg { reply: app.aprs_cfg().reply ^ 1, ..app.aprs_cfg() }),
         // 6.25 kHz steps across the VHF and UHF pager bands.
         [4, 2, 2] => s.pocsag_freq = (s.pocsag_freq as i64 + d as i64 * 625).clamp(13_600_000, 52_000_000) as ferrite_core::freq::Freq10,
         [7, 4, 2] => *s.brightness_mut() = (s.brightness() as i32 + d).clamp(1, 10) as u8, // DISP-16, DISP-23
@@ -1165,24 +1174,27 @@ pub(crate) fn reset(app: &mut App, p: &[u8]) {
         [5, 6, 2] => app.set_aprs(crate::aprs::AprsCfg { after_voice: false, ..app.aprs_cfg() }),
         [5, 6, 4] => app.set_aprs(crate::aprs::AprsCfg { telemetry: false, ..app.aprs_cfg() }),
         [5, 6, 5] => app.set_aprs(crate::aprs::AprsCfg { text_every: 0, ..app.aprs_cfg() }),
-        [5, 9, 1] => app.set_aprs(crate::aprs::AprsCfg { path: crate::aprs::PATH_DEFAULT, ..app.aprs_cfg() }),
+        [5, 8, 1] => app.set_aprs(crate::aprs::AprsCfg { path: crate::aprs::PATH_DEFAULT, ..app.aprs_cfg() }),
         [5, 7, 1] => app.set_aprs(crate::aprs::AprsCfg { digi: app.aprs_cfg().digi & !crate::aprs::DIGI_ON, ..app.aprs_cfg() }),
         [5, 7, 2] => app.set_aprs(crate::aprs::AprsCfg { digi: app.aprs_cfg().digi & !crate::aprs::DIGI_MYCALL, ..app.aprs_cfg() }),
         [5, 7, 3] => app.set_aprs(crate::aprs::AprsCfg { digi: app.aprs_cfg().digi & 0x0F, ..app.aprs_cfg() }),
         [5, 4] => app.set_aprs(crate::aprs::AprsCfg { f5k: 0, ..app.aprs_cfg() }),
+        [3, 7, 2] => {
+            let _ = app.set_kiss_freq(crate::aprs::region_freq(app.set.region()));
+        }
         [7, 5, 5] => app.set_aprs(crate::aprs::AprsCfg { sound: ferrite_core::tonegen::CHIME_DEFAULT, ..app.aprs_cfg() }),
         [5, 5, 2] => app.set_aprs(crate::aprs::AprsCfg { symbol: 0, ..app.aprs_cfg() }),
         [5, 5, 3] => app.set_aprs_comment(b""),
         [5, 5, 6] => app.set_aprs(crate::aprs::AprsCfg { ambiguity: 0, ..app.aprs_cfg() }),
         [5, 5, 7] => app.set_aprs(crate::aprs::AprsCfg { mic_e: 0, ..app.aprs_cfg() }),
-        [5, 9, 3] => app.set_aprs(crate::aprs::AprsCfg { txdelay: crate::aprs::TXDELAY_DEFAULT, ..app.aprs_cfg() }),
-        [5, 9, 4] => app.set_aprs(crate::aprs::AprsCfg { tx_level: 1, ..app.aprs_cfg() }),
-        [5, 9, 5] => app.set_aprs(crate::aprs::AprsCfg { fx25: crate::aprs::FX25_DEFAULT, ..app.aprs_cfg() }),
-        [5, 9, 9] => app.set_aprs(crate::aprs::AprsCfg { reply: app.aprs_cfg().reply & !1, ..app.aprs_cfg() }), // APRS-57: off, the rest kept
+        [5, 8, 3] => app.set_aprs(crate::aprs::AprsCfg { txdelay: crate::aprs::TXDELAY_DEFAULT, ..app.aprs_cfg() }),
+        [5, 8, 4] => app.set_aprs(crate::aprs::AprsCfg { tx_level: 1, ..app.aprs_cfg() }),
+        [5, 8, 5] => app.set_aprs(crate::aprs::AprsCfg { fx25: crate::aprs::FX25_DEFAULT, ..app.aprs_cfg() }),
+        [5, 8, 9] => app.set_aprs(crate::aprs::AprsCfg { reply: app.aprs_cfg().reply & !1, ..app.aprs_cfg() }), // APRS-57: off, the rest kept
         [4, 2, 2] => s.pocsag_freq = d.pocsag_freq,
         [4, 2, 3] => s.pocsag_cap = d.pocsag_cap,
         // # forgets the custom path; a path set to it goes back to the default (APRS-26)
-        [5, 9, 2] => {
+        [5, 8, 2] => {
             let c = app.aprs_cfg();
             let path = if c.path == crate::aprs::PATH_CUSTOM { crate::aprs::PATH_DEFAULT } else { c.path };
             app.set_aprs(crate::aprs::AprsCfg { custom: [0; crate::aprs::CUSTOM_LEN], path, ..c });
@@ -1489,7 +1501,7 @@ pub(crate) fn open_path(app: &mut App, p: &[u8], name: &str, ok: bool) {
             app.text = Buf::new();
             app.open(Dest::Text(super::text::TextFor::Clock));
         }
-        [5, 9, 2] => {
+        [5, 8, 2] => {
             app.text = Buf::from(app.aprs_custom_path());
             app.open(Dest::Text(super::text::TextFor::AprsPath));
         }
@@ -1500,6 +1512,7 @@ pub(crate) fn open_path(app: &mut App, p: &[u8], name: &str, ok: bool) {
         }
         // MENU-31: a frequency setting opens the frequency entry box; the knob still steps it.
         [5, 4] => super::entry::open_setting(app, super::entry::FreqSet::Aprs),
+        [3, 7, 2] => super::entry::open_setting(app, super::entry::FreqSet::Kiss),
         [4, 2, 2] => super::entry::open_setting(app, super::entry::FreqSet::Pager),
         _ => {
             if let Some(d) = nav::menu0(p) {

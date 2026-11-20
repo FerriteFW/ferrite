@@ -200,12 +200,12 @@ fn heard_list_fields() {
     assert!(t.contains("ago") || t.contains(" min") || t.contains(" s"), "ages shown:\n{t}");
 }
 
-/// KISS is off by default (KISS-1).
+/// MENU 0 3 7 opens KISS mode. Off becomes Cable; the screen shows the region's frequency.
 #[test]
-fn kiss_off_by_default() {
+fn kiss_mode_from_tools() {
     let mut r = Radio::new();
-    r.run("menu 0 5 8; expect text \"Off\"");
-    assert_eq!(r.sim.app().settings().kiss_port, 0);
+    r.run("menu 0 3 7; expect screen \"KISS\"; expect text \"Cable\"; expect text \"144.390\"");
+    assert_eq!(r.sim.app().settings().kiss_port, 1);
 }
 
 /// Bluetooth: the status-bar icon shows only while a device is connected, and Status shows the state (LINK-17).

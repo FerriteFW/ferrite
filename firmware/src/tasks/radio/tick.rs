@@ -183,6 +183,10 @@ impl Radio {
                 (self.soft_sq[n as usize], self.sq_key[n as usize]) = (Default::default(), self.tuned[n as usize]);
                 self.sq_at[n as usize] = now; // SQL-18.5: the first reading counts no time
                 (self.chip_sq[n as usize], self.tone_hold[n as usize]) = (Default::default(), Default::default());
+                #[cfg(feature = "bench")]
+                {
+                    self.sq_tuned[n as usize] = (now, false); // the squelch timing log: from this retune
+                }
                 self.aprs_sq[n as usize].retuned(now); // SQL-19.2: settling
             }
             // SQL-18.5: this reading counts for the time since the last (10 ms in watch or scan, 50 ms alone)
@@ -217,6 +221,15 @@ impl Radio {
                     #[cfg(feature = "bench")]
                     let was = self.chip_sq[n as usize].open();
                     let o = self.chip_sq[n as usize].step(st.squelch_open, fast, dt);
+                    #[cfg(feature = "bench")]
+                    if st.squelch_open && !self.sq_tuned[n as usize].1 {
+                        self.sq_tuned[n as usize].1 = true;
+                        log(b"sq bit open, ms after tune ", now.wrapping_sub(self.sq_tuned[n as usize].0));
+                    }
+                    #[cfg(feature = "bench")]
+                    if o != was && o {
+                        log(b"sq chip open, ms after tune ", now.wrapping_sub(self.sq_tuned[n as usize].0));
+                    }
                     #[cfg(feature = "bench")]
                     if o != was {
                         log(if o { b"sq open (chip), rssi dBm + 200 " } else { b"sq shut (chip), rssi dBm + 200 " }, (rssi + 200).max(0) as u32);
@@ -312,6 +325,9 @@ impl Radio {
         let asleep = if self.save.asleep() { !self.kept() } else { 0 };
         let cfg = watch::Cfg { set: self.watch_set, active: self.active, freq: self.slots.map(|s| s.freq), muted: self.user_mute, off: self.bcast_off() | asleep | self.user_off, held: self.monitor, prio: self.kept(), aprs: self.aprs_slots, scan: self.range_scans(), first: watch::aprs_first(), swap: self.swap };
         let keyed = self.path.keyed().is_some();
+        // WATCH-17.5: a chip whose own squelch bit reads open with stock's count running keeps its turn
+        let rising = core::array::from_fn(|n| listening == Some(n as u8) && (self.chip_sq[n].rising() || self.soft_sq[n].rising()));
+        self.watcher.rising(rising);
         let out = self.watcher.turn(now, &cfg, sq, heard, keyed);
         self.live.dropped = out.dropped;
         // 2a. The tone hint (TSRCH-12, TSRCH-15): on the chip listening, for the slot the watch holds for audio.

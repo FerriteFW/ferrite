@@ -49,6 +49,11 @@ impl ChipSq {
         self.open
     }
 
+    /// WATCH-17.5: closed, with the chip's bit reading open and the count running.
+    pub fn rising(&self) -> bool {
+        !self.open && self.n > 0
+    }
+
     /// The next decision from the chip's bit, `dt_ms` after the reading before. `fast` (a scan step, a priority
     /// look): open on the first reading the chip calls open.
     pub fn step(&mut self, chip_open: bool, fast: bool, dt_ms: u16) -> bool {
@@ -151,6 +156,11 @@ pub struct SoftSq {
 impl SoftSq {
     /// Closed, nothing counted (a `const` for the Radio task's static).
     pub const DEFAULT: SoftSq = SoftSq { open: false, n: 0, ms: 0, noisy: 0 };
+
+    /// WATCH-17.5: closed, with passing readings counting toward opening.
+    pub fn rising(&self) -> bool {
+        !self.open && self.n > 0
+    }
 
     /// The next decision from one reading, `dt_ms` after the one before (SQL-18.5: the poll is 10 ms or 50 ms).
     /// `fast`: open on the first reading that passes.
@@ -369,6 +379,9 @@ mod tests {
         assert!(f.step(true, true, 10), "fast");
         let mut z = ChipSq::default();
         assert!(!z.step(true, false, 0), "a reading with no time can't open alone");
+        assert!(z.rising(), "WATCH-17.5: counting");
+        z.step(false, false, 10);
+        assert!(!z.rising());
     }
 
     /// SQL-18.8: a tone lost for one reading doesn't mute; lost for 100 ms (and two readings) it does; a closed

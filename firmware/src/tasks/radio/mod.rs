@@ -223,6 +223,9 @@ struct Radio {
     sq_at: [u32; 2],
     /// SQL-18.7: stock's debounce over each chip's own squelch bit (the default, 0 9 5 Chip).
     chip_sq: [ferrite_core::softsq::ChipSq; 2],
+    /// Bench: when each chip was last retuned, and whether its bit has read open since (the squelch timing log).
+    #[cfg(feature = "bench")]
+    sq_tuned: [(u32, bool); 2],
     /// SQL-18.8: each chip's tone match, held through a short loss.
     tone_hold: [ferrite_core::softsq::ToneHold; 2],
     /// SQL-17: each chip's squelch open delay as last written (true: 0, for a scan step or the strip's look; false:
@@ -791,6 +794,8 @@ pub async fn task() {
         sq_key: [None; 2],
         sq_at: [0; 2],
         chip_sq: [ferrite_core::softsq::ChipSq::DEFAULT; 2],
+        #[cfg(feature = "bench")]
+        sq_tuned: [(0, false); 2],
         tone_hold: [ferrite_core::softsq::ToneHold::DEFAULT; 2],
         open_fast: [None; 2],
         data_rx: [None; 2],

@@ -130,6 +130,8 @@ pub struct Out {
     pub defer_to: Option<u8>,
     /// WATCH-17.3: APRS first ([`Cfg::first`]), for [`Hop`]'s dwell.
     pub first: bool,
+    /// WATCH-17.5: each chip's squelch rising, as [`Watch::rising`] last set it (for [`Hop`]).
+    pub rising: [bool; 2],
     /// WATCH-16.2: watched slots left out this tick by a key-up or a relay cancel (not by turns on a shared chip).
     pub dropped: u8,
 }
@@ -170,6 +172,8 @@ pub struct Watch {
     last: [u8; 2],
     /// APRS-21.4: when the APRS slot's last data frame ended ([`Watch::after_tx`]).
     after_tx: Option<u32>,
+    /// WATCH-17.5: each chip's squelch rising ([`Watch::rising`]).
+    rising: [bool; 2],
 }
 
 fn after(now: u32, t: u32) -> bool {
@@ -178,7 +182,7 @@ fn after(now: u32, t: u32) -> bool {
 
 impl Watch {
     pub const fn new() -> Self {
-        Watch { on: [None; 2], since: [0; 2], open: 0, closed_at: [0; SLOTS], recent: 0, pause_until: None, listening: [false; 2], got: [0; 2], last: [0; 2], after_tx: None }
+        Watch { on: [None; 2], since: [0; 2], open: 0, closed_at: [0; SLOTS], recent: 0, pause_until: None, listening: [false; 2], got: [0; 2], last: [0; 2], after_tx: None, rising: [false; 2] }
     }
 
     /// Pause for `secs` (WATCH-6, WATCH-16); 0 resumes now.
@@ -194,6 +198,15 @@ impl Watch {
     /// Squelch open on a slot, as last heard.
     pub fn open(&self, slot: u8) -> bool {
         self.open & 1 << slot != 0
+    }
+
+    /// WATCH-17.5: each chip's squelch is rising: its own bit reads open and the debounce before it opens
+    /// (SQL-18.7) is still counting. Such a chip keeps its slot and the receive path past the dwell, as stock never
+    /// hops while the bit reads open: the bit comes some 48 ms after a retune and the count needs 30 ms more, past
+    /// a watched slot's 70 ms turn, so without this a watched slot never opened (black, Nov 21, 2026). It lasts at
+    /// most the count, so it can't hold a chip for long. The Radio task sets it before each [`Watch::turn`].
+    pub fn rising(&mut self, r: [bool; 2]) {
+        self.rising = r;
     }
 
     /// A tick: `sq` is each chip's squelch since the last one (for the slot it was on), `keyed` any slot
@@ -302,6 +315,8 @@ impl Watch {
                 // hold doesn't keep a priority slot from its turns (APRS-21.1).
                 Some(s) if open & !c.muted & 1 << s != 0 => Some(s),
                 Some(s) if self.recent & !c.muted & 1 << s != 0 && p.is_none() => Some(s),
+                // WATCH-17.5: its squelch rising: the turn waits for the count
+                Some(s) if self.rising[n as usize] && listened[n as usize] && c.muted & 1 << s == 0 => Some(s),
                 Some(s) => {
                     if now.wrapping_sub(self.since[n as usize]) < dwell(Some(s), active, prio, p.is_none() && prio & listen != 0, c.first) {
                         Some(s)
@@ -336,6 +351,7 @@ impl Watch {
         }
         out.chip = self.on;
         out.first = c.first;
+        out.rising = self.rising;
         out.scan = (0..2u8).find(|&n| self.on[n as usize].is_some_and(|s| s == active && c.scan & 1 << s != 0));
         let open = self.open | c.held & set;
         // APRS-21.4: held as if open while the window lasts, so the path stays on it and its decoder hears it
@@ -435,6 +451,8 @@ impl Hop {
                 let heard = out.hold.or_else(|| out.audio.and_then(|s| (0..2u8).find(|&n| out.chip[n as usize] == Some(s))));
                 match (heard, self.cur) {
                     (Some(n), _) => Some(n),
+                    // WATCH-17.5: the chip whose squelch is rising keeps the path
+                    (None, Some(c)) if out.rising[c as usize] => Some(c),
                     (None, Some(c)) => {
                         let s = out.chip[c as usize];
                         let was_prio = self.slot.is_some_and(|x| out.prio & 1 << x != 0);
@@ -465,7 +483,7 @@ impl Hop {
     /// that chip's supplies on a tick early, so their settle overlaps the dwell instead of delaying the hop.
     pub fn due(&self, now: u32, out: &Out, active: u8, within: u32) -> Option<u8> {
         let c = self.cur?;
-        if out.chip.iter().any(Option::is_none) || out.hold.is_some() || out.audio.is_some_and(|s| out.chip.contains(&Some(s))) {
+        if out.chip.iter().any(Option::is_none) || out.hold.is_some() || out.rising[c as usize] || out.audio.is_some_and(|s| out.chip.contains(&Some(s))) {
             return None;
         }
         let dwell = scan_dwell(out, c).unwrap_or_else(|| dwell(out.chip[c as usize], active, out.prio, beside(out, c), out.first));
@@ -800,6 +818,43 @@ mod tests {
         let one = Out { chip: [None, Some(1)], ..Out::default() };
         assert_eq!(h.next(9_010, &one, 1), Some(1));
         assert_eq!(h.next(9_020, &Out::default(), 0), None);
+    }
+
+    /// WATCH-17.5: a chip whose squelch is rising (its bit open, the debounce counting) keeps the path past its
+    /// dwell, and isn't named due; once it clears the hop goes on.
+    #[test]
+    fn hop_waits_for_a_rising_squelch() {
+        let mut h = Hop::new();
+        let both = Out { chip: [Some(0), Some(1)], ..Out::default() };
+        h.next(0, &both, 0);
+        h.next(150, &both, 0); // B's watched turn on chip 1
+        let rising = Out { rising: [false, true], ..both };
+        assert_eq!(h.due(215, &rising, 0, 10), None, "not due while rising");
+        assert_eq!(h.next(220, &rising, 0), Some(1), "past the 70 ms dwell: kept");
+        assert_eq!(h.next(250, &rising, 0), Some(1));
+        assert_eq!(h.next(260, &both, 0), Some(0), "cleared: the hop goes on");
+    }
+
+    /// WATCH-17.5: slots sharing a chip: the watched slot whose squelch is rising keeps the chip past its dwell; a
+    /// muted one doesn't.
+    #[test]
+    fn shared_chip_waits_for_a_rising_squelch() {
+        let c = Cfg { set: 0b101, ..cfg() }; // A and C, both on chip 0
+        for muted in [false, true] {
+            let c = Cfg { muted: if muted { 0b100 } else { 0 }, ..c };
+            let mut w = Watch::new();
+            let mut t = 0;
+            while w.turn(t, &c, [false; 2], [true; 2], false).chip[0] != Some(2) {
+                t += 10;
+                assert!(t < 1_000);
+            }
+            w.rising([true, false]);
+            let o = w.turn(t + WATCHED_DWELL_MS + 20, &c, [false; 2], [true; 2], false);
+            assert_eq!(o.chip[0] == Some(2), !muted, "muted {muted}");
+            assert_eq!(o.rising, [true, false]);
+            w.rising([false; 2]);
+            assert_eq!(w.turn(t + WATCHED_DWELL_MS + 30, &c, [false; 2], [true; 2], false).chip[0], Some(0), "cleared");
+        }
     }
 
     /// PWR-21.2: the chip the hop turns to by the next tick is named a tick early, never while a chip is heard or

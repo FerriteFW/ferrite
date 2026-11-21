@@ -1222,3 +1222,39 @@ fn a_flush_refused_by_a_save_under_way_is_made_again() {
     assert!(s.restore(&mut b));
     assert_eq!(b.watch(), 2, "the newer settings kept");
 }
+
+/// PWR-17.1: nothing changed since the last save: the power-off wait has nothing to wait for.
+#[test]
+fn nothing_unsaved_after_a_save() {
+    let s = mount(SimFlash::new());
+    let mut a = app();
+    a.set_watch(1);
+    assert!(s.save(&a));
+    assert!(!s.unsaved(&a));
+    assert!(!s.flush(&a), "nothing to save");
+}
+
+/// PWR-17.1: a change is unsaved until its save is done, then not.
+#[test]
+fn unsaved_until_the_save_is_done() {
+    let s = mount(SimFlash::new());
+    s.set_deferred(true);
+    let mut a = app();
+    a.set_watch(2);
+    assert!(s.unsaved(&a));
+    assert!(s.flush(&a));
+    assert!(s.unsaved(&a), "queued, not written yet");
+    drain(&s);
+    assert!(!s.unsaved(&a));
+}
+
+/// PWR-17.1: a store whose chip failed never holds the power-off wait (nothing can be saved).
+#[test]
+fn a_failed_chip_has_nothing_unsaved() {
+    let mut f = SimFlash::new();
+    f.dead = true;
+    let s = mount(f);
+    let mut a = app();
+    a.set_watch(2);
+    assert!(!s.unsaved(&a));
+}

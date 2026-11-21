@@ -443,6 +443,49 @@ mod tests {
         assert_eq!(c.keyed_retune(mhz(160), Region::Canada, false, 2), Err(Refusal::OutOfBand), "outside the plan");
     }
 
+    /// SAT-8.1: the retune follows the region's own plan: 435 MHz is fine where 70 cm is amateur, refused where the
+    /// region's plan stops short of it.
+    #[test]
+    fn a_keyed_retune_follows_the_region() {
+        use crate::txplan::{check, Region};
+        let c = TxCal::read(&sector(GAUGE_DEFAULT)).expect("valid");
+        for r in Region::ALL {
+            let f = mhz(435) + 25_000;
+            assert_eq!(c.keyed_retune(f, r, false, 2).is_ok(), check(f, r, false).is_ok() && c.in_window(f), "{r:?}");
+        }
+    }
+
+    /// SAT-8.1: with Extend TX the hardware's range stands in for the plan, the calibration windows still apply.
+    #[test]
+    fn a_keyed_retune_with_extend_tx() {
+        use crate::txplan::{Refusal, Region};
+        let c = TxCal::read(&sector(GAUGE_DEFAULT)).expect("valid");
+        assert_eq!(c.keyed_retune(mhz(435), Region::Uk, true, 2), Ok(()));
+        assert!(c.keyed_retune(mhz(600), Region::Uk, true, 2).is_err(), "past the hardware");
+        assert_eq!(c.keyed_retune(mhz(600), Region::Uk, true, 2), Err(Refusal::NotCalibrated));
+    }
+
+    /// SAT-8.1: every power level has its row on 70 cm: the retune is checked at the key-up's level, whichever.
+    #[test]
+    fn a_keyed_retune_at_every_power_level() {
+        use crate::txplan::Region;
+        let c = TxCal::read(&sector(GAUGE_DEFAULT)).expect("valid");
+        for p in 0..=2 {
+            assert_eq!(c.keyed_retune(mhz(436), Region::Us, false, p), Ok(()), "level {p}");
+        }
+    }
+
+    /// SAT-8.1: Doppler moves the uplink a few kHz either way over a pass: every step inside the band goes.
+    #[test]
+    fn doppler_steps_either_way_are_retuned() {
+        use crate::txplan::Region;
+        let c = TxCal::read(&sector(GAUGE_DEFAULT)).expect("valid");
+        let up = mhz(435) + 300_000;
+        for d in (-1_000i32..=1_000).step_by(50) {
+            assert_eq!(c.keyed_retune((up as i32 + d) as u32, Region::Canada, false, 2), Ok(()), "{d}");
+        }
+    }
+
     /// CAL-20.4: where a curve check failed: an erased byte in HF's Mid row, then Low not below High on VHF.
     #[test]
     fn curve_fault_located() {

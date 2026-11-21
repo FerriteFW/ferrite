@@ -332,6 +332,30 @@ mod wait_tests {
         let f = Flash::new(Deaf { held: 0x00 });
         assert_eq!(block(f.erase(SCRATCH_RING.start)), Err(NorError), "an erase that left data");
     }
+
+    /// SAFE-1.4: a write starting mid-page, on a chip that keeps it, reads back and passes.
+    #[test]
+    fn a_mid_page_write_reads_back() {
+        let f = Flash::new(crate::sim::SimFlash::new());
+        let a = SCRATCH_RING.start + 200;
+        assert_eq!(block(f.program(a, &[0x5A; 100])), Ok(()), "crosses a page boundary");
+        let mut b = [0u8; 100];
+        f.raw_read(a, &mut b).unwrap();
+        assert_eq!(b, [0x5A; 100]);
+    }
+
+    /// SAFE-1.4: a write over several pages is read back page by page and passes on a good chip.
+    #[test]
+    fn a_multi_page_write_reads_back() {
+        let f = Flash::new(crate::sim::SimFlash::new());
+        let data: std::vec::Vec<u8> = (0..1000u32).map(|i| (i * 7) as u8).collect();
+        assert_eq!(block(f.program(SCRATCH_RING.start, &data)), Ok(()));
+        let mut b = [0u8; 1000];
+        for (i, c) in b.chunks_mut(64).enumerate() {
+            f.raw_read(SCRATCH_RING.start + (i * 64) as u32, c).unwrap();
+        }
+        assert_eq!(&b[..], &data[..]);
+    }
 }
 
 #[cfg(all(test, feature = "std"))]

@@ -271,3 +271,57 @@ fn queued_writes_count_against_a_zone() {
     assert_eq!(truth(&s, 0).len(), ZONE_CAP as usize, "256, never more");
     assert_eq!(s.zone_len(0), ZONE_CAP);
 }
+
+/// CHAN-35.1: "no zone" has no cap, queued writes or not.
+#[test]
+fn no_zone_has_no_cap() {
+    let s = Store::mount(SimFlash::new(), NoData);
+    s.set_deferred(true);
+    for n in 0..300 {
+        assert!(s.zone_room(NO_ZONE, n));
+        assert!(s.apply(ChanWrite::Put { ch: ch(n, NO_ZONE), from: None }) || s.next_job().is_some_and(|j| ferrite_store::block(s.run(j))));
+    }
+    assert!(s.zone_room(NO_ZONE, 3000));
+}
+
+/// CHAN-35.1: a channel already in a full zone can be written again (renamed): it adds none.
+#[test]
+fn a_full_zones_own_channel_is_rewritten() {
+    let s = Store::mount(SimFlash::new(), NoData);
+    zones(&s, 1);
+    for n in 0..ZONE_CAP {
+        assert!(s.apply(ChanWrite::Put { ch: ch(n, 0), from: None }));
+    }
+    assert!(!s.zone_room(0, 999), "full");
+    assert!(s.zone_room(0, 10), "its own");
+    s.set_deferred(true);
+    assert!(s.apply(ChanWrite::Put { ch: channel(10, 0, 14_600_000, "Renamed", DEFAULT_CFG), from: None }));
+    assert!(s.zone_room(0, 11), "a rewrite queued adds none");
+}
+
+/// CHAN-35.1: a channel queued to move out of a full zone makes room for one more.
+#[test]
+fn a_queued_move_out_makes_room() {
+    let s = Store::mount(SimFlash::new(), NoData);
+    zones(&s, 2);
+    for n in 0..ZONE_CAP {
+        assert!(s.apply(ChanWrite::Put { ch: ch(n, 0), from: None }));
+    }
+    s.set_deferred(true);
+    assert!(!s.zone_room(0, 999));
+    assert!(s.apply(ChanWrite::Put { ch: ch(7, 1), from: None }));
+    assert!(s.zone_room(0, 999), "7 leaves zone 0");
+}
+
+/// CHAN-35.1: a queued delete of an empty number frees nothing.
+#[test]
+fn deleting_an_empty_number_frees_nothing() {
+    let s = Store::mount(SimFlash::new(), NoData);
+    zones(&s, 1);
+    for n in 0..ZONE_CAP {
+        assert!(s.apply(ChanWrite::Put { ch: ch(n, 0), from: None }));
+    }
+    s.set_deferred(true);
+    assert!(s.apply(ChanWrite::Delete(2000)));
+    assert!(!s.zone_room(0, 999), "still full");
+}

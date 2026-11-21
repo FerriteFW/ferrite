@@ -1944,6 +1944,57 @@ mod tests {
         assert!(a.receive(&f[..n], 310, b"VE3XYZ", &cfg).inbound.is_none());
     }
 
+    /// APRS-58: the same message gated by two IGates: one inbox entry, acked for each copy.
+    #[test]
+    fn a_third_party_message_via_two_igates_is_kept_once() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let (f, n) = frame(b"VE3IGT", b"APRS", &[], b"}VA7NET>APRS,TCPIP,VE3IGT*::VE3XYZ   :Once{9");
+        assert!(a.receive(&f[..n], 100, b"VE3XYZ", &cfg).inbound.is_some());
+        let (f, n) = frame(b"VE3IG2", b"APRS", &[], b"}VA7NET>APRS,TCPIP,VE3IG2*::VE3XYZ   :Once{9");
+        assert!(a.receive(&f[..n], 105, b"VE3XYZ", &cfg).inbound.is_none(), "stored once");
+    }
+
+    /// APRS-58: a sender with an SSID is acked by its full callsign.
+    #[test]
+    fn a_third_party_sender_keeps_its_ssid() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let mut out = [0u8; FRAME_MAX];
+        let (f, n) = frame(b"VE3IGT", b"APRS", &[], b"}VA7NET-9>APRS,TCPIP,VE3IGT*::VE3XYZ   :Hi{5");
+        let rx = a.receive(&f[..n], 100, b"VE3XYZ", &cfg);
+        assert_eq!(rx.inbound.unwrap().0.as_bytes(), b"VA7NET-9");
+        let t = a.tick(100, Sending::All, true, b"VE3XYZ", None, &cfg, &mut out);
+        assert_eq!(Frame::parse(&out[..t.len]).unwrap().info, b":VA7NET-9 :ack5");
+    }
+
+    /// APRS-58: a reply-ack inside a third-party message acks ours too (APRS 1.1).
+    #[test]
+    fn a_third_party_reply_ack_acks_ours() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let mut out = [0u8; FRAME_MAX];
+        assert!(a.send(b"VA7NET", b"Ping"));
+        assert_eq!(a.tick(0, Sending::All, true, b"VE3XYZ", None, &cfg, &mut out).what, "Message");
+        let (f, n) = frame(b"VE3IGT", b"APRS", &[], b"}VA7NET>APRS,TCPIP,VE3IGT*::VE3XYZ   :Pong{2}1");
+        let rx = a.receive(&f[..n], 10, b"VE3XYZ", &cfg);
+        assert!(matches!(rx.state, Some((_, _, MsgState::Acked))));
+        assert!(rx.inbound.is_some(), "and the reply is in the inbox");
+    }
+
+    /// APRS-58: a third-party packet with a broken inner header is only heard (no panic, no message).
+    #[test]
+    fn a_broken_third_party_packet_is_only_heard() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        for info in [&b"}"[..], b"}VA7NET", b"}>APRS::VE3XYZ   :x{1", b"}VA7NET>:", b"}VA7NET>APRS:"] {
+            let (f, n) = frame(b"VE3IGT", b"APRS", &[], info);
+            let rx = a.receive(&f[..n], 100, b"VE3XYZ", &cfg);
+            assert!(rx.inbound.is_none());
+            assert!(rx.changed, "the IGate is heard");
+        }
+    }
+
     #[test]
     fn ours_tried_until_acked() {
         let a = AprsLive::new();

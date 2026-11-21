@@ -158,6 +158,45 @@ fn an_old_refusal_doesnt_end_the_next_key_up() {
     assert!(t.cmds().contains(&RadioCmd::Transmit { slot: 0, on: false }), "unkeyed all the same");
 }
 
+/// TX-50: the refusal count wraps (u8): a refusal after the key-up is still taken when the count went past 255.
+#[test]
+fn a_refusal_counted_past_255_is_taken() {
+    let mut t = ready();
+    t.live.tx.refusals = 255;
+    t.wait(50);
+    ptt(&mut t, true);
+    assert_eq!(t.app.radio.refusals_at_key, 255);
+    t.live.tx = ferrite_core::msg::TxLive { keyed: false, slot: 0, refused: Some(Refusal::Battery), refusals: 0, ..Default::default() };
+    t.wait(100);
+    assert_eq!(refused(&t), Some(Refusal::Battery));
+}
+
+/// TX-50: a refusal for another slot doesn't end this one's key-up.
+#[test]
+fn another_slots_refusal_is_not_this_ones() {
+    let mut t = ready();
+    ptt(&mut t, true);
+    t.live.tx = ferrite_core::msg::TxLive { keyed: false, slot: 2, refused: Some(Refusal::Battery), refusals: 1, ..Default::default() };
+    t.wait(100);
+    assert_eq!(refused(&t), None);
+    assert!(t.app.radio.keyed.is_some());
+}
+
+/// TX-50: PTT again from the refused screen is a new key-up: the refusal it showed isn't taken again for it.
+#[test]
+fn ptt_again_from_the_refused_screen_starts_over() {
+    let mut t = ready();
+    ptt(&mut t, true);
+    t.live.tx = ferrite_core::msg::TxLive { keyed: false, slot: 0, refused: Some(Refusal::Hot), refusals: 1, ..Default::default() };
+    t.wait(100);
+    assert_eq!(refused(&t), Some(Refusal::Hot));
+    ptt(&mut t, false);
+    ptt(&mut t, true); // PTT again tries again (TxRefused's ptt)
+    t.wait(100);
+    assert_eq!(refused(&t), None, "the old refusal isn't this key-up's");
+    assert!(t.app.radio.keyed.is_some());
+}
+
 /// TX-30.3: unkey at the timeout (0 8 1, 120 s by default), home with a toast.
 #[test]
 fn timeout_unkeys() {

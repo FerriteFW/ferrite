@@ -10,4 +10,4 @@
 
 ## Contributor agreement
 
-- [ ] I have read [CLA.md](https://github.com/FerriteFW/ferrite/blob/main/CLA.md) and agree to it for this and all my contributions to Ferrite and Ferrite Console. My name (or the name I'm credited under) for `CLA-SIGNED.md`:
+- [ ] I have read [CLA.md](https://github.com/FerriteFW/ferrite/blob/main/CLA.md) and agree to it for this and all my contributions to the project (Ferrite, Ferrite Console, the manual and the website). My name (or the name I'm credited under) for `CLA-SIGNED.md`:

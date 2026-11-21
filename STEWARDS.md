@@ -1,6 +1,6 @@
 # Stewards
 
-If Alex Harvey, the maintainer, can't be reached for six months (no answer by email or on GitHub), the stewards can archive Ferrite and Ferrite Console (the project), which moves it to the MIT licence, as [CLA.md](CLA.md) point 3 says.
+If Alex Harvey, the maintainer, can't be reached for six months (no answer by email or on GitHub), the stewards can archive the project (Ferrite, Ferrite Console, the manual and the website), which moves it to the MIT licence, as [CLA.md](CLA.md) point 3 says.
 
 - Alex keeps at least two stewards when he can. Stewards decide together. If only one is in place, that one can act alone.
 - Each has owner access to the FerriteFW GitHub organization and to the ferritefw.dev domain, so they can do it.

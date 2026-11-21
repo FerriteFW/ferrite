@@ -12,7 +12,7 @@ Issues help Ferrite most: bug reports, ideas, design suggestions and proposed fi
 
 Pull requests are welcome, with the contributor agreement.
 
-- **The agreement:** read [CLA.md](CLA.md) and tick its box in the pull request template. Once, on your first pull request: it then covers everything you send to Ferrite and Ferrite Console. You keep your copyright; every published version stays public. Your name goes in [CLA-SIGNED.md](CLA-SIGNED.md).
+- **The agreement:** read [CLA.md](CLA.md) and tick its box in the pull request template. Once, on your first pull request: it then covers everything you send to the project: Ferrite, Ferrite Console, the manual and the website. You keep your copyright; every published version stays public. Your name goes in [CLA-SIGNED.md](CLA-SIGNED.md).
 - **Small and focused:** one fix or feature per pull request, with the issue it addresses. For anything big, open an issue first so we can agree on the approach.
 - **Tested:** say how you checked it (the tests, a radio and which build, the simulator, a browser).
 - **Never included:** anything from stock radio firmware, the SSB patch, recordings or flash dumps, or code under a licence that doesn't allow the agreement (such as the GPL).

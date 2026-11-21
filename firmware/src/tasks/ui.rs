@@ -857,7 +857,11 @@ pub async fn task() {
                 store::wake(store);
                 let t = Instant::now();
                 let most = Duration::from_secs(if store.raw() { 15 } else { 3 });
-                while !store.idle() && t.elapsed() < most {
+                // PWR-17.1: a save already under way made the flush wait: flushed again once it is done
+                while (!store.idle() || store.unsaved(&app)) && t.elapsed() < most {
+                    if store.unsaved(&app) && store.flush(&app) {
+                        store::wake(store);
+                    }
                     Timer::after_millis(10).await;
                 }
                 Timer::after_millis(50).await; // the answer's bytes leave the UART
@@ -1034,10 +1038,15 @@ pub async fn task() {
                 store::wake(store);
                 power_log("saving");
                 let t = Instant::now();
-                while !store.idle() && t.elapsed() < Duration::from_secs(3) {
+                // PWR-17.1: a save already under way refused the flush (the settings changed since, in the last
+                // seconds before the switch went off): flushed again once it is done, within the same 3 s
+                while (!store.idle() || store.unsaved(&app)) && t.elapsed() < Duration::from_secs(3) {
+                    if store.unsaved(&app) && store.flush(&app) {
+                        store::wake(store);
+                    }
                     Timer::after_millis(10).await;
                 }
-                power_log(if store.idle() { "saved" } else { "save cut at 3 s" });
+                power_log(if store.idle() && !store.unsaved(&app) { "saved" } else { "save cut at 3 s" });
                 power_log("off");
                 if bringup::ON.load(Relaxed) {
                     Timer::after_millis(20).await; // the last lines out on the cable before the power goes

@@ -1023,6 +1023,12 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         c != self.saved.get() && self.save(app)
     }
 
+    /// PWR-17.1: the settings and slots as they are now aren't the last ones saved (a flush still has work: power-off
+    /// and a restart wait while this holds, flushing again once a save already under way is done).
+    pub fn unsaved(&self, app: &App) -> bool {
+        self.ok() && state_crc(app) != self.saved.get()
+    }
+
     /// Writes the settings and slots now (queues them on the radio). False while a save is still under way.
     pub fn save(&self, app: &App) -> bool {
         if !self.ok() || self.saving.get() {

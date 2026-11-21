@@ -1197,3 +1197,28 @@ fn accepting_the_calibration_through_a_power_cut() {
         }
     }
 }
+
+/// PWR-17.1: a flush that a save already under way refused (the settings changed in the last seconds before the
+/// switch went off) is made again once that save is done, and the newer settings are what the next start finds.
+/// Before, power-off made one attempt and waited only for the store to go idle (a review of Nov 20, 2026).
+#[test]
+fn a_flush_refused_by_a_save_under_way_is_made_again() {
+    let s = mount(SimFlash::new());
+    s.set_deferred(true); // as on the radio: the Storage task runs the save later
+    let mut a = app();
+    a.set_watch(1);
+    assert!(s.save(&a), "a save under way");
+    a.set_watch(2); // changed just before power-off
+    assert!(!s.flush(&a), "refused: a save is under way");
+    assert!(s.unsaved(&a));
+    drain(&s); // the earlier save done
+    assert!(s.unsaved(&a), "it held the older state");
+    assert!(s.flush(&a), "made again");
+    drain(&s);
+    assert!(!s.unsaved(&a));
+    s.set_deferred(false);
+    let s = mount(unmount(s));
+    let mut b = app();
+    assert!(s.restore(&mut b));
+    assert_eq!(b.watch(), 2, "the newer settings kept");
+}

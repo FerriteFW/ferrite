@@ -610,6 +610,7 @@ fn remote_keyup_refusal_beeps() {
     pc.cmds();
     let mut live = LiveAll::default();
     live.tx.refused = Some(ferrite_core::txplan::Refusal::Hot);
+    live.tx.refusals = live.tx.refusals.wrapping_add(1); // TX-49: as the Radio task counts it
     pc.pass(100, &live);
     assert!(matches!(pc.app.screen(), Screen::TxRefused(_)));
     assert_eq!(refusal_beeps(&pc.cmds()), 1, "the Radio task's refusal beeps once");
@@ -634,6 +635,7 @@ fn remote_ptt_refusals_pass_through() {
     assert_eq!(pc.ptt(Ptt::On(key::ACTIVE)).0, 0);
     let mut live = LiveAll::default();
     live.tx.refused = Some(ferrite_core::txplan::Refusal::Hot);
+    live.tx.refusals = 1; // TX-49: as the Radio task counts it
     pc.pass(100, &live);
     assert!(!pc.app.remote_keyed());
     assert_eq!(text(&pc.ptt(Ptt::Alive).1), "transmitter cooling");

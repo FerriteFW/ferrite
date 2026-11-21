@@ -217,7 +217,7 @@ impl Radio {
         self.tx.pa = pa;
         self.tx.fault = false;
         (self.tx.data, self.tx.slot, self.tx.dialled) = (Some(r.power), SAT_SLOT, false);
-        self.live.tx = TxLive { keyed: false, slot: SAT_SLOT, mic: 0, refused: None, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
+        self.live.tx = TxLive { keyed: false, slot: SAT_SLOT, mic: 0, refused: None, refusals: self.live.tx.refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
         let mut st = Steps::default();
         let k = if fd { self.tx.seq.key_fd(&req, &mut self.path, now, &mut st) } else { self.tx.seq.key(&req, &mut self.path, now, &mut st) };
         if let Err(why) = k {

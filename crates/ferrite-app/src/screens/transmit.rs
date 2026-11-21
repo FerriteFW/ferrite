@@ -154,6 +154,7 @@ fn key_as(app: &mut App, slot: u8, confirmed: bool) {
         return refuse(app, slot, r);
     }
     app.radio.keyed = Some(slot);
+    app.radio.refusals_at_key = app.radio.refusals_seen; // TX-49: only a refusal after this one ends it
     app.reconcile_mode(); // MODE-1: a mode that doesn't run keyed stops before the key-up (BCR-16, SCOPE-12)
     app.radio.t0 = app.now;
     let region = txplan::Region::ALL.iter().position(|&r| r == app.set.tx_region()).unwrap_or(0) as u8;
@@ -385,8 +386,10 @@ impl View for Transmit {
             app.back();
             return;
         }
-        // The Radio task refused (its own checks: calibration, read-back, battery under load).
-        if let Some(r) = live.tx.refused.filter(|_| live.tx.slot == self.slot && app.radio.keyed.is_some()) {
+        // The Radio task refused (its own checks: calibration, read-back, battery under load), after this key-up
+        // (TX-49: an earlier refusal still in its status isn't this one's); unkeyed all the same, in case it keyed.
+        if let Some(r) = live.tx.refused.filter(|_| live.tx.slot == self.slot && app.radio.keyed.is_some() && live.tx.refusals != app.radio.refusals_at_key) {
+            app.out.push(RadioCmd::Transmit { slot: self.slot, on: false });
             app.radio.keyed = None;
             app.beep_refused(); // SND-4: the Radio task's refusals beep as the UI's do
             app.screen = Screen::TxRefused(TxRefused { why: r, slot: self.slot });

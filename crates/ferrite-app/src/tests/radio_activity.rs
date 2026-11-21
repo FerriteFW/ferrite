@@ -121,9 +121,41 @@ fn rx_only_build_and_battery_refuse() {
 fn radio_refusal_shows() {
     let mut t = ready();
     ptt(&mut t, true);
-    t.live.tx = ferrite_core::msg::TxLive { keyed: false, slot: 0, mic: 0, refused: Some(Refusal::Locked), dtmf_sent: 0, voice: false, ptt_stuck: 0 };
+    t.live.tx = ferrite_core::msg::TxLive { keyed: false, slot: 0, mic: 0, refused: Some(Refusal::Locked), refusals: 1, dtmf_sent: 0, voice: false, ptt_stuck: 0 };
     t.wait(100);
     assert_eq!(refused(&t), Some(Refusal::Locked));
+}
+
+/// TX-49: an earlier refusal still in the Radio task's status doesn't end the next key-up: the screen used to read it
+/// as this key-up's answer, drop its keyed state and never unkey, while the Radio task keyed (the carrier stayed up
+/// to its 605 s backstop; a review of Nov 20, 2026). Only a refusal after the key-up counts, and it unkeys too.
+#[test]
+fn an_old_refusal_doesnt_end_the_next_key_up() {
+    let mut t = ready();
+    // an earlier refusal, answered and gone
+    ptt(&mut t, true);
+    t.live.tx = ferrite_core::msg::TxLive { keyed: false, slot: 0, refused: Some(Refusal::Battery), refusals: 1, ..Default::default() };
+    t.wait(100);
+    assert_eq!(refused(&t), Some(Refusal::Battery));
+    ptt(&mut t, false);
+    t.tap(Key::Exit);
+    t.cmds();
+    // PTT again; the Radio task hasn't answered yet: its status still holds the old refusal
+    ptt(&mut t, true);
+    t.wait(100);
+    assert_eq!(refused(&t), None, "the old refusal isn't this key-up's");
+    assert!(t.app.radio.keyed.is_some(), "still keyed");
+    // let go: the unkey goes
+    t.cmds();
+    ptt(&mut t, false);
+    assert!(t.cmds().contains(&RadioCmd::Transmit { slot: 0, on: false }), "PTT up unkeys");
+    // a refusal after the key-up still ends it, with an unkey in case the Radio task keyed
+    ptt(&mut t, true);
+    t.cmds();
+    t.live.tx.refusals = 2;
+    t.wait(100);
+    assert_eq!(refused(&t), Some(Refusal::Battery));
+    assert!(t.cmds().contains(&RadioCmd::Transmit { slot: 0, on: false }), "unkeyed all the same");
 }
 
 /// TX-30.3: unkey at the timeout (0 8 1, 120 s by default), home with a toast.

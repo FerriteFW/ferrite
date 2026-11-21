@@ -278,7 +278,7 @@ impl FakeRadio {
         };
         let now = self.ms();
         let r = self.seq.key(&req, &mut self.path, now, &mut Steps::default());
-        self.live.tx = TxLive { keyed: r.is_ok(), slot, mic: 0, refused: r.err(), dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
+        self.live.tx = TxLive { keyed: r.is_ok(), slot, mic: 0, refused: r.err(), refusals: self.live.tx.refusals.wrapping_add(r.is_err() as u8), dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
     }
 
     fn unkey(&mut self) {

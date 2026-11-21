@@ -164,8 +164,9 @@ fn ram_is_small() {
     // to 2056; the Nearby view's rows found once, not per draw (CHAN-15, Nov 17, 2026: 32 channel numbers, their
     // count and what they were found for), 72, to 2128; the channel browser's counts kept between redraws (its view's,
     // 8, and the picker's band views', 16: a full radio counted 4000 records a redraw), 24, to 2152;
-    // the status bar as last drawn gains VOX's mark (SBAR-25: 1 byte), 8 with padding, to 2160
-    assert!(n <= 2160, "App is {n} bytes");
+    // the status bar as last drawn gains VOX's mark (SBAR-25: 1 byte), 8 with padding, to 2160; the Radio task's
+    // refusal count seen and as at the key-up (TX-49: 2 bytes, an old refusal no longer ends a key-up), 8, to 2168
+    assert!(n <= 2168, "App is {n} bytes");
     let s = core::mem::size_of::<crate::settings::Settings>();
     std::println!("Settings: {s} bytes");
     assert!(s <= 512, "Settings is {s} bytes");

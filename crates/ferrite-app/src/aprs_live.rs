@@ -819,6 +819,23 @@ impl AprsLive {
                     self.general_query(data, &f, now_s);
                 }
             }
+            // APRS-60: third-party traffic (an IGate relaying from the internet, `}`): the relaying station is
+            // heard, and a message inside to us (an ack among them) is taken as from its own sender, so messages and
+            // acks from APRS-IS stations and services (SMSGTE, EMAIL-2, WXBOT) aren't lost and a message sent to
+            // one isn't shown as failed when it was delivered (a review of Nov 20, 2026: these were dropped).
+            Ok(Packet::ThirdParty(t)) => {
+                rx.row = self.hear(h, d);
+                rx.changed = true;
+                let inner = third_party_call(t.src);
+                if let (Some(mine), Some(from), Ok(Packet::Message(m))) = (my, inner, parse::parse(t.dest, t.info)) {
+                    if Address::from_text(m.addressee).is_some_and(|a| a.same(&mine)) {
+                        self.to_us(&from, m, &f, dupe, now_s, &mut rx);
+                        if rx.inbound.is_some() {
+                            self.auto_reply(&from, me, now_s, cfg); // APRS-57
+                        }
+                    }
+                }
+            }
             Ok(_) | Err(_) => {
                 rx.row = self.hear(h, d);
                 rx.changed = true;
@@ -1519,6 +1536,13 @@ pub fn miss_logged(m: &ferrite_core::audio::uafsk::Miss) -> bool {
     m.addresses
 }
 
+/// APRS-60: a third-party packet's own sender as a callsign for the message list and our acks: 1 to 9 capitals,
+/// digits and `-` (an SSID), as APRS-IS stations and services use; anything else (`TCPIP*`, a lower-case name) none.
+fn third_party_call(src: &[u8]) -> Option<Buf<10>> {
+    let ok = !src.is_empty() && src.len() <= 9 && src.iter().all(|&c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'-') && src[0] != b'-';
+    ok.then(|| Buf::from(src))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1888,6 +1912,36 @@ mod tests {
         // Not to us: nothing.
         let (f, n) = frame(b"VE3KPW-9", b"APRS", &[], b":VA3ABC   :Hi{3");
         assert!(a.receive(&f[..n], 140, b"VE3XYZ", &AprsCfg::DEFAULT).inbound.is_none());
+    }
+
+    /// APRS-60: third-party traffic (an IGate relaying from the internet): a message inside to us is taken as from
+    /// its own sender (inbox, our ack to it by name), and an ack inside acks ours, so a message to SMSGTE shows acked
+    /// when delivered (a review of Nov 20, 2026: these were dropped). Not to us, or an odd sender: nothing.
+    #[test]
+    fn third_party_messages_and_acks_are_read() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let mut out = [0u8; FRAME_MAX];
+        // a message from an internet station, gated by VE3IGT
+        let (f, n) = frame(b"VE3IGT", b"APRS", &[b"WIDE2-1"], b"}VA7NET>APRS,TCPIP,VE3IGT*::VE3XYZ   :Hello from the net{7");
+        let rx = a.receive(&f[..n], 100, b"VE3XYZ", &cfg);
+        let (from, text) = rx.inbound.expect("in the inbox");
+        assert_eq!((from.as_bytes(), text.as_bytes()), (&b"VA7NET"[..], &b"Hello from the net"[..]));
+        let t = a.tick(100, Sending::All, true, b"VE3XYZ", None, &cfg, &mut out);
+        assert_eq!(t.what, "Ack");
+        assert_eq!(Frame::parse(&out[..t.len]).unwrap().info, b":VA7NET   :ack7", "acked to its own sender");
+        // ours to SMSGTE, acked from the internet through the IGate
+        assert!(a.send(b"SMSGTE", b"@5551234567 on my way"));
+        let t = a.tick(200, Sending::All, true, b"VE3XYZ", None, &cfg, &mut out);
+        assert_eq!(t.what, "Message");
+        let (f, n) = frame(b"VE3IGT", b"APRS", &[], b"}SMSGTE>APRS,TCPIP,VE3IGT*::VE3XYZ   :ack1");
+        let rx = a.receive(&f[..n], 210, b"VE3XYZ", &cfg);
+        assert!(matches!(rx.state, Some((_, _, MsgState::Acked))), "acked, not tried on to failed");
+        // not to us, or a sender that isn't a callsign: nothing
+        let (f, n) = frame(b"VE3IGT", b"APRS", &[], b"}VA7NET>APRS,TCPIP,VE3IGT*::VA3ABC   :Hi{3");
+        assert!(a.receive(&f[..n], 300, b"VE3XYZ", &cfg).inbound.is_none());
+        let (f, n) = frame(b"VE3IGT", b"APRS", &[], b"}tcpip>APRS,TCPIP*::VE3XYZ   :Hi{4");
+        assert!(a.receive(&f[..n], 310, b"VE3XYZ", &cfg).inbound.is_none());
     }
 
     #[test]

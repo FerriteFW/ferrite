@@ -241,3 +241,33 @@ fn an_empty_middle_zone_record_needs_no_count() {
     let s = Store::mount(f, NoData);
     assert!(!s.counts_pending(), "no count marked for the empty record");
 }
+
+/// CHAN-35.1: queued channel writes count against a zone's 256: a bulk write into a nearly full zone is refused at
+/// the room check (the link's, which tells Console) once the queued ones fill it, and writes that reach the queue
+/// anyway never merge past 256 (a review of Nov 20, 2026: 258 in a zone, or writes dropped after Console was told
+/// OK).
+#[test]
+fn queued_writes_count_against_a_zone() {
+    let s = Store::mount(SimFlash::new(), NoData);
+    zones(&s, 1);
+    for n in 0..ZONE_CAP - 1 {
+        assert!(s.apply(ChanWrite::Put { ch: ch(n, 0), from: None }));
+    }
+    assert_eq!(s.zone_len(0), ZONE_CAP - 1);
+    s.set_deferred(true); // as on the radio: queued, not yet written
+    assert!(s.zone_room(0, 300));
+    assert!(s.apply(ChanWrite::Put { ch: ch(300, 0), from: None }));
+    assert!(!s.zone_room(0, 301), "the queued one fills it");
+    assert!(s.zone_room(0, 300), "its own write is no extra");
+    assert!(s.apply(ChanWrite::Delete(5)));
+    assert!(s.zone_room(0, 301), "a queued delete makes room");
+    // written past the check (in one sector, so they'd merge): the zone stops at 256
+    assert!(s.apply(ChanWrite::Put { ch: ch(301, 0), from: None }));
+    assert!(s.apply(ChanWrite::Put { ch: ch(302, 0), from: None }));
+    while let Some(j) = s.next_job() {
+        ferrite_store::block(s.run(j));
+    }
+    s.set_deferred(false);
+    assert_eq!(truth(&s, 0).len(), ZONE_CAP as usize, "256, never more");
+    assert_eq!(s.zone_len(0), ZONE_CAP);
+}

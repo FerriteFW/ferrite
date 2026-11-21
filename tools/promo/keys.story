@@ -3,8 +3,8 @@
 # video for 0.9.5 (ferritefw.dev/video/console-update.mp4). Captions only say what HOME-10 and HOME-17 say.
 
 kind: intro
-title: Two keys worth knowing
-left: # for help, and hold * for the quick menu.
+title: Keys worth knowing
+left: # for help, hold * for the quick menu, * to mute a slot or turn it off, and hold # to lock the keys.
 seconds: 4
 music: music/chiptune3.wav
 key_gap: 450
@@ -17,9 +17,9 @@ right: Hold ABC edits the slot, hold V/M opens the zones, hold MENU more setting
 # simulator's signals would decide which the press does.
 setup: menu 0 1 1; wait 300ms; knob -2; wait 300ms; home; wait 1500ms
 script:
-  wait 1000ms
+  wait 1200ms
   press #
-  wait 4500ms
+  wait 6000ms
 hold: 1
 ---
 title: # again pages on
@@ -28,15 +28,15 @@ left: Each # goes on through the help: the home keys, the side keys and PTT, the
 right: ◀ ▶ page too. BACK goes home.
 script:
   press #
-  wait 3200ms
+  wait 4500ms
   press #
-  wait 3200ms
+  wait 4500ms
+  press #
+  wait 5500ms
   press #
   wait 3500ms
-  press #
-  wait 3000ms
   press BACK
-  wait 1200ms
+  wait 1500ms
 hold: 1
 ---
 title: Hold * on home: the quick menu
@@ -56,7 +56,7 @@ hold: 0.5
 ---
 title: Night red, reverse, Bluetooth
 layout: left
-left: PTT B switches to night red and back. PTT A reverses the active slot. PF2 turns Bluetooth on or off; PF1 steps GPS.
+left: PTT B switches to night red and back. PTT A reverses the active slot. PF2 turns Bluetooth on or off, and PF1 steps GPS through Off, Auto and On.
 right: BACK, * again or 5 seconds without a key closes it.
 script:
   press PTTB
@@ -71,8 +71,54 @@ script:
   wait 1800ms
   press SIDE2
   wait 1500ms
+  press SIDE1
+  wait 1600ms
+  press SIDE1
+  wait 1600ms
+  press SIDE1
+  wait 1600ms
   press BACK
   wait 1500ms
+hold: 1
+---
+title: Tap *: mute
+layout: right
+left: * on home mutes the active slot; * again brings it back.
+right: A muted slot still receives: its S-meter and the green light carry on, only its audio stays off the speaker. A power cycle clears it.
+setup: menu 0 1 1; wait 300ms; knob 2; wait 300ms; home; wait 2000ms
+script:
+  wait 1500ms
+  press *
+  wait 4500ms
+  press *
+  wait 3500ms
+hold: 1
+---
+title: * * : turn a slot off
+layout: right
+left: Two taps within a second turn the slot off: no chip listens to it, and its watch turns go to the other slots.
+right: * turns it back on. While it is off, transmit on it is refused, with a note saying why.
+script:
+  wait 1200ms
+  press *
+  press *
+  wait 6000ms
+  press *
+  wait 4000ms
+hold: 1
+---
+title: Hold #: lock the keys
+layout: right
+left: Hold # locks the keypad and the knob at once, and a padlock shows in the status bar. Within 3 seconds, * locks every key, PTT too, and 0 all but PTT.
+right: A locked key just says how to unlock: hold # again. The volume knob always works.
+script:
+  wait 1200ms
+  hold #
+  wait 4000ms
+  press 5
+  wait 3000ms
+  hold #
+  wait 3000ms
 hold: 1
 ---
 kind: outro

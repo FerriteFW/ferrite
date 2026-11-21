@@ -737,7 +737,7 @@
   | set 0 9 1 1 Off                   # Auto lock
   | set 0 9 2 1 Off                   # Bluetooth
   | set 0 9 2 3 Auto                  # Cable port
-  | set 0 9 5 Software                # Squelch
+  | set 0 9 5 Chip                    # Squelch
   | set 0 9 9 3 Off                   # Terminal colour
   | set 0 9 9 4 Dynamic               # MCU clock
   | # 0 9 4 Region: Not set (changes only on the radio)
@@ -998,7 +998,7 @@
   | set 0 9 1 1 Off                   # Auto lock
   | set 0 9 2 1 Off                   # Bluetooth
   | set 0 9 2 3 Auto                  # Cable port
-  | set 0 9 5 Software                # Squelch
+  | set 0 9 5 Chip                    # Squelch
   | set 0 9 9 3 Off                   # Terminal colour
   | set 0 9 9 4 Dynamic               # MCU clock
   | # 0 9 4 Region: Not set (changes only on the radio)

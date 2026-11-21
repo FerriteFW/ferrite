@@ -169,9 +169,9 @@ impl Radio {
             if listening != Some(n) || s >= SLOTS as u8 {
                 continue;
             }
-            // SQL-18 (decision 269): the software squelch on FM, with the thresholds the chip was given; AM, or
-            // `sq chip`, keeps the chip's own decision, as does the APRS slot (SQL-18.4: a packet needs the chip's
-            // hold through a noisy reading and its tail; its quick close bought nothing on a muted slot).
+            // SQL-18.7: the chip's own decision with stock's debounce (the default, 0 9 5 Chip, and always on AM);
+            // 0 9 5 Software: the software squelch (SQL-18, decision 269) on FM, with the thresholds the chip was
+            // given. The APRS slot keeps its own over the chip's bit (SQL-18.4, SQL-19).
             let aprs = self.aprs_slots & 1 << s != 0;
             let soft = (!ferrite_core::softsq::chip_decides() && !self.slots[s as usize].am && !aprs).then_some(()).and(self.sq_regs[n as usize]);
             let mut bk = self.chip(n);
@@ -182,16 +182,17 @@ impl Radio {
                 // retuned: a fresh squelch, closed
                 (self.soft_sq[n as usize], self.sq_key[n as usize]) = (Default::default(), self.tuned[n as usize]);
                 self.sq_at[n as usize] = now; // SQL-18.5: the first reading counts no time
+                (self.chip_sq[n as usize], self.tone_hold[n as usize]) = (Default::default(), Default::default());
                 self.aprs_sq[n as usize].retuned(now); // SQL-19.2: settling
             }
+            // SQL-18.5: this reading counts for the time since the last (10 ms in watch or scan, 50 ms alone)
+            let dt = now.wrapping_sub(self.sq_at[n as usize]).min(1000) as u16;
+            self.sq_at[n as usize] = now;
+            let fast = self.scans.get(s as usize).is_some_and(|sc| sc.listening()) || aprs;
             let decided = match soft {
                 Some(regs) => {
-                    let fast = self.scans.get(s as usize).is_some_and(|sc| sc.listening()) || self.aprs_slots & 1 << s != 0;
                     #[cfg(feature = "bench")]
                     let was = self.soft_sq[n as usize].open();
-                    // SQL-18.5: this reading counts for the time since the last (10 ms in watch or scan, 50 ms alone)
-                    let dt = now.wrapping_sub(self.sq_at[n as usize]).min(1000) as u16;
-                    self.sq_at[n as usize] = now;
                     let now_open = self.soft_sq[n as usize].step(&ferrite_core::softsq::Limits::from_regs(regs), raw, noise, fast, dt);
                     #[cfg(feature = "bench")]
                     if now_open != was {
@@ -212,7 +213,16 @@ impl Radio {
                     }
                     o
                 }
-                None => st.squelch_open,
+                None => {
+                    #[cfg(feature = "bench")]
+                    let was = self.chip_sq[n as usize].open();
+                    let o = self.chip_sq[n as usize].step(st.squelch_open, fast, dt);
+                    #[cfg(feature = "bench")]
+                    if o != was {
+                        log(if o { b"sq open (chip), rssi dBm + 200 " } else { b"sq shut (chip), rssi dBm + 200 " }, (rssi + 200).max(0) as u32);
+                    }
+                    o
+                }
             };
             let open = decided || self.slots[s as usize].sq == 0;
             // SQL-13.1: the carrier itself, apart from level 0's always-open (kept per slot across watch turns)
@@ -230,7 +240,8 @@ impl Radio {
             // TSRCH-12: while the tone hint probes, the detectors scan: their reading, not a match, so the audio
             // stays shut this tick.
             let probing = self.hints[s as usize].probing();
-            toned[n as usize] = !probing && self.slots[s as usize].toned(open, &st);
+            let matched = self.slots[s as usize].toned(open, &st);
+            toned[n as usize] = !probing && self.tone_hold[n as usize].step(matched, open, dt); // SQL-18.8
             let sl = &mut self.live.slots[s as usize];
             sl.rssi = rssi;
             sl.rssi_raw = rssi; // SQL-12.1

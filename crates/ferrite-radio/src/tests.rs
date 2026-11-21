@@ -1127,8 +1127,9 @@ impl Log {
 
 const RX: RxSetup = RxSetup { freq: VHF, narrow: false, am: false, rx_tone: 0, rx_tail: false, data: false };
 
-/// PWR-21.1, PWR-21.5 (decision 119): from sleep, REG_37's supplies on, the wake settle, then the receive set-up with
-/// the AF route muted before anything else and receive on (REG_30) last; the wake time is kept.
+/// PWR-21.1, PWR-21.5 (decision 119), SQL-18.9: from sleep, REG_37's supplies on, the wake settle, then the receive
+/// set-up in stock's order: the AF route muted, REG_37 for receive (0x9F1F), receive off, ..., receive on last; the
+/// wake time is kept.
 #[test]
 fn wake_settles_before_the_receive_setup() {
     use ferrite_core::settle::Settle;
@@ -1137,15 +1138,16 @@ fn wake_settles_before_the_receive_setup() {
     let at = block_on(chip::tune_settled(&mut bk, &mut d, &RX, Settle { wake_ms: 2, sleep_ms: 1 }, None, 100));
     assert_eq!(at, 100);
     let w = log.take();
-    assert_eq!(w[..3], [(reg::LDO, 0x9D1F), (WAIT, 2), (reg::AF_OUT, 0x6042)], "{w:x?}");
-    assert_eq!(w.iter().position(|e| e.0 == reg::POWER), Some(w.len() - 3), "REG_30 only at the end");
+    assert_eq!(w[..5], [(reg::LDO, 0x9D1F), (WAIT, 2), (reg::AF_OUT, 0x6042), (reg::LDO, 0x9F1F), (reg::POWER, 0)], "{w:x?}");
+    assert_eq!(w.iter().rposition(|e| e.0 == reg::POWER && e.1 == 0), Some(4), "receive on only at the end");
     // Stock's 50 us between the two REG_30 writes (decision 119, the TX audit).
     assert_eq!(w[w.len() - 3..], [(reg::POWER, 0x0200), (WAIT_US, 50), (reg::POWER, 0xBFF1)]);
     assert_eq!(w.iter().filter(|e| e.0 == WAIT).count(), 1);
 }
 
 /// PWR-21.2, PWR-21.4: a chip whose supplies came on a tick early (the hop's `due`), or that is long awake, is tuned
-/// with no wait and no second REG_37 write; one woken 1 ms ago waits the rest; 0 is stock's: no wait at all.
+/// with no wait and no wake write (REG_37 gets only the receive value, SQL-18.9); one woken 1 ms ago waits the rest;
+/// 0 is stock's: no wait at all.
 #[test]
 fn wake_settle_counts_from_the_early_wake() {
     use ferrite_core::settle::Settle;
@@ -1154,7 +1156,8 @@ fn wake_settle_counts_from_the_early_wake() {
     let (mut bk, mut d) = (Bk4829::new(log.clone()), log.clone());
     assert_eq!(block_on(chip::tune_settled(&mut bk, &mut d, &RX, s, Some(90), 100)), 90);
     let w = log.take();
-    assert!(!w.iter().any(|e| e.0 == WAIT || e.0 == reg::LDO), "{w:x?}");
+    assert!(!w.iter().any(|e| e.0 == WAIT || *e == (reg::LDO, 0x9D1F)), "{w:x?}");
+    assert!(w.contains(&(reg::LDO, 0x9F1F)), "receive's REG_37");
     block_on(chip::tune_settled(&mut bk, &mut d, &RX, s, Some(99), 100));
     assert_eq!(log.take().iter().filter(|e| e.0 == WAIT).collect::<Vec<_>>(), [&(WAIT, 1)]);
     block_on(chip::tune_settled(&mut bk, &mut d, &RX, Settle::STOCK, None, 100));

@@ -146,6 +146,9 @@ const POWER_RX: u16 = 0xBFF1;
 /// REG_37: everything on (stock's start-up and wake value), and the sleep value (enables in bits 4:0 and the DSP
 /// enable, bit 15, cleared; the LDO selections kept).
 const LDO_ON: u16 = 0x9D1F;
+/// SQL-18.9: REG_37 for receive: stock's receive set-up writes 0x9F1F first (bit 9 on over the start-up's and
+/// transmit's 0x9D1F; V0.29 0x0801E4C8, V0.27 0x0801E4D4), and its squelch and RSSI calibration was made so.
+pub const LDO_RX: u16 = 0x9F1F;
 const LDO_SLEEP: u16 = 0x1D00;
 const POWER_AF_ONLY: u16 = 0x0200;
 
@@ -393,6 +396,17 @@ impl<B: Bus> Bk4829<B> {
     /// supplies to settle first.
     pub fn wake(&mut self) {
         self.write(reg::LDO, LDO_ON);
+    }
+
+    /// SQL-18.9: REG_37 as stock's receive set-up leaves it ([`LDO_RX`]); [`Bk4829::wake`]'s value is the
+    /// transmit set-up's.
+    pub fn ldo_rx(&mut self) {
+        self.write(reg::LDO, LDO_RX);
+    }
+
+    /// Receive off (REG_30 0), as stock's receive set-up starts before it tunes.
+    pub fn rx_off(&mut self) {
+        self.write(reg::POWER, 0);
     }
 
     pub fn bandwidth(&mut self, bw: Bandwidth) {

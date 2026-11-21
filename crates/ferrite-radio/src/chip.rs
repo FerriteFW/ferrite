@@ -35,9 +35,21 @@ pub fn tune<B: Bus>(bk: &mut Bk4829<B>, s: &RxSetup) {
 /// heard; a receiving chip being retuned is silent through it), the frequency, the bandwidth, FM or AM (stock's
 /// modes 7 and 6; VFO-20: AM keeps the wide filter), the sub-tone detector, the receive level, then receive on.
 pub fn tune_rest<B: Bus>(bk: &mut Bk4829<B>, s: &RxSetup) {
+    tune_rest_sq(bk, s, None);
+}
+
+/// [`tune_rest`] in stock's order (V0.29 0x0801E4C8, SQL-18.9): audio muted, REG_37 for receive, receive off, the
+/// frequency and bandwidth, then the squelch thresholds `sq` (when they changed, SQL-15) before the demodulator, the
+/// sub-tone and receive on, so the chip never decides on the old ones at the new frequency.
+pub fn tune_rest_sq<B: Bus>(bk: &mut Bk4829<B>, s: &RxSetup, sq: Option<(u16, u16)>) {
     bk.af_out(AfOut::Mute);
+    bk.ldo_rx();
+    bk.rx_off();
     bk.set_freq(s.freq * 10);
     bk.bandwidth(if s.narrow { Bandwidth::Narrow } else { Bandwidth::Wide });
+    if let Some(r) = sq {
+        squelch(bk, r);
+    }
     bk.demod(if s.am { Demod::Am } else { Demod::Fm });
     if s.data && !s.am {
         // APRS-55: over demod's FM REG_2B (0x0000), so no read.
@@ -281,6 +293,7 @@ pub struct TxSetup {
 /// (`(R & 0xF000) | 0x50A`). The chip keeps its last receive mode bits (REG_31 scrambler off).
 #[cfg(feature = "tx")]
 pub fn tx_setup<B: Bus>(bk: &mut Bk4829<B>, s: &TxSetup) {
+    bk.wake(); // SQL-18.9: REG_37 0x9D1F first, as stock's transmit set-up (0x0801EB04); receive leaves 0x9F1F
     bk.tx_start();
     bk.af_out(AfOut::Normal);
     bk.set_freq(s.freq * 10);

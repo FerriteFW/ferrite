@@ -5,10 +5,12 @@
 //! and the squelch shuts the moment the noise reaches the ceiling, which cuts that tail. The idea is the one nicFW's
 //! documentation describes (polling noise and RSSI instead of the chip's detection); the rules here are ours.
 //!
-//! 0 9 5 (SQL-18.3) brings the chip's decision back: the UI task passes the setting on here each frame.
+//! 0 9 5 (SQL-18.3) chooses: the chip's decision, stock's way, is the default since SQL-18.7 (users found stock's
+//! squelch worked where this one didn't; a comparison with stock of Nov 21, 2026), with [`ChipSq`], stock's own
+//! debounce over it. The UI task passes the setting on here each frame.
 use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
-static CHIP: AtomicBool = AtomicBool::new(false);
+static CHIP: AtomicBool = AtomicBool::new(true);
 
 /// The chip decides (0 9 5 Chip), not this module.
 pub fn chip_decides() -> bool {
@@ -17,6 +19,84 @@ pub fn chip_decides() -> bool {
 
 pub fn set_chip_decides(on: bool) {
     CHIP.store(on, Relaxed);
+}
+
+/// SQL-18.7: how long the chip's squelch bit must read open, at least [`MIN_READS`] readings, before receive opens:
+/// stock's three polls in a row at its 10 ms loop (V0.27 0x0801D3AA), after the chip's own open delay. In time, so a
+/// lone slot's 50 ms poll opens on two readings.
+pub const CHIP_OPEN_MS: u16 = 30;
+/// SQL-18.7: how long the chip's bit must read closed, at least [`MIN_READS`] readings, before receive ends:
+/// stock's ten closed polls in a row (its counter reloaded to 10 by any open poll, V0.27 0x0801D578), on top of
+/// the chip's close delay: a weak, fluttering signal rides through.
+pub const CHIP_CLOSE_MS: u16 = 100;
+/// SQL-18.8: how long a CTCSS or DCS match must stay lost, at least [`MIN_READS`] readings, before an open
+/// squelch mutes for the tone: stock holds through a missed detection (a count of 10 at its 10 ms loop, V0.27
+/// 0x0801CDA4), so a lone missed reading doesn't drop the audio.
+pub const TONE_LOST_MS: u16 = 100;
+
+/// SQL-18.7: stock's debounce over the chip's own squelch decision (REG_0C bit 1).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ChipSq {
+    open: bool,
+    n: u8,
+    ms: u16,
+}
+
+impl ChipSq {
+    pub const DEFAULT: ChipSq = ChipSq { open: false, n: 0, ms: 0 };
+
+    pub fn open(&self) -> bool {
+        self.open
+    }
+
+    /// The next decision from the chip's bit, `dt_ms` after the reading before. `fast` (a scan step, a priority
+    /// look): open on the first reading the chip calls open.
+    pub fn step(&mut self, chip_open: bool, fast: bool, dt_ms: u16) -> bool {
+        if chip_open != self.open {
+            self.n = self.n.saturating_add(1);
+            self.ms = self.ms.saturating_add(dt_ms);
+        } else {
+            (self.n, self.ms) = (0, 0);
+        }
+        let flip = if self.open {
+            self.n >= MIN_READS && self.ms >= CHIP_CLOSE_MS
+        } else {
+            fast && self.n >= 1 || self.n >= MIN_READS && self.ms >= CHIP_OPEN_MS
+        };
+        if flip {
+            *self = ChipSq { open: !self.open, ..ChipSq::DEFAULT };
+        }
+        self.open
+    }
+}
+
+/// SQL-18.8: a tone match held through a short loss while the squelch is open.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ToneHold {
+    held: bool,
+    n: u8,
+    ms: u16,
+}
+
+impl ToneHold {
+    pub const DEFAULT: ToneHold = ToneHold { held: false, n: 0, ms: 0 };
+
+    /// `matched`: this reading's tone decision (the squelch open and the tone heard). `open`: the squelch itself;
+    /// closed ends the hold at once.
+    pub fn step(&mut self, matched: bool, open: bool, dt_ms: u16) -> bool {
+        if !open {
+            *self = ToneHold::DEFAULT;
+        } else if matched {
+            *self = ToneHold { held: true, ..ToneHold::DEFAULT };
+        } else if self.held {
+            self.n = self.n.saturating_add(1);
+            self.ms = self.ms.saturating_add(dt_ms);
+            if self.n >= MIN_READS && self.ms >= TONE_LOST_MS {
+                *self = ToneHold::DEFAULT;
+            }
+        }
+        self.held
+    }
 }
 
 /// SQL-18.1: how long the readings must pass in a row to open on ordinary receive, a short debounce in place of the
@@ -241,16 +321,71 @@ mod tests {
         assert!(!s.open());
     }
 
-    /// SQL-18.3: software decides until the setting says otherwise.
+    /// SQL-18.3, SQL-18.7: the chip decides until the setting says otherwise.
     #[test]
-    fn software_by_default() {
-        assert!(!chip_decides());
+    fn the_chip_by_default() {
+        assert!(chip_decides());
     }
 
-    /// Only ever set false here: other tests read the shared flag as false (the default) at the same time.
+    /// Only ever set true here: other tests read the shared flag as true (the default) at the same time.
     #[test]
-    fn set_chip_decides_off() {
-        set_chip_decides(false);
-        assert!(!chip_decides());
+    fn set_chip_decides_on() {
+        set_chip_decides(true);
+        assert!(chip_decides());
+    }
+
+    /// SQL-18.7: stock's debounce at its 10 ms loop: three open readings open, ten closed ones close; any reading
+    /// the other way starts the count again.
+    #[test]
+    fn chip_sq_opens_on_three_closes_on_ten() {
+        let mut c = ChipSq::default();
+        assert!(!c.step(true, false, 10));
+        assert!(!c.step(true, false, 10));
+        assert!(c.step(true, false, 10), "third");
+        for i in 0..9 {
+            assert!(c.step(false, false, 10), "closed reading {i}: held");
+        }
+        assert!(c.step(true, false, 10), "open again: the count restarts");
+        for _ in 0..9 {
+            assert!(c.step(false, false, 10));
+        }
+        assert!(!c.step(false, false, 10), "the tenth closed reading in a row ends it");
+        // a lone open reading between closed ones never opens
+        for o in [true, false, true, false, true, false] {
+            assert!(!c.step(o, false, 10));
+        }
+    }
+
+    /// SQL-18.7: at a lone slot's 50 ms poll: two readings open (100 ms), two closed readings close (100 ms); a
+    /// scan step opens on the first.
+    #[test]
+    fn chip_sq_at_50_ms_and_fast() {
+        let mut c = ChipSq::default();
+        assert!(!c.step(true, false, 50));
+        assert!(c.step(true, false, 50));
+        assert!(c.step(false, false, 50), "one closed: held");
+        assert!(!c.step(false, false, 50), "two: 100 ms");
+        let mut f = ChipSq::default();
+        assert!(f.step(true, true, 10), "fast");
+        let mut z = ChipSq::default();
+        assert!(!z.step(true, false, 0), "a reading with no time can't open alone");
+    }
+
+    /// SQL-18.8: a tone lost for one reading doesn't mute; lost for 100 ms (and two readings) it does; a closed
+    /// squelch ends it at once; it never starts without a match.
+    #[test]
+    fn tone_hold() {
+        let mut t = ToneHold::default();
+        assert!(!t.step(false, true, 10), "never matched: nothing held");
+        assert!(t.step(true, true, 10));
+        for _ in 0..9 {
+            assert!(t.step(false, true, 10), "held");
+        }
+        assert!(!t.step(false, true, 10), "100 ms lost: muted");
+        assert!(t.step(true, true, 10));
+        assert!(!t.step(true, false, 10), "the squelch closed: at once");
+        assert!(t.step(true, true, 50));
+        assert!(t.step(false, true, 50));
+        assert!(!t.step(false, true, 50), "two at 50 ms");
     }
 }

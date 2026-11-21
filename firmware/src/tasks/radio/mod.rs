@@ -221,6 +221,10 @@ struct Radio {
     sq_key: [Option<(u8, Freq10)>; 2],
     /// SQL-18.5: when each chip's squelch was last read (ms), so a reading counts for its own time.
     sq_at: [u32; 2],
+    /// SQL-18.7: stock's debounce over each chip's own squelch bit (the default, 0 9 5 Chip).
+    chip_sq: [ferrite_core::softsq::ChipSq; 2],
+    /// SQL-18.8: each chip's tone match, held through a short loss.
+    tone_hold: [ferrite_core::softsq::ToneHold; 2],
     /// SQL-17: each chip's squelch open delay as last written (true: 0, for a scan step or the strip's look; false:
     /// stock's 7); None after a sleep or a scope start, so the next look or tick writes it.
     open_fast: [Option<bool>; 2],
@@ -786,6 +790,8 @@ pub async fn task() {
         swap: 0,
         sq_key: [None; 2],
         sq_at: [0; 2],
+        chip_sq: [ferrite_core::softsq::ChipSq::DEFAULT; 2],
+        tone_hold: [ferrite_core::softsq::ToneHold::DEFAULT; 2],
         open_fast: [None; 2],
         data_rx: [None; 2],
         path: Path::new(),

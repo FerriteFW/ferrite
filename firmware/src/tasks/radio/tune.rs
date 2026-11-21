@@ -139,7 +139,12 @@ impl Radio {
         // APRS-55: the APRS slot's FM receive gets the data set-up; any other tune puts the voice one back.
         let data = (s as usize) < SLOTS && self.aprs_slots & 1 << s != 0 && !slot.am;
         let setup = RxSetup { freq: self.sqcal.rx_word(f), narrow: slot.narrow, am: slot.am, rx_tone: slot.rx_tone, rx_tail: slot.rx_tail, data };
-        radio_chip::tune_rest(&mut self.chip(n), &setup);
+        // SQL-1: stock's thresholds for this frequency and the slot's level (stock writes them at each receive
+        // setup); only when they differ from what the chip has; before receive on (SQL-18.9).
+        let regs = self.sqcal.regs(f, slot.sq);
+        let sq = (self.sq_regs[n as usize] != Some(regs)).then_some(regs);
+        self.sq_regs[n as usize] = Some(regs);
+        radio_chip::tune_rest_sq(&mut self.chip(n), &setup, sq);
         if self.data_rx[n as usize] != Some(data) {
             radio_chip::rx_data(&mut self.chip(n), data);
             self.data_rx[n as usize] = Some(data);
@@ -162,13 +167,6 @@ impl Radio {
             for (r, v) in holds.into_iter().filter(|h| h.0 != 0) {
                 self.chip(n).write(r, v);
             }
-        }
-        // SQL-1: stock's thresholds for this frequency and the slot's level (stock writes them at each receive
-        // setup); only when they differ from what the chip has.
-        let regs = self.sqcal.regs(f, slot.sq);
-        if self.sq_regs[n as usize] != Some(regs) {
-            radio_chip::squelch(&mut self.chip(n), regs);
-            self.sq_regs[n as usize] = Some(regs);
         }
     }
 

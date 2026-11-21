@@ -317,9 +317,10 @@ pub struct Settings {
     /// 0 9 9 4: the MCU clock (PWR-26.5): false Dynamic (24 MHz at rest, the build's speed while something needs
     /// it), true Fixed (always the build's speed, as before the governor).
     pub mcu_fixed: bool,
-    /// 0 9 5: who decides the squelch (SQL-18, decision 269): false the software squelch (the default), true the
-    /// chip's own, stock's way.
-    pub sq_chip: bool,
+    /// 0 9 5: who decides the squelch: false the chip's own with stock's debounce (the default since SQL-18.7),
+    /// true the software squelch (SQL-18, decision 269). Was `sq_chip`, the other way round, in the same stored
+    /// place: a radio that kept the old default (software, false) reads the new one.
+    pub sq_soft: bool,
     /// 0 5 9 6: C starts muted in APRS mode (APRS-2, APRS-15.2); \* on C in APRS mode flips it.
     pub aprs_mute: bool,
     /// 0 4 3 DTMF decode (DEC-6): the digits heard on a slot's card.
@@ -543,7 +544,7 @@ impl Settings {
         scan_return_hit: false,
         msg_vol: 3,
         mcu_fixed: false,
-        sq_chip: false,
+        sq_soft: false,
         aprs_mute: true,
         dtmf_rx: true,
         aprs_share: 0,

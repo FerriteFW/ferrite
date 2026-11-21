@@ -581,7 +581,7 @@ static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
     field!([9, 1, 1], auto_lock: u8, Kind::Round(AUTO_LOCK_TIMES.len() as u8, auto_lock_text), Nothing), // KEY-20
     field!([9, 2, 1], bt: bool, Kind::Flip(&ON_OFF), Nothing),
     field!([9, 2, 3], cable_port: u8, Kind::Pick(&CABLE_PORTS), Nothing),
-    field!([9, 5, 0], sq_chip: bool, Kind::Flip(&["Software", "Chip"]), Nothing), // SQL-18.3
+    field!([9, 5, 0], sq_soft: bool, Kind::Flip(&["Chip", "Software"]), Nothing), // SQL-18.3, SQL-18.7: Chip first, the default
     field!([9, 9, 3], term_colour: bool, Kind::Flip(&ON_OFF), Nothing),
     field!([9, 9, 4], mcu_fixed: bool, Kind::Flip(&["Dynamic", "Fixed"]), Nothing), // PWR-26.5
     #[cfg(feature = "bench")]

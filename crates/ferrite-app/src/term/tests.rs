@@ -2723,16 +2723,16 @@ fn set_frequency_settings() {
     assert_eq!(r.app.set.pocsag_freq, ferrite_core::freq::mhz(439) + 98_750);
 }
 
-/// SQL-18.3 (decision 269): 0 9 5 says who decides the squelch, software by default; `set 0 9 5 chip` and
-/// `set 0 9 5 software` switch it, and it is saved with the settings.
+/// SQL-18.3, SQL-18.7: 0 9 5 says who decides the squelch, the chip by default; `set 0 9 5 software` and
+/// `set 0 9 5 chip` switch it, and it is saved with the settings.
 #[test]
 fn squelch_decided_by_0_9_5() {
     let mut r = Rig::main();
-    assert!(!r.app.settings().sq_chip, "software by default");
-    r.cmd("set 0 9 5 chip");
-    assert!(r.app.settings().sq_chip, "{}", r.bottom());
+    assert!(!r.app.settings().sq_soft, "the chip by default");
     r.cmd("set 0 9 5 software");
-    assert!(!r.app.settings().sq_chip, "{}", r.bottom());
+    assert!(r.app.settings().sq_soft, "{}", r.bottom());
+    r.cmd("set 0 9 5 chip");
+    assert!(!r.app.settings().sq_soft, "{}", r.bottom());
 }
 
 /// APRS-52.4: 0 5 5 7 set and read by name from the terminal, two-word names included.

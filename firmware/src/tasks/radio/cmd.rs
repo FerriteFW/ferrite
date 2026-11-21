@@ -281,7 +281,7 @@ impl Radio {
                 self.tx.region = Some((r, extend));
             }
             RadioCmd::SatRx(f) => self.sat_rx(f).await,
-            RadioCmd::SatUp(f) => self.sat_up(f),
+            RadioCmd::SatUp(f) => self.sat_up(f).await,
             RadioCmd::SatTone { tone, hd, power } => self.sat_tone(tone, hd, power),
             #[cfg(feature = "tx")]
             RadioCmd::Transmit { slot: sat::SAT_SLOT, on } if self.sat.is_some() => {

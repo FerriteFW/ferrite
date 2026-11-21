@@ -255,6 +255,22 @@ impl TxCal {
         self.dac(f, power).ok_or(crate::txplan::Refusal::NotCalibrated)
     }
 
+    /// SAT-8.1: may a transmission already keyed move to `f` (the satellite uplink's Doppler retune)? The key-up's
+    /// checks that depend on the frequency, again: the region's band plan (or Extend TX's range), this radio's
+    /// calibration windows, no emergency frequency (a retune is never a person's confirmed key-up), and a row in the
+    /// power table at `power`. 0 (a receive-only transponder's uplink) is outside every plan.
+    pub fn keyed_retune(&self, f: Freq10, region: crate::txplan::Region, extend: bool, power: u8) -> Result<(), crate::txplan::Refusal> {
+        use crate::txplan::{self, Refusal};
+        txplan::check(f, region, extend)?;
+        if !self.in_window(f) {
+            return Err(Refusal::NotCalibrated);
+        }
+        if txplan::emergency(f) {
+            return Err(Refusal::Emergency);
+        }
+        self.pa(f, power).map(|_| ())
+    }
+
     /// CAL-11, TX-1: `f` lies in one of this radio's enabled TX windows, low <= f < high as stock checks it
     /// (0x0800BD8C). 18-64 MHz is a window on any valid sector (TX-41): stock's loader replaces the windows with
     /// 18-64 MHz in its HF work mode (settings +0x62 == 0), so the sector's own windows never hold HF.
@@ -411,6 +427,21 @@ mod tests {
     use super::*;
 
     use super::testing::{curve, hf_curve, sector};
+
+    /// SAT-8.1: a keyed uplink retune passes the key-up's frequency checks: a Doppler step inside 70 cm goes; outside
+    /// the plan, 0, an emergency frequency or outside the calibration doesn't.
+    #[test]
+    fn a_keyed_retune_is_checked() {
+        use crate::txplan::{Refusal, Region};
+        let c = TxCal::read(&sector(GAUGE_DEFAULT)).expect("valid");
+        let up = mhz(435) + 25_000;
+        assert_eq!(c.keyed_retune(up, Region::Canada, false, 2), Ok(()));
+        assert_eq!(c.keyed_retune(up + 1_000, Region::Canada, false, 2), Ok(()), "a Doppler step");
+        assert_eq!(c.keyed_retune(0, Region::Canada, false, 2), Err(Refusal::OutOfBand), "a receive-only transponder");
+        assert_eq!(c.keyed_retune(mhz(1268), Region::Canada, false, 2), Err(Refusal::OutOfBand), "23 cm");
+        assert_eq!(c.keyed_retune(mhz(406) + 2_500, Region::Canada, true, 2), Err(Refusal::Emergency), "406 MHz, even with Extend TX");
+        assert_eq!(c.keyed_retune(mhz(160), Region::Canada, false, 2), Err(Refusal::OutOfBand), "outside the plan");
+    }
 
     /// CAL-20.4: where a curve check failed: an erased byte in HF's Mid row, then Low not below High on VHF.
     #[test]

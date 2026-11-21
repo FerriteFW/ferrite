@@ -126,18 +126,34 @@ impl Radio {
     }
 
     /// SAT-8: the uplink for the next key-up; keyed, the transmitting chip retuned there (to confirm on the bench:
-    /// a retune while keyed must not click or unlock, SAT-8's open point).
-    pub(super) fn sat_up(&mut self, f: Freq10) {
+    /// a retune while keyed must not click or unlock, SAT-8's open point). SAT-8.1: a retune while keyed passes the
+    /// key-up's frequency checks first, or the transmission ends there (a review of Nov 20, 2026: the uplink was
+    /// retuned keyed with no band-plan, emergency or power-table check).
+    pub(super) async fn sat_up(&mut self, f: Freq10) {
         let Some(r) = self.sat.as_mut() else { return };
         r.up = f;
         #[cfg(feature = "tx")]
         if let (Some(n), true) = (self.tx.chip, self.tx.slot == SAT_SLOT && self.path.keyed().is_some()) {
-            if self.tuned[n as usize].is_some_and(|(_, was)| was != f) && Sel::tx(f).chip() == n {
+            if self.tuned[n as usize].is_some_and(|(_, was)| was != f) {
+                if let Err(why) = self.retune_ok(f).and(if Sel::tx(f).chip() == n { Ok(()) } else { Err(Refusal::OutOfBand) }) {
+                    log(b"sat: uplink retune refused ", why as u32);
+                    self.transmit_cut().await;
+                    return self.refuse(SAT_SLOT, why);
+                }
                 let w = self.tx.cal.map_or(f, |c| c.tx_word(f));
                 self.chip(n).set_freq(w * 10);
                 self.tuned[n as usize] = Some((SAT_SLOT, f));
             }
         }
+    }
+
+    /// SAT-8.1: may the keyed uplink move to `f`: the key-up's frequency checks (`TxCal::keyed_retune`) with the
+    /// region and Extend TX of the last plan and the key-up's power level.
+    #[cfg(feature = "tx")]
+    fn retune_ok(&self, f: Freq10) -> Result<(), Refusal> {
+        let (region, extend) = self.tx.region.ok_or(Refusal::Locked)?;
+        let power = self.tx.data.unwrap_or(self.tx.power[self.tx.slot as usize % 4]).min(2);
+        self.tx.cal.ok_or(Refusal::NotCalibrated)?.keyed_retune(f, region, extend, power)
     }
 
     /// SAT-10, SAT-11: the uplink's tone (keyed: on the transmitting chip now, the arming tone giving way to the

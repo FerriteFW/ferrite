@@ -318,9 +318,12 @@ pub struct Settings {
     /// it), true Fixed (always the build's speed, as before the governor).
     pub mcu_fixed: bool,
     /// 0 9 5: who decides the squelch: false the chip's own with stock's debounce (the default since SQL-18.7),
-    /// true the software squelch (SQL-18, decision 269). Was `sq_chip`, the other way round, in the same stored
-    /// place: a radio that kept the old default (software, false) reads the new one.
+    /// true the software squelch (SQL-18, decision 269). Stored at the record's end (SQL-18.3): every radio coming
+    /// from 0.9.4, whatever it had, reads the default, Chip.
     pub sq_soft: bool,
+    /// 0.9.4's 0 9 5 (`sq_chip`, true = the chip), kept in its stored place so the fields after it stay put; read
+    /// and ignored.
+    pub sq_chip_old: bool,
     /// 0 5 9 6: C starts muted in APRS mode (APRS-2, APRS-15.2); \* on C in APRS mode flips it.
     pub aprs_mute: bool,
     /// 0 4 3 DTMF decode (DEC-6): the digits heard on a slot's card.
@@ -545,6 +548,7 @@ impl Settings {
         msg_vol: 3,
         mcu_fixed: false,
         sq_soft: false,
+        sq_chip_old: false,
         aprs_mute: true,
         dtmf_rx: true,
         aprs_share: 0,

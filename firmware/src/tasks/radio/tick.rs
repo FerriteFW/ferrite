@@ -163,6 +163,8 @@ impl Radio {
         let mut sq = [false; 2];
         let mut heard = [false; 2]; // the chips read this tick: the others keep their slot's last state (HOME-15)
         let mut toned = [false; 2];
+        // WATCH-17.5: each chip's squelch rising, from the decision this tick used (never a stale one)
+        let mut rise = [false; 2];
         let mut scan_open = [false; SLOTS];
         for n in 0..2u8 {
             let Some((s, _)) = self.tuned[n as usize] else { continue };
@@ -198,6 +200,7 @@ impl Radio {
                     #[cfg(feature = "bench")]
                     let was = self.soft_sq[n as usize].open();
                     let now_open = self.soft_sq[n as usize].step(&ferrite_core::softsq::Limits::from_regs(regs), raw, noise, fast, dt);
+                    rise[n as usize] = self.soft_sq[n as usize].rising();
                     #[cfg(feature = "bench")]
                     if now_open != was {
                         // the bench's check against the chip: each change, its readings, and what the chip said
@@ -221,6 +224,7 @@ impl Radio {
                     #[cfg(feature = "bench")]
                     let was = self.chip_sq[n as usize].open();
                     let o = self.chip_sq[n as usize].step(st.squelch_open, fast, dt);
+                    rise[n as usize] = self.chip_sq[n as usize].rising();
                     #[cfg(feature = "bench")]
                     if st.squelch_open && !self.sq_tuned[n as usize].1 {
                         self.sq_tuned[n as usize].1 = true;
@@ -326,8 +330,7 @@ impl Radio {
         let cfg = watch::Cfg { set: self.watch_set, active: self.active, freq: self.slots.map(|s| s.freq), muted: self.user_mute, off: self.bcast_off() | asleep | self.user_off, held: self.monitor, prio: self.kept(), aprs: self.aprs_slots, scan: self.range_scans(), first: watch::aprs_first(), swap: self.swap };
         let keyed = self.path.keyed().is_some();
         // WATCH-17.5: a chip whose own squelch bit reads open with stock's count running keeps its turn
-        let rising = core::array::from_fn(|n| listening == Some(n as u8) && (self.chip_sq[n].rising() || self.soft_sq[n].rising()));
-        self.watcher.rising(rising);
+        self.watcher.rising(rise);
         let out = self.watcher.turn(now, &cfg, sq, heard, keyed);
         self.live.dropped = out.dropped;
         // 2a. The tone hint (TSRCH-12, TSRCH-15): on the chip listening, for the slot the watch holds for audio.
@@ -427,7 +430,9 @@ impl Radio {
         // its broadcast modes. With no such slot the BK4829s stay asleep for the whole broadcast: nothing switches.
         let broadcast = self.si.mode().is_some() && self.hf.is_none() && self.bcast_slot.is_some();
         let others = (self.watch_set | 1 << self.active) & !self.bcast_slot.map_or(0, |b| 1 << b) != 0;
-        let busy = self.live.slots.iter().any(|s| s.squelch_open || s.scanning) || broadcast && others;
+        // WATCH-17.5, PWR: a squelch rising keeps the receivers awake too, so a watched slot at Battery Save 2 or 3
+        // (a 180 ms window, the active slot's 150 ms turn first) gets to open (the 0.9.5 review)
+        let busy = self.live.slots.iter().any(|s| s.squelch_open || s.scanning) || broadcast && others || rise.iter().any(|&r| r);
         // SQL-8: the squelch opening or closing holds the receiver on for 10 s.
         let a = self.save.squelch(now_ms(), self.live.slots.iter().any(|s| s.squelch_open));
         self.apply(a).await;

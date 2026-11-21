@@ -176,7 +176,7 @@ persist!(Settings {
     scope_dwell, scope_trig, scope_line, scope_wf, scope_mode, term_colour,
     aprs_mode, predictive,
     lpm, lpm_below, spare_tokens, backlight, keypad_light, leds, auto_off, auto_lock, dtmf_sidetone, arrival_tone,
-} bits { show_hidden, chan_only, cable_log, aprs_fixed, scan_tx } then { pon, pon_text, tone_level, scan_resume, scan_prio, tail_mode, tail_phase, end_tone, dtmf_ms, dtmf_delay, cw_id, gps, gps_rxtx, arrival, kiss_port, pocsag_on, pocsag_freq, pocsag_cap, popups, key_beep, beep_vol, alert_tones, vox, vox_level, vox_tail, fm_sleep, brightness, brightness_night, tx_light, wake_on, spare_temp, mic_gain, tx_timeout, menu_timeout, pause_time, spare_lock, busy_default, smeter_dbm, ch_display, scan_down, scan_return_hit, msg_vol, mcu_fixed, sq_soft, aprs_mute, dtmf_rx, aprs_share, local, sat_min_el, decode_log });
+} bits { show_hidden, chan_only, cable_log, aprs_fixed, scan_tx } then { pon, pon_text, tone_level, scan_resume, scan_prio, tail_mode, tail_phase, end_tone, dtmf_ms, dtmf_delay, cw_id, gps, gps_rxtx, arrival, kiss_port, pocsag_on, pocsag_freq, pocsag_cap, popups, key_beep, beep_vol, alert_tones, vox, vox_level, vox_tail, fm_sleep, brightness, brightness_night, tx_light, wake_on, spare_temp, mic_gain, tx_timeout, menu_timeout, pause_time, spare_lock, busy_default, smeter_dbm, ch_display, scan_down, scan_return_hit, msg_vol, mcu_fixed, sq_chip_old, aprs_mute, dtmf_rx, aprs_share, local, sat_min_el, decode_log, sq_soft });
 
 /// The format of [`App::save_state`]; a reader of a different one keeps the defaults. 2 (decision 333): a slot's
 /// zone is 2 bytes; version 1's one byte (255 no zone, 254 Local) still reads, so a settings record copied over
@@ -356,8 +356,8 @@ mod tests {
     /// decision 243 (menu timeout to scan return), 0 7 5 6's message volume, 0 9 9 4's MCU clock (PWR-26.5), 0 9
     /// 5's squelch (SQL-18.3), 0 5 9 6's APRS mute, 0 4 3's DTMF decode, 0 5 9 7's shared VHF (WATCH-17.3), 0 2
     /// 5's Local zone (CHAN-34), the satellite list's minimum elevation (SAT-22) and 0 5 9 8's decode log
-    /// (APRS-56), a byte each.
-    const AFTER_SPARE: usize = 19;
+    /// (APRS-56), a byte each; then 0 9 5's squelch again at the end (SQL-18.3, SQL-18.7: the old byte is ignored).
+    const AFTER_SPARE: usize = 20;
 
     /// GPS-1.4: a radio keeps the setting it has. 0 6 1's byte is where the old on/off bool was, with Off and On
     /// its 0 and 1 and Auto 2: an old record set to Off reads Off, one set to On reads On, the record's length is

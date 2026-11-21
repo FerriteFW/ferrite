@@ -40,7 +40,7 @@ impl Radio {
             }
         }
         for s in 0..SLOTS {
-            let carrier = self.live.slots[s].squelch_open;
+            let carrier = self.live.slots[s].carrier; // SQL-13.1
             self.dtmf[s].tick(now, carrier);
             self.live.slots[s].dtmf = self.dtmf[s].heard;
         }

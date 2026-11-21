@@ -19,17 +19,22 @@ pub fn set_chip_decides(on: bool) {
     CHIP.store(on, Relaxed);
 }
 
-/// Readings in a row that must pass to open on ordinary receive: 30 ms at the 10 ms tick, a short debounce in
-/// place of the chip's open delay (SQL-18.1). Three, not two (decision 293): on a band whose RSSI sits over the open
-/// threshold with nothing on air (black indoors on 446.500, Oct 25, 2026), only the noise test holds it shut, and a
-/// brief dip under it opened the squelch. A scan step or priority look opens on the first.
-pub const OPEN_READS: u8 = 3;
+/// SQL-18.1: how long the readings must pass in a row to open on ordinary receive, a short debounce in place of the
+/// chip's open delay; and at least [`MIN_READS`] of them, whatever the poll (SQL-18.5: each reading counts for the
+/// time since the one before, so the 50 ms poll of a lone slot opens in 100 ms, not 150, and inside Battery Save's
+/// wake window; a review of Nov 20, 2026). At the 10 ms tick that is three readings, as decision 293 chose: on a
+/// band whose RSSI sits over the open threshold with nothing on air (black indoors on 446.500, Oct 25, 2026), only
+/// the noise test holds it shut, and a brief dip under it opened the squelch. A scan step or priority look opens on
+/// the first.
+pub const OPEN_MS: u16 = 30;
+/// SQL-18.5: the fewest readings in a row that open, fade or hit the noise ceiling, whatever their time.
+pub const MIN_READS: u8 = 2;
 /// SQL-18.2 (decision 293): open, the noise closes it at least this far over the open threshold. The chip's own
 /// ceiling is 1 over it, so a weak signal whose noise wobbled across opened and shut again and again.
 pub const NOISE_HYST: u8 = 3;
-/// Readings in a row with the RSSI under its close threshold (and the noise still under the ceiling) that close
-/// it: a weak, fading signal rides through a dip of 20 ms.
-pub const FADE_READS: u8 = 3;
+/// How long the RSSI must stay under its close threshold (the noise still under the ceiling), and at least
+/// [`MIN_READS`] readings, to close: a weak, fading signal rides through a short dip.
+pub const FADE_MS: u16 = 30;
 
 /// The thresholds, from the REG_78 and REG_4F words the chip was given (`SqCal::regs`): RSSI on REG_67's scale
 /// (dBm = v / 2 - 160), noise on REG_65's (0-127).
@@ -56,30 +61,51 @@ impl Limits {
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct SoftSq {
     open: bool,
+    /// Readings in a row toward a change, and their time (ms).
     n: u8,
+    ms: u16,
+    /// SQL-18.5: readings in a row at the noise ceiling (open).
+    noisy: u8,
 }
 
 impl SoftSq {
     /// Closed, nothing counted (a `const` for the Radio task's static).
-    pub const DEFAULT: SoftSq = SoftSq { open: false, n: 0 };
+    pub const DEFAULT: SoftSq = SoftSq { open: false, n: 0, ms: 0, noisy: 0 };
 
-    /// The next decision from one reading. `fast`: open on the first reading that passes.
-    pub fn step(&mut self, l: &Limits, rssi: u16, noise: u8, fast: bool) -> bool {
+    /// The next decision from one reading, `dt_ms` after the one before (SQL-18.5: the poll is 10 ms or 50 ms).
+    /// `fast`: open on the first reading that passes.
+    pub fn step(&mut self, l: &Limits, rssi: u16, noise: u8, fast: bool, dt_ms: u16) -> bool {
+        let count = |n: &mut u8, ms: &mut u16| {
+            *n = n.saturating_add(1);
+            *ms = ms.saturating_add(dt_ms);
+        };
         if !self.open {
-            let pass = rssi >= l.rssi_open && noise <= l.noise_open;
-            self.n = if pass { self.n.saturating_add(1) } else { 0 };
-            if self.n >= if fast { 1 } else { OPEN_READS } {
-                (self.open, self.n) = (true, 0);
+            if rssi >= l.rssi_open && noise <= l.noise_open {
+                count(&mut self.n, &mut self.ms);
+            } else {
+                (self.n, self.ms) = (0, 0);
             }
-        } else if noise >= l.ceiling.max(l.noise_open.saturating_add(NOISE_HYST)) {
-            (self.open, self.n) = (false, 0); // the noise ceiling: shut at once, no tail
-        } else if rssi < l.rssi_close {
-            self.n = self.n.saturating_add(1);
-            if self.n >= FADE_READS {
-                (self.open, self.n) = (false, 0);
+            if fast && self.n >= 1 || self.n >= MIN_READS && self.ms >= OPEN_MS {
+                *self = SoftSq { open: true, ..SoftSq::DEFAULT };
+            }
+            return self.open;
+        }
+        // the noise ceiling: the carrier's gone (two readings in a row, so one noisy reading doesn't cut it)
+        if noise >= l.ceiling.max(l.noise_open.saturating_add(NOISE_HYST)) {
+            self.noisy = self.noisy.saturating_add(1);
+            if self.noisy >= MIN_READS {
+                *self = SoftSq::DEFAULT;
+            }
+            return self.open;
+        }
+        self.noisy = 0;
+        if rssi < l.rssi_close {
+            count(&mut self.n, &mut self.ms);
+            if self.n >= MIN_READS && self.ms >= FADE_MS {
+                *self = SoftSq::DEFAULT;
             }
         } else {
-            self.n = 0;
+            (self.n, self.ms) = (0, 0);
         }
         self.open
     }
@@ -92,6 +118,13 @@ impl SoftSq {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    impl SoftSq {
+        /// A reading at the 10 ms tick.
+        fn st(&mut self, l: &Limits, rssi: u16, noise: u8, fast: bool) -> bool {
+            self.step(l, rssi, noise, fast, 10)
+        }
+    }
 
     /// 443.475 at level 4 on the test radios (`sqcal`'s stock_thresholds): RSSI open 0x59, close 0x55; noise 40
     /// with 1 of hysteresis.
@@ -111,21 +144,21 @@ mod tests {
     #[test]
     fn opens_after_three_readings_or_one_when_fast() {
         let mut s = SoftSq::default();
-        assert!(!s.step(&L, SIG.0, SIG.1, false));
-        assert!(!s.step(&L, SIG.0, SIG.1, false));
-        assert!(s.step(&L, SIG.0, SIG.1, false));
+        assert!(!s.st(&L, SIG.0, SIG.1, false));
+        assert!(!s.st(&L, SIG.0, SIG.1, false));
+        assert!(s.st(&L, SIG.0, SIG.1, false));
         let mut f = SoftSq::default();
-        assert!(f.step(&L, SIG.0, SIG.1, true));
+        assert!(f.st(&L, SIG.0, SIG.1, true));
         // a lone passing reading between empty ones never opens
         let mut b = SoftSq::default();
         for r in [SIG, EMPTY, SIG, EMPTY, SIG, EMPTY] {
-            assert!(!b.step(&L, r.0, r.1, false));
+            assert!(!b.st(&L, r.0, r.1, false));
         }
         // decision 293: the band's RSSI over the open threshold with nothing on air, the noise dipping under it for
         // two readings at a time: never opens
         let mut d = SoftSq::default();
         for n in [48, 39, 39, 47, 38, 39, 50, 39, 46] {
-            assert!(!d.step(&L, 0x74, n, false), "noise {n}");
+            assert!(!d.st(&L, 0x74, n, false), "noise {n}");
         }
     }
 
@@ -134,24 +167,63 @@ mod tests {
     fn needs_rssi_and_quiet() {
         let mut s = SoftSq::default();
         for _ in 0..5 {
-            assert!(!s.step(&L, 0x80, 45, false), "noise over the open threshold");
+            assert!(!s.st(&L, 0x80, 45, false), "noise over the open threshold");
         }
         for _ in 0..5 {
-            assert!(!s.step(&L, 0x50, 5, false), "RSSI under the open threshold");
+            assert!(!s.st(&L, 0x50, 5, false), "RSSI under the open threshold");
         }
         let mut z = SoftSq::default();
-        assert!(z.step(&L, 0x59, 0x27, true), "at the thresholds themselves");
+        assert!(z.st(&L, 0x59, 0x27, true), "at the thresholds themselves");
     }
 
-    /// SQL-18.2: open, the noise reaching the ceiling (at least NOISE_HYST over the open threshold, decision 293)
-    /// shuts it on that reading: the carrier's gone, no tail.
+    /// SQL-18.2, SQL-18.5: open, the noise reaching the ceiling (at least NOISE_HYST over the open threshold,
+    /// decision 293) on two readings in a row shuts it: the carrier's gone, no tail; one noisy reading doesn't.
     #[test]
-    fn the_ceiling_closes_at_once() {
+    fn the_ceiling_closes_on_two_readings() {
         let mut s = SoftSq::default();
-        s.step(&L, SIG.0, SIG.1, true);
-        assert!(s.step(&L, SIG.0, 0x28, false), "the chip's ceiling, 1 over: stays (a weak signal's wobble)");
-        assert!(s.step(&L, SIG.0, 0x29, false), "2 over: stays");
-        assert!(!s.step(&L, SIG.0, 0x2A, false), "3 over, even with RSSI left: shut");
+        s.st(&L, SIG.0, SIG.1, true);
+        assert!(s.st(&L, SIG.0, 0x28, false), "the chip's ceiling, 1 over: stays (a weak signal's wobble)");
+        assert!(s.st(&L, SIG.0, 0x29, false), "2 over: stays");
+        assert!(s.st(&L, SIG.0, 0x2A, false), "3 over once: rides it");
+        assert!(s.st(&L, SIG.0, SIG.1, false), "quiet again");
+        assert!(s.st(&L, SIG.0, 0x2A, false));
+        assert!(!s.st(&L, SIG.0, 0x2A, false), "twice in a row, even with RSSI left: shut");
+    }
+
+    /// SQL-18.5: at the 50 ms poll of a lone slot, two passing readings open (100 ms, not 150): inside Battery Save's
+    /// 180 ms wake window; one alone still doesn't.
+    #[test]
+    fn the_50_ms_poll_opens_on_two_readings() {
+        let mut s = SoftSq::default();
+        assert!(!s.step(&L, SIG.0, SIG.1, false, 50), "one reading isn't enough");
+        assert!(s.step(&L, SIG.0, SIG.1, false, 50));
+        let mut b = SoftSq::default();
+        for r in [SIG, EMPTY, SIG, EMPTY] {
+            assert!(!b.step(&L, r.0, r.1, false, 50), "alternating never opens");
+        }
+    }
+
+    /// SQL-18.5: at 50 ms a fade closes on its second reading under the threshold (100 ms), a noisy one on its second
+    /// at the ceiling; one of either rides.
+    #[test]
+    fn the_50_ms_poll_fades_and_closes_on_two() {
+        let mut s = SoftSq::default();
+        s.step(&L, SIG.0, SIG.1, true, 50);
+        assert!(s.step(&L, 0x50, 20, false, 50), "one under: rides");
+        assert!(!s.step(&L, 0x50, 20, false, 50), "two: closed");
+        s.step(&L, SIG.0, SIG.1, true, 50);
+        assert!(s.step(&L, SIG.0, 0x2A, false, 50), "one noisy: rides");
+        assert!(!s.step(&L, SIG.0, 0x2A, false, 50), "two noisy: closed");
+    }
+
+    /// SQL-18.5: the first reading after a retune counts no time (dt 0): it can't open alone, the next one does once
+    /// 30 ms have passed.
+    #[test]
+    fn a_reading_with_no_time_counts_toward_two() {
+        let mut s = SoftSq::default();
+        assert!(!s.step(&L, SIG.0, SIG.1, false, 0));
+        assert!(!s.step(&L, SIG.0, SIG.1, false, 20), "two readings but only 20 ms");
+        assert!(s.step(&L, SIG.0, SIG.1, false, 10), "30 ms");
     }
 
     /// SQL-18.2: a fading signal under the RSSI close threshold rides two readings and closes on the third; a
@@ -159,13 +231,13 @@ mod tests {
     #[test]
     fn a_fade_closes_after_three_readings() {
         let mut s = SoftSq::default();
-        s.step(&L, SIG.0, SIG.1, true);
-        assert!(s.step(&L, 0x50, 20, false));
-        assert!(s.step(&L, 0x50, 20, false));
-        assert!(s.step(&L, 0x56, 20, false), "back over the close threshold");
-        assert!(s.step(&L, 0x50, 20, false));
-        assert!(s.step(&L, 0x50, 20, false));
-        assert!(!s.step(&L, 0x50, 20, false));
+        s.st(&L, SIG.0, SIG.1, true);
+        assert!(s.st(&L, 0x50, 20, false));
+        assert!(s.st(&L, 0x50, 20, false));
+        assert!(s.st(&L, 0x56, 20, false), "back over the close threshold");
+        assert!(s.st(&L, 0x50, 20, false));
+        assert!(s.st(&L, 0x50, 20, false));
+        assert!(!s.st(&L, 0x50, 20, false));
         assert!(!s.open());
     }
 

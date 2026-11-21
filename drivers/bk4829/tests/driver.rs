@@ -89,11 +89,13 @@ fn squelch_and_meters() {
     assert_eq!(r.regs[0x4F], 0x2F2E, "the table's reset value for the same thresholds");
     assert_eq!(r.regs[0x4D], 0xA020, "delays kept");
     assert_eq!(r.regs[0x4E], 0x3808);
-    // SQL-17: the open delay alone changes (scan steps 0, ordinary receive stock's 7).
+    // SQL-17, SQL-17.1: the open delay alone changes, bits 15:12 (scan steps 0, ordinary receive stock's 3); the
+    // close delay in 11:8 stays.
+    r.regs[0x4E] = 0x3815;
     Bk4829::new(&mut r).open_delay(0);
-    assert_eq!(r.regs[0x4E], 0x0008);
-    Bk4829::new(&mut r).open_delay(7);
-    assert_eq!(r.regs[0x4E], 0x3808);
+    assert_eq!(r.regs[0x4E], 0x0815);
+    Bk4829::new(&mut r).open_delay(3);
+    assert_eq!(r.regs[0x4E], 0x3815);
 }
 
 #[test]

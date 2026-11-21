@@ -71,7 +71,7 @@ fn dev() -> Device {
 /// Home with A receiving, drawn once whole.
 fn home() -> (T, Probe) {
     let mut t = T::new();
-    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, rssi: -100, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, carrier: true, rssi: -100, ..Default::default() };
     let mut p = Probe::new();
     t.app.render(&mut p, &t.live, &dev(), &store());
     (t, p)

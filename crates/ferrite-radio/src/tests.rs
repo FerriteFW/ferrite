@@ -549,15 +549,15 @@ fn squelch_writes_stocks_registers() {
     assert_eq!(b.release().writes, [(reg::SQ_RSSI, 0x5955), (reg::SQ_NOISE, 0x2827)]);
 }
 
-/// SQL-17: a scan step or the strip's look sets REG_4E's open delay to 0, ordinary receive back to stock's 7
-/// (0x3815, its start-up value); the glitch threshold in the low byte is kept.
+/// SQL-17, SQL-17.1: a scan step or the strip's look sets REG_4E's open delay (bits 15:12) to 0, ordinary receive
+/// back to stock's 3 (0x3815, its start-up value); the close delay (11:8) and the glitch threshold stay.
 #[test]
 fn open_delay_fast_for_scans_stock_otherwise() {
     let mut b = bk();
     b.write(reg::SQ_GLITCH_OPEN, 0x3815);
     chip::open_delay(&mut b, true);
     let mut r = b.release();
-    assert_eq!(r.last(reg::SQ_GLITCH_OPEN), Some(0x0015));
+    assert_eq!(r.last(reg::SQ_GLITCH_OPEN), Some(0x0815), "the close delay kept");
     r.writes.clear();
     let mut b = Bk4829::new(r);
     chip::open_delay(&mut b, false);

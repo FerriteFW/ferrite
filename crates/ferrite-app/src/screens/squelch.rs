@@ -27,6 +27,16 @@ pub struct Squelch {
 /// SIDE1 held + knob or ▲▼: one level up or down (stops at 0 and 9), and this screen while SIDE1 is held.
 pub fn step(app: &mut App, d: i32) {
     app.keys.used(Key::Side(1));
+    // SQL-7.1: the hold's monitor (SIDE1 held past the long press, before the knob turned) ends as the level is set,
+    // so the squelch opens and closes with the level as it turns (it stayed open: "Open: you hear it" whatever the
+    // level, a review of Nov 20, 2026). A monitor turned on with a tap stays.
+    if app.mon_held != 0 {
+        let slot = app.mon_held - 1;
+        app.mon_held = 0;
+        if app.monitor & 1 << slot == 0 {
+            app.out.push(ferrite_core::msg::RadioCmd::Monitor { slot, on: false });
+        }
+    }
     app.step_squelch(d);
     if !matches!(app.screen, Screen::Squelch(_)) {
         app.screen = Screen::Squelch(Squelch { floor: 0 });
@@ -73,8 +83,9 @@ impl View for Squelch {
         }
         // SQL-12: the floor follows the signal while the squelch is closed (an eighth of each reading)
         let lv = live.slots[app.active as usize];
-        if !lv.squelch_open && lv.rssi < 0 {
-            let floor = if self.floor == 0 { lv.rssi } else { (self.floor * 7 + lv.rssi) / 8 };
+        // SQL-12.1: from the RSSI as read (not held down while closed), while there's no carrier (level 0 too)
+        if !lv.carrier && lv.rssi_raw < 0 {
+            let floor = if self.floor == 0 { lv.rssi_raw } else { (self.floor * 7 + lv.rssi_raw) / 8 };
             app.screen = Screen::Squelch(Squelch { floor });
         }
     }
@@ -98,7 +109,7 @@ impl View for Squelch {
             });
         }
         // The live signal: what the level lets through (SQL-7).
-        let lit = w::meter_level(lv.rssi);
+        let lit = w::meter_level(lv.rssi_raw); // SQL-12.1: the signal under the threshold too
         if app.dirty(2, Mix::new().h(&lit).h(&lv.squelch_open).get()) {
             lcd.fill(0, 170, 240, 1, LINE);
             let (t, c): (&[u8], u16) = if lv.squelch_open { (b"Open: you hear it", GREEN) } else { (b"Closed", SUB) };

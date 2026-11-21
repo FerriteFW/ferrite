@@ -223,7 +223,7 @@ impl Aprs {
             // never keyed on C's own channel.
             &Tx::Clearing { what } if !send.may_send(what) => self.tx = Tx::Idle,
             &Tx::Clearing { what } => {
-                let busy = live.slots[SLOT_C as usize].squelch_open;
+                let busy = live.slots[SLOT_C as usize].carrier; // SQL-13.1
                 let r = self.random();
                 match self.clear.poll(now_ms, busy, r) {
                     Clear::Wait => {}
@@ -262,7 +262,7 @@ impl Aprs {
             // sees fit), so it neither waits for ever nor holds back the frames after it.
             Tx::Idle if kiss_on && self.kiss_q.is_some() && now_ms.wrapping_sub(self.kiss_at) >= CLEAR_WAIT_MS => self.kiss_q = None,
             Tx::Idle if kiss_on && self.kiss_q.is_some() => {
-                let busy = live.slots[SLOT_C as usize].squelch_open;
+                let busy = live.slots[SLOT_C as usize].carrier; // SQL-13.1
                 let r = self.random();
                 if self.access.may_send(&self.params, now_ms, busy, r) {
                     self.frame = self.kiss_q.take().unwrap();

@@ -93,6 +93,7 @@ impl Radio {
         if want.is_none() {
             self.maybe_awake &= !(1 << n);
             self.sq_regs[n as usize] = None; // written again on waking
+            self.sq_key[n as usize] = None; // SQL-18.6: and its soft squelch starts closed, not as it was before
             self.open_fast[n as usize] = None; // SQL-17: likewise
             self.data_rx[n as usize] = None; // APRS-55: likewise
             radio_chip::sleep_begin(&mut self.chip(n));
@@ -218,7 +219,9 @@ impl Radio {
                 }
                 for (i, s) in self.live.slots.iter_mut().enumerate() {
                     s.squelch_open &= kept & 1 << i != 0;
+                    s.carrier &= kept & 1 << i != 0;
                 }
+                self.carrier &= kept;
                 if self.tuned.iter().all(Option::is_none) {
                     // BCR-19: during a broadcast the band's receive select stays on (switching it clicks in the
                     // shared amp); otherwise off, as stock.
@@ -301,7 +304,26 @@ impl Radio {
         match param {
             Param::Mode => (s.narrow, s.am) = (value == 1, value == 2),
             Param::Bandwidth => s.narrow = value == 1,
-            Param::Squelch => s.sq = value.clamp(0, 9) as u8,
+            Param::Squelch => {
+                // SQL-7.2: the new thresholds straight to the chip holding the slot, without a retune: the audio
+                // carries on, and the soft squelch keeps its state with the new limits from the next tick (a review
+                // of Nov 20, 2026: each knob step retuned the chip and dropped the audio). A chip asleep gets them as
+                // it wakes, from tune_finish.
+                s.sq = value.clamp(0, 9) as u8;
+                let sq = s.sq;
+                for n in 0..2u8 {
+                    if let Some((ts, f)) = self.tuned[n as usize] {
+                        if ts == slot && f != 0 {
+                            let regs = self.sqcal.regs(f, sq);
+                            if self.sq_regs[n as usize] != Some(regs) {
+                                radio_chip::squelch(&mut self.chip(n), regs);
+                                self.sq_regs[n as usize] = Some(regs);
+                            }
+                        }
+                    }
+                }
+                return;
+            }
             Param::RxTone => s.rx_tone = value as u16,
             Param::Clarifier => s.clar = value.clamp(-2_500, 2_500) as i16,
             #[cfg(feature = "tx")]

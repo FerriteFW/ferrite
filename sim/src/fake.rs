@@ -708,9 +708,11 @@ impl FakeRadio {
         let relay = |f: Freq10| Sel::rx(f).relay();
         let active_relay = relay(self.live.slots[self.active as usize].freq);
         for (i, s) in self.live.slots.iter_mut().enumerate() {
-            let (_, level) = carrier(i, s);
+            let (on, level) = carrier(i, s);
             s.squelch_open = self.watcher.open(i as u8) || self.monitor & 1 << i != 0;
+            s.carrier = s.squelch_open && on; // SQL-13.1: a carrier, not level 0 or monitor
             s.rssi = if s.squelch_open { level as i16 } else if quiet { -121 } else { -121 + ((t * 0.9 + i as f32).sin() * 2.0) as i16 };
+            s.rssi_raw = if on { level as i16 } else { s.rssi }; // SQL-12.1
             s.relay = out.cancelled && self.watch & 1 << i != 0 && relay(s.freq) != active_relay; // WATCH-11
             s.heard_tone = self.hint.filter(|h| h.0 as usize == i).map_or(0, |h| h.1);
         }

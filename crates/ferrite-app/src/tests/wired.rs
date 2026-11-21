@@ -26,7 +26,7 @@ fn menu_timeout_follows_its_setting() {
 fn pause_time_follows_its_setting() {
     let mut t = T::new();
     t.app.set.pause_time = 2; // 5 min
-    t.live.slots[1] = SlotLive { squelch_open: true, rssi: -90, ..Default::default() };
+    t.live.slots[1] = SlotLive { squelch_open: true, carrier: true, rssi: -90, ..Default::default() };
     t.wait(100);
     t.tap(Key::Hash);
     assert!(t.cmds().contains(&RadioCmd::PauseWatch(300)));
@@ -206,7 +206,7 @@ fn scan_direction_and_return() {
     assert!(t.cmds().contains(&RadioCmd::ScanDir { slot: 0, up: false, resume: false }));
     // a hit, held, then SIDE2
     let hit = start + 2_500;
-    t.live.slots[0] = SlotLive { scanning: true, held: true, freq: hit, squelch_open: true, ..Default::default() };
+    t.live.slots[0] = SlotLive { scanning: true, held: true, freq: hit, squelch_open: true, carrier: true, ..Default::default() };
     t.wait(200);
     t.app.set.scan_return_hit = true;
     t.tap(Key::Side(2));
@@ -217,7 +217,7 @@ fn scan_direction_and_return() {
     t.app.set.scan_return_hit = false;
     let here = t.freq();
     t.tap(Key::Side(2));
-    t.live.slots[0] = SlotLive { scanning: true, held: true, freq: here + 5_000, squelch_open: true, ..Default::default() };
+    t.live.slots[0] = SlotLive { scanning: true, held: true, freq: here + 5_000, squelch_open: true, carrier: true, ..Default::default() };
     t.wait(200);
     t.tap(Key::Side(2));
     assert_eq!(t.freq(), here, "start");

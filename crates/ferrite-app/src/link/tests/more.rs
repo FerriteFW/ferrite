@@ -328,7 +328,7 @@ fn big_transfers_flash_the_led() {
     assert!(pc.app.transferring(), "a write");
     // receive and transmit win
     let mut rx = LiveAll::default();
-    rx.slots[0].squelch_open = true;
+    (rx.slots[0].squelch_open, rx.slots[0].carrier) = (true, true); // SQL-13.1: a carrier lights it
     assert!((0..30).all(|_| {
         pc.now += 10;
         leds_now(&mut pc, &rx).green

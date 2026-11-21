@@ -380,6 +380,12 @@ pub struct SlotLive {
     pub rssi: i16,
     /// A carrier above the squelch (the BK4829's RSSI and noise squelch), whatever tone it carries.
     pub squelch_open: bool,
+    /// SQL-13.1: a carrier, as the squelch decided it: not level 0's always-open nor monitor. Busy lockout, the green
+    /// LED, receive activity and DTMF go by this; the audio by `squelch_open`.
+    pub carrier: bool,
+    /// SQL-12.1: the RSSI as read (dBm), not held down while closed as `rssi` is for the S-meters: the squelch
+    /// screen's floor and meter show the signal under the threshold.
+    pub rssi_raw: i16,
     pub scanning: bool,
     /// The scan is stopped on a hit (held there until it resumes), not just passing a busy step.
     pub held: bool,

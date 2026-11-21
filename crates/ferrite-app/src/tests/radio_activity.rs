@@ -383,7 +383,7 @@ fn scan_screen() {
     t.tap(Key::Side(2));
     assert!(matches!(t.app.screen(), Screen::Scan(_)));
     assert!(t.cmds().contains(&RadioCmd::Scan { slot: 0, on: true }));
-    t.live.slots[0] = SlotLive { freq: mhz(146) + 94_000, scanning: true, squelch_open: true, rssi: -80, hits: 1, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: mhz(146) + 94_000, scanning: true, squelch_open: true, carrier: true, rssi: -80, hits: 1, ..Default::default() };
     t.wait(100);
     assert_eq!(t.app.radio.hits[0].what, mhz(146) + 94_000, "the hit is listed");
     t.tap(Key::Star);
@@ -401,7 +401,7 @@ fn scan_hit_list() {
     t.tap(Key::Side(2));
     let (a, b) = (mhz(146) + 94_000, mhz(147) + 30_000);
     for (n, f) in [(1, a), (2, b), (3, a), (4, a)] {
-        t.live.slots[0] = SlotLive { freq: f, last_hit: f, scanning: true, squelch_open: true, rssi: -80, hits: n, ..Default::default() };
+        t.live.slots[0] = SlotLive { freq: f, last_hit: f, scanning: true, squelch_open: true, carrier: true, rssi: -80, hits: n, ..Default::default() };
         t.wait(100);
         t.live.slots[0].squelch_open = false;
         t.wait(100);
@@ -439,7 +439,7 @@ fn scan_direction() {
     t.cmds();
     t.tap(Key::Down);
     assert!(t.cmds().contains(&RadioCmd::ScanDir { slot: 0, up: false, resume: false }));
-    t.live.slots[0] = SlotLive { freq: mhz(146) + 94_000, scanning: true, held: true, squelch_open: true, rssi: -80, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: mhz(146) + 94_000, scanning: true, held: true, squelch_open: true, carrier: true, rssi: -80, ..Default::default() };
     t.wait(100);
     t.tap(Key::Up);
     assert!(t.cmds().contains(&RadioCmd::ScanDir { slot: 0, up: true, resume: true }));
@@ -456,7 +456,7 @@ fn scan_skip_for_good() {
     t.app.set_channel(0, z, 0, &st);
     let c = st.zone_at(z, 1).unwrap();
     t.tap(Key::Side(2));
-    t.live.slots[0] = SlotLive { freq: c.rx, scanning: true, held: true, squelch_open: true, rssi: -80, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: c.rx, scanning: true, held: true, squelch_open: true, carrier: true, rssi: -80, ..Default::default() };
     t.wait(100);
     t.cmds();
     t.tap(Key::Hash);
@@ -468,7 +468,7 @@ fn scan_skip_for_good() {
     // A band scan (VFO) keeps no list.
     let mut t = T::new();
     t.tap(Key::Side(2));
-    t.live.slots[0] = SlotLive { freq: mhz(146) + 94_000, scanning: true, held: true, squelch_open: true, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: mhz(146) + 94_000, scanning: true, held: true, squelch_open: true, carrier: true, ..Default::default() };
     t.wait(100);
     t.tap(Key::Hash);
     assert!(t.app.pop_write().is_none());
@@ -482,7 +482,7 @@ fn ptt_while_scanning() {
     let mut t = ready();
     let f0 = t.freq();
     t.tap(Key::Side(2));
-    t.live.slots[0] = SlotLive { freq: mhz(146) + 94_000, scanning: true, held: true, squelch_open: true, rssi: -80, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: mhz(146) + 94_000, scanning: true, held: true, squelch_open: true, carrier: true, rssi: -80, ..Default::default() };
     t.wait(100);
     t.cmds();
     ptt(&mut t, true);
@@ -616,6 +616,31 @@ fn hold_0_home_channel_toast() {
     assert_eq!(toast.head.as_bytes(), b"Home channel");
     assert!(!toast.body.is_empty());
     t.app.key_up(Key::Digit(0), t.t, &s);
+}
+
+/// SQL-7.1: SIDE1 held past its long press (the hold's monitor) then the knob: the monitor ends as the level is
+/// set, so the squelch opens and closes with it (a review of Nov 20, 2026: it stayed open, "you hear it" at any
+/// level). A monitor latched with a tap stays on.
+#[test]
+fn setting_the_level_ends_the_holds_monitor() {
+    let mut t = T::new();
+    let s = store();
+    t.app.key_down(Key::Side(1), t.t, &s);
+    t.wait(800); // past the long press: the hold's monitor
+    assert!(t.cmds().contains(&RadioCmd::Monitor { slot: 0, on: true }), "monitor while held");
+    t.knob(1);
+    assert!(matches!(t.app.screen(), Screen::Squelch(_)));
+    assert!(t.cmds().contains(&RadioCmd::Monitor { slot: 0, on: false }), "ended by the knob");
+    t.app.key_up(Key::Side(1), t.t, &s);
+    assert!(!t.cmds().iter().any(|c| matches!(c, RadioCmd::Monitor { .. })), "nothing more at the release");
+    // latched with a tap first: stays on through the knob
+    t.app.key_down(Key::Side(1), t.t, &s);
+    t.app.key_up(Key::Side(1), t.t, &s);
+    t.cmds();
+    t.app.key_down(Key::Side(1), t.t, &s);
+    t.knob(1);
+    assert!(!t.cmds().contains(&RadioCmd::Monitor { slot: 0, on: false }), "a latched monitor stays");
+    t.app.key_up(Key::Side(1), t.t, &s);
 }
 
 /// SQL-10: SIDE1 + knob shows the squelch screen while SIDE1 is held.
@@ -766,7 +791,7 @@ fn crossband_repeater() {
 fn home_layouts() {
     let mut t = T::new();
     let mut fb = FrameBuffer::new();
-    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, rssi: -85, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, carrier: true, rssi: -85, ..Default::default() };
     for l in [1, 2] {
         t.app.set_layout(l);
         t.wait(3000);
@@ -1908,11 +1933,11 @@ fn knob_holds_the_heavier_redraws() {
         t.wait(1000);
         t.app.render(&mut lcd, &t.live, &dev, &store());
         // something changes in the other slots (and the strip's centre with the knob)
-        t.live.slots[1] = SlotLive { squelch_open: true, rssi: -70, ..Default::default() };
+        t.live.slots[1] = SlotLive { squelch_open: true, carrier: true, rssi: -70, ..Default::default() };
         t.wait(1300); // the last minute's bucket ticks over
         t.app.render(&mut lcd, &t.live, &dev, &store());
         t.live.slots[1] = SlotLive::default();
-        t.live.slots[2] = SlotLive { squelch_open: true, rssi: -60, ..Default::default() };
+        t.live.slots[2] = SlotLive { squelch_open: true, carrier: true, rssi: -60, ..Default::default() };
         let f0 = t.freq();
         lcd.1.clear();
         t.knob(1);
@@ -2247,11 +2272,11 @@ fn squelch_readback_follows_the_signal() {
     t.app.key_down(Key::Side(1), t.t, &s);
     t.knob(1);
     t.knob(-1);
-    t.live.slots[0].rssi = -121;
+    (t.live.slots[0].rssi, t.live.slots[0].rssi_raw) = (-121, -121);
     t.wait(200);
     assert!(line_of(&t, "squelch ").contains("open=0 s=\"S1\""), "{}", line_of(&t, "squelch "));
     t.live.slots[0].squelch_open = true;
-    t.live.slots[0].rssi = -70;
+    (t.live.slots[0].rssi, t.live.slots[0].rssi_raw, t.live.slots[0].carrier) = (-70, -70, true);
     t.wait(100);
     let l = line_of(&t, "squelch ");
     assert!(l.contains("open=1") && !l.contains("s=\"S1\"") && l.contains("signal +"), "{l}");
@@ -2386,13 +2411,13 @@ fn scan_hit_length() {
     let mut t = T::new();
     t.tap(Key::Side(2));
     let f = mhz(146) + 94_000;
-    t.live.slots[0] = SlotLive { freq: f, last_hit: f, scanning: true, held: true, squelch_open: true, rssi: -80, hits: 1, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: f, last_hit: f, scanning: true, held: true, squelch_open: true, carrier: true, rssi: -80, hits: 1, ..Default::default() };
     t.wait(5000);
     t.live.slots[0].squelch_open = false;
     t.wait(1000);
     let l = t.app.radio.hits[0].len_s();
     assert!((4..=5).contains(&l), "a 5 s over: {l}");
-    t.live.slots[0] = SlotLive { freq: f, last_hit: f, scanning: true, held: true, squelch_open: true, rssi: -80, hits: 2, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: f, last_hit: f, scanning: true, held: true, squelch_open: true, carrier: true, rssi: -80, hits: 2, ..Default::default() };
     t.wait(1000);
     assert!(t.app.radio.hits[0].len_s() <= 1, "a new stop starts again");
     assert_eq!(t.app.radio.hits[0].n, 2);
@@ -2410,7 +2435,7 @@ fn channel_scan_hit_list() {
     let mut t = T::new();
     let (_, b) = on_named_zone(&mut t);
     t.tap(Key::Side(2));
-    t.live.slots[0] = SlotLive { freq: b.rx, last_hit: b.rx, scanning: true, held: true, squelch_open: true, rssi: -80, hits: 1, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: b.rx, last_hit: b.rx, scanning: true, held: true, squelch_open: true, carrier: true, rssi: -80, hits: 1, ..Default::default() };
     t.wait(200);
     t.live.slots[0].squelch_open = false;
     t.wait(100);

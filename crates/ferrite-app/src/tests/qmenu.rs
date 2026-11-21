@@ -429,7 +429,7 @@ fn box_over_layout(layout: u8) {
     let (x, y, w, h) = crate::screens::qmenu::BOX;
     assert_eq!(fb.at(x + w / 2, y), BLUE, "the frame");
     // Receiving on A while the box is up: nothing under it draws.
-    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, rssi: -85, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, carrier: true, rssi: -85, ..Default::default() };
     t.wait(200);
     assert_eq!(pass(&mut t, &mut fb).changed, 0, "layout {layout}: home waits under the box");
     t.knob(1);
@@ -495,7 +495,7 @@ fn a_shortcut_popup_goes_straight_to_home() {
         t.render(&mut fb);
         assert!(t.app.toast.is_some_and(|x| x.center));
         // HOME-8: receiving on A while the popup is up: home waits under it and the popup isn't drawn again
-        t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, rssi: -85, ..Default::default() };
+        t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, carrier: true, rssi: -85, ..Default::default() };
         t.wait(200);
         fb.begin_pass();
         t.render(&mut fb);

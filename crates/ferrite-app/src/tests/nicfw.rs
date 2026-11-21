@@ -195,11 +195,11 @@ fn squelch_noise_floor() {
     let s = store();
     t.app.key_down(Key::Side(1), t.t, &s);
     t.tap(Key::Up);
-    t.live.slots[0].rssi = -120;
+    (t.live.slots[0].rssi, t.live.slots[0].rssi_raw) = (-120, -120); // SQL-12.1: the floor reads the raw RSSI
     t.wait(2000);
     let Screen::Squelch(q) = t.app.screen() else { panic!("{:?}", t.app.screen()) };
     assert!((-121..=-119).contains(&q.floor), "{}", q.floor);
-    t.live.slots[0] = SlotLive { rssi: -80, squelch_open: true, ..Default::default() };
+    t.live.slots[0] = SlotLive { rssi: -80, rssi_raw: -80, squelch_open: true, carrier: true, ..Default::default() };
     t.wait(500);
     let Screen::Squelch(q2) = t.app.screen() else { panic!() };
     assert_eq!(q2.floor, q.floor, "an open squelch doesn't move it");

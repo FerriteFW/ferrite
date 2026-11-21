@@ -458,7 +458,8 @@ impl App {
             }
         }
         for (i, s) in live.slots.iter().enumerate() {
-            if s.squelch_open {
+            if s.carrier {
+                // SQL-13.1: heard is a carrier, not level 0's noise
                 self.radio.act[i] |= 1;
             }
         }

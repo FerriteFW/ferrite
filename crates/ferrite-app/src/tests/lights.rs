@@ -26,11 +26,11 @@ fn dark_and_wake() {
     assert!(!t.app.dark());
     assert_eq!(t.freq(), f + 1_250, "the knob wakes only too");
     // Receiving keeps it lit.
-    t.live.slots[0].squelch_open = true;
+    (t.live.slots[0].squelch_open, t.live.slots[0].carrier) = (true, true);
     t.wait(30_000);
     assert!(!t.app.dark());
     // Never.
-    t.live.slots[0].squelch_open = false;
+    (t.live.slots[0].squelch_open, t.live.slots[0].carrier) = (false, false);
     t.app.set.backlight = 0;
     t.wait(70_000);
     assert!(!t.app.dark());
@@ -46,10 +46,10 @@ fn led_heartbeat() {
     let l = t.app.leds(&t.live, &dev(90, false));
     assert!(l.red && !l.green);
     t.live.tx.keyed = false;
-    t.live.slots[1].squelch_open = true;
+    (t.live.slots[1].squelch_open, t.live.slots[1].carrier) = (true, true);
     let l = t.app.leds(&t.live, &dev(90, false));
     assert!(l.green && !l.red);
-    t.live.slots[1].squelch_open = false;
+    (t.live.slots[1].squelch_open, t.live.slots[1].carrier) = (false, false);
     assert_eq!(t.app.leds(&t.live, &dev(90, false)), crate::lights::Leds::default(), "lit screen: no heartbeat");
     // Dark: sample a whole 5 s period in 10 ms steps and count the flashes and their colour.
     t.wait(16_000);
@@ -106,7 +106,7 @@ fn auto_key_lock() {
     let mut t = T::new();
     t.app.set.auto_lock = 1; // 30 s
     t.app.set.backlight = 0;
-    t.live.slots[0].squelch_open = true;
+    (t.live.slots[0].squelch_open, t.live.slots[0].carrier) = (true, true);
     t.tap(Key::Up);
     t.wait(29_000);
     assert!(!t.app.locked());
@@ -162,18 +162,18 @@ fn wake_screen_on() {
     t.app.set.wake_on = 0; // keys
     t.wait(16_000);
     assert!(t.app.dark());
-    t.live.slots[1].squelch_open = true;
+    (t.live.slots[1].squelch_open, t.live.slots[1].carrier) = (true, true);
     t.wait(1_000);
     assert!(t.app.dark(), "keys only: receive leaves it dark");
-    t.live.slots[1].squelch_open = false;
+    (t.live.slots[1].squelch_open, t.live.slots[1].carrier) = (false, false);
     t.app.set.wake_on = 1; // keys and receive (the default)
     assert_eq!(Settings::DEFAULT.wake_on, 1);
-    t.live.slots[1].squelch_open = true;
+    (t.live.slots[1].squelch_open, t.live.slots[1].carrier) = (true, true);
     t.wait(200);
     assert!(!t.app.dark(), "receive wakes it");
     t.wait(30_000);
     assert!(!t.app.dark(), "and holds it lit");
-    t.live.slots[1].squelch_open = false;
+    (t.live.slots[1].squelch_open, t.live.slots[1].carrier) = (false, false);
     t.wait(16_000);
     assert!(t.app.dark());
     t.live.tx.keyed = true; // VOX or a beacon: no key pressed
@@ -201,16 +201,16 @@ fn aprs_slot_never_wakes_the_screen() {
     t.app.set_aprs_mode(true);
     t.wait(16_000);
     assert!(t.app.dark());
-    t.live.slots[2].squelch_open = true;
+    (t.live.slots[2].squelch_open, t.live.slots[2].carrier) = (true, true);
     t.wait(1_000);
     assert!(t.app.dark(), "a packet on C: still dark");
-    t.live.slots[2].squelch_open = false;
+    (t.live.slots[2].squelch_open, t.live.slots[2].carrier) = (false, false);
     t.app.notify_message(b"VA7IF", b"73");
     t.wait(200);
     assert!(!t.app.dark(), "a message to us wakes it");
     t.wait(16_000);
     assert!(t.app.dark());
-    t.live.slots[0].squelch_open = true;
+    (t.live.slots[0].squelch_open, t.live.slots[0].carrier) = (true, true);
     t.wait(200);
     assert!(!t.app.dark(), "voice on A wakes it");
 }
@@ -221,7 +221,7 @@ fn auto_off_counts_receive_whatever_wakes() {
     let mut t = T::new();
     t.app.set.auto_off = 1; // 30 min
     t.app.set.wake_on = 0;
-    t.live.slots[0].squelch_open = true;
+    (t.live.slots[0].squelch_open, t.live.slots[0].carrier) = (true, true);
     t.wait(31 * 60_000);
     assert!(!t.app.take_power_off());
     assert!(t.app.dark(), "the screen went dark all the same");

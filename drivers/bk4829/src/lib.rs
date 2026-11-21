@@ -431,10 +431,12 @@ impl<B: Bus> Bk4829<B> {
         self.modify(reg::SQ_GLITCH_OPEN, 0x00FF, sq.glitch_open as u16);
     }
 
-    /// The squelch's open delay, REG_4E[13:11] (0-7; the start-up table's 0x3815 has 7, the longest): how long
-    /// the open conditions must hold before the squelch reads open. The glitch threshold below is kept.
+    /// The squelch's open delay, REG_4E[15:12] (0-15; the start-up table's 0x3815 has 3): how long the open
+    /// conditions must hold before the squelch reads open. The close delay (REG_4E[11:8]) and the glitch threshold
+    /// below are kept (SQL-17.1: this wrote bits 13:11, the BK4819's layout, and a 0 cleared the close delay too,
+    /// a review of Nov 20, 2026; the BK4829 register table, REG_4E).
     pub fn open_delay(&mut self, d: u8) {
-        self.modify(reg::SQ_GLITCH_OPEN, 0x3800, (d as u16 & 7) << 11);
+        self.modify(reg::SQ_GLITCH_OPEN, 0xF000, (d as u16 & 0xF) << 12);
     }
 
     /// RSSI, half dB: dBm = value / 2 - 160.

@@ -154,7 +154,7 @@ pub fn squelch<B: Bus>(bk: &mut Bk4829<B>, regs: (u16, u16)) {
 
 /// SQL-17 (decision 166): ordinary receive's squelch open delay, REG_4E[13:11]: stock's 7, from its start-up table's
 /// 0x3815 (0x08009E94), which stock never changes.
-pub const OPEN_DELAY_RX: u8 = 7;
+pub const OPEN_DELAY_RX: u8 = 3; // stock's 0x3815: REG_4E[15:12] (SQL-17.1)
 
 /// SQL-17: the open delay for a chip that listens to a scan step or the strip's look (`fast`: 0, so a carrier reads
 /// open within the step; the delay at 7 kept a channel scan from ever stopping on the radio, Oct 15, 2026) or for

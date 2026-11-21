@@ -144,7 +144,8 @@ impl App {
         if live.tx.keyed {
             return Leds { red: true, ..Leds::default() };
         }
-        if live.slots.iter().any(|s| s.squelch_open) {
+        if live.slots.iter().any(|s| s.carrier) {
+            // SQL-13.1: a carrier lights it, not level 0's always-open or monitor
             return Leds { green: true, ..Leds::default() };
         }
         // DISP-30: a big link transfer flashes green, lit screen or dark, over the heartbeat; the flash ends
@@ -223,7 +224,7 @@ impl App {
     /// says (DISP-15), and 0 7 4 3 holds a lit screen through a transmission or darkens it (DISP-26); the
     /// backlight, auto lock and auto off.
     pub(crate) fn lights_tick(&mut self, now: u32, live: &LiveAll) {
-        let rx = live.slots.iter().any(|s| s.squelch_open);
+        let rx = live.slots.iter().any(|s| s.carrier); // SQL-13.1
         let tx = live.tx.keyed;
         if !self.transferring() {
             self.lit &= !XFER; // DISP-30: over (so the clock wrapping round never brings it back)

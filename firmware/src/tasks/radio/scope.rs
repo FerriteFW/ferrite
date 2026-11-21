@@ -114,13 +114,18 @@ impl Radio {
                 // MODE-5: the strip held on its slot's frequency: that slot's tone and quick mute (HOME-15) decide
                 // the audio, its card shows it; HOLD_CLOSED closed polls and the sweep goes on where it was.
                 let i = s as usize % SLOTS;
-                heard = monitored || self.slots[i].toned(open, &st) && self.user_mute & 1 << s == 0;
+                // SQL-13 on the strip: level 0 is heard while the strip is on its slot's frequency; holding the strip
+                // there still goes by a carrier (or monitor), or level 0 would stop the sweep for good
+                let level0 = self.slots[i].sq == 0;
+                heard = monitored || self.slots[i].toned(open || level0, &st) && self.user_mute & 1 << s == 0;
                 sc.closed = if open { 0 } else { sc.closed + 1 };
                 if sc.closed >= HOLD_CLOSED {
                     sc.listen = 0;
                 }
                 let l = &mut self.live.slots[i];
-                (l.squelch_open, l.rssi) = (open, if open { rssi } else { rssi.min(-121) });
+                let shown = open || level0;
+                (l.squelch_open, l.rssi, l.rssi_raw) = (shown, if shown { rssi } else { rssi.min(-121) }, rssi);
+                l.carrier = st.squelch_open; // SQL-13.1: the chip's own decision
             }
             self.chip(chip).af_out(if heard { AfOut::Normal } else { AfOut::Mute });
             self.bcast_audio(now, heard); // BCR-24: a call heard mutes the broadcast, which returns 2 s after

@@ -181,6 +181,7 @@ impl Radio {
             if self.sq_key[n as usize] != self.tuned[n as usize] {
                 // retuned: a fresh squelch, closed
                 (self.soft_sq[n as usize], self.sq_key[n as usize]) = (Default::default(), self.tuned[n as usize]);
+                self.sq_at[n as usize] = now; // SQL-18.5: the first reading counts no time
                 self.aprs_sq[n as usize].retuned(now); // SQL-19.2: settling
             }
             let decided = match soft {
@@ -188,7 +189,10 @@ impl Radio {
                     let fast = self.scans.get(s as usize).is_some_and(|sc| sc.listening()) || self.aprs_slots & 1 << s != 0;
                     #[cfg(feature = "bench")]
                     let was = self.soft_sq[n as usize].open();
-                    let now_open = self.soft_sq[n as usize].step(&ferrite_core::softsq::Limits::from_regs(regs), raw, noise, fast);
+                    // SQL-18.5: this reading counts for the time since the last (10 ms in watch or scan, 50 ms alone)
+                    let dt = now.wrapping_sub(self.sq_at[n as usize]).min(1000) as u16;
+                    self.sq_at[n as usize] = now;
+                    let now_open = self.soft_sq[n as usize].step(&ferrite_core::softsq::Limits::from_regs(regs), raw, noise, fast, dt);
                     #[cfg(feature = "bench")]
                     if now_open != was {
                         // the bench's check against the chip: each change, its readings, and what the chip said
@@ -211,6 +215,12 @@ impl Radio {
                 None => st.squelch_open,
             };
             let open = decided || self.slots[s as usize].sq == 0;
+            // SQL-13.1: the carrier itself, apart from level 0's always-open (kept per slot across watch turns)
+            if decided {
+                self.carrier |= 1 << s;
+            } else {
+                self.carrier &= !(1 << s);
+            }
             let fl = &mut self.floor[n as usize];
             if !decided {
                 *fl += (rssi - *fl) / 8; // a slow average of the quiet RSSI
@@ -223,6 +233,7 @@ impl Radio {
             toned[n as usize] = !probing && self.slots[s as usize].toned(open, &st);
             let sl = &mut self.live.slots[s as usize];
             sl.rssi = rssi;
+            sl.rssi_raw = rssi; // SQL-12.1
             scan_open[s as usize] = match self.scans[s as usize].check() {
                 Check::Rssi => rssi > *fl + FAST_MARGIN_DB,
                 Check::Squelch => open,
@@ -370,6 +381,7 @@ impl Radio {
                 sl.rssi = sl.rssi.min(-121);
             }
             sl.squelch_open = open;
+            sl.carrier = open && self.carrier & 1 << i != 0; // SQL-13.1
             sl.heard_tone = self.hints[i].heard;
             sl.relay = out.cancelled && self.watch_set & 1 << i != 0 && Sel::rx(self.slots[i].freq).relay() != active_relay;
         }

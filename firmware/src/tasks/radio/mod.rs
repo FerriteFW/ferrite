@@ -219,6 +219,8 @@ struct Radio {
     /// TERM-29.4 (a bench test): slots received on the other band's chip (`bk swap`); 0 outside the bench builds.
     swap: u8,
     sq_key: [Option<(u8, Freq10)>; 2],
+    /// SQL-18.5: when each chip's squelch was last read (ms), so a reading counts for its own time.
+    sq_at: [u32; 2],
     /// SQL-17: each chip's squelch open delay as last written (true: 0, for a scan step or the strip's look; false:
     /// stock's 7); None after a sleep or a scope start, so the next look or tick writes it.
     open_fast: [Option<bool>; 2],
@@ -287,6 +289,8 @@ struct Radio {
     floor: [i16; 2],
     /// Monitor latched, a bit per slot (SQL-2).
     monitor: u8,
+    /// SQL-13.1: each slot's carrier as the squelch last decided it (not level 0's open, not monitor).
+    carrier: u8,
     /// Quick mute from the UI, a bit per slot (HOME-15): still received, never on the speaker.
     user_mute: u8,
     /// Slots turned off from the UI, a bit per slot (HOME-15.1): no chip listens to them, never on the speaker.
@@ -781,6 +785,7 @@ pub async fn task() {
         ssb_at: None,
         swap: 0,
         sq_key: [None; 2],
+        sq_at: [0; 2],
         open_fast: [None; 2],
         data_rx: [None; 2],
         path: Path::new(),
@@ -810,6 +815,7 @@ pub async fn task() {
         aprs_slots: 0,
         floor: [-125; 2],
         monitor: 0,
+        carrier: 0,
         user_mute: 0,
         user_off: 0,
         hints: [Hint::new(); SLOTS],

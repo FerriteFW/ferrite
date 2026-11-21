@@ -505,7 +505,7 @@ fn menu_zero_and_status() {
 #[test]
 fn hash_pauses_watch_while_a_watched_slot_receives() {
     let mut t = T::new();
-    t.live.slots[1] = SlotLive { squelch_open: true, rssi: -90, ..Default::default() };
+    t.live.slots[1] = SlotLive { squelch_open: true, carrier: true, rssi: -90, ..Default::default() };
     t.wait(100);
     t.tap(Key::Hash); // WATCH-6
     assert_eq!(t.app.screen(), Screen::Home);
@@ -708,7 +708,7 @@ fn count_px(fb: &FrameBuffer, y0: i32, y1: i32, f: impl Fn(u16) -> bool) -> usiz
 fn screens_draw() {
     let mut t = T::new();
     let mut fb = FrameBuffer::new();
-    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, rssi: -85, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, carrier: true, rssi: -85, ..Default::default() };
     t.wait(100);
     t.render(&mut fb);
     // Home: a blue-bordered big card, a green meter (receiving), a hint bar.
@@ -750,7 +750,7 @@ fn redraws_only_what_changed() {
     let mut t = T::new();
     let mut lcd = Count(FrameBuffer::new(), Vec::new(), 0);
     let dev = Device { clock_min: Some(600), ..Default::default() };
-    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, rssi: -100, ..Default::default() };
+    t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, carrier: true, rssi: -100, ..Default::default() };
     t.app.render(&mut lcd, &t.live, &dev, &store());
     lcd.1.clear();
     lcd.2 = 0;

@@ -37,7 +37,7 @@ fn rx_and_tx() {
     let mut t = lpm();
     let a = t.app.active as usize;
     let f = t.app.slot(a as u8).freq();
-    t.live.slots[a] = ferrite_core::msg::SlotLive { freq: f, squelch_open: true, rssi: -70, ..Default::default() };
+    t.live.slots[a] = ferrite_core::msg::SlotLive { freq: f, squelch_open: true, carrier: true, rssi: -70, ..Default::default() };
     t.wait(200);
     t.shows("RX");
     t.shows("S9");
@@ -59,7 +59,7 @@ fn last_heard_line() {
     let mut t = lpm();
     let a = t.app.active as usize;
     let f = t.app.slot(a as u8).freq();
-    t.live.slots[a] = ferrite_core::msg::SlotLive { freq: f, squelch_open: true, rssi: -70, ..Default::default() };
+    t.live.slots[a] = ferrite_core::msg::SlotLive { freq: f, squelch_open: true, carrier: true, rssi: -70, ..Default::default() };
     t.wait(500);
     t.live.slots[a].squelch_open = false;
     t.wait(3000);

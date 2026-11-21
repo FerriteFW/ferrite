@@ -144,6 +144,7 @@ impl Radio {
             }
             let sl = &mut self.live.slots[s as usize];
             sl.squelch_open = open;
+            sl.carrier = open; // the chip's own decision (SQL-13.1)
             if !open {
                 sl.rssi = sl.rssi.min(-121);
             }

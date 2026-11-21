@@ -56,7 +56,7 @@ fn single_dbm_meter() {
     t.app.set.smeter_dbm = true;
     let a = t.app.active as usize;
     let f = t.app.slot(a as u8).freq();
-    t.live.slots[a] = SlotLive { freq: f, squelch_open: true, rssi: -93, ..Default::default() };
+    t.live.slots[a] = SlotLive { freq: f, squelch_open: true, carrier: true, rssi: -93, ..Default::default() };
     t.wait(200);
     t.shows("-93 dBm");
     t.app.set.smeter_dbm = false;

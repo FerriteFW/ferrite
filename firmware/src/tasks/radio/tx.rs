@@ -137,7 +137,7 @@ impl Radio {
             confirmed, // only the emergency prompt's second PTT (TX-3, TX-35)
             am: if home { self.slots[s].am } else { self.hf.is_some_and(|h| h.mode == 2) },
             rx_only: home && self.slots[s].rx_only,
-            busy: home && self.slots[s].busy && self.live.slots[s].squelch_open,
+            busy: home && self.slots[s].busy && self.live.slots[s].carrier, // SQL-13.1: a carrier, not level 0 or monitor
             hf_si: hf.is_some_and(|h| h.is_none_or(|h| h.si)),
             si_on: self.si.mode().is_some() && self.hf.is_none(),
             region,
@@ -425,6 +425,7 @@ impl Radio {
             radio_chip::tx_test_restore(&mut self.chip(n), &r);
         }
         self.tuned = [None; 2];
+        self.sq_key = [None; 2]; // SQL-18.6: receive after the unkey starts closed, not as before the key-up
         self.tx.chip = None;
         self.tx.dial = None;
         self.live.tx.keyed = false;

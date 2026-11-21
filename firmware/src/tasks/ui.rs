@@ -473,6 +473,22 @@ pub async fn task() {
         log_input(&i);
         menu_state(&i, &mut menu_held);
     }
+    // BOOT-14.6: MENU still down here may be a tap that skipped the owner card (OK is MENU), its release not in yet:
+    // the boot screen ends as soon as its checks are done (ferrite#62: the tap opened the reset prompt). A hold from
+    // power on is the reset's: it is still down after a long press's time, so wait that long for a release.
+    if menu_held {
+        let until = Instant::now() + Duration::from_millis(ferrite_app::keys::LONG_MS as u64);
+        while menu_held {
+            match select(INPUT.receive(), Timer::at(until)).await {
+                Either::First(i) => {
+                    key_seen |= front_key(&i);
+                    log_input(&i);
+                    menu_state(&i, &mut menu_held);
+                }
+                Either::Second(()) => break,
+            }
+        }
+    }
     boot_report(flash, &checks, key_seen);
     // HF-18: a patch the flasher bundled goes into SPI flash (normal build; once: the same patch again writes
     // nothing). The bring-up build stores nothing and only says whether one is there.

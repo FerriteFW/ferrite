@@ -217,7 +217,9 @@ def turns(t, reset=False):
     ms, as the Radio task timed them at each retune: {"A": (n, ms), ...}."""
     line = "bk turns reset" if reset else "bk turns"
     out = t.cmd(line)
-    got = {m.group(1): (int(m.group(2)), int(m.group(3))) for m in re.finditer(r"\b([ABC]) (\d+) (\d+) ms", out)}
+    # Only the turns: the scan steps that follow ("; steps: A 0 0 ms ...") have the same shape.
+    head = out.split("steps:", 1)[0]
+    got = {m.group(1): (int(m.group(2)), int(m.group(3))) for m in re.finditer(r"\b([ABC]) (\d+) (\d+) ms", head)}
     if len(got) != 3:
         t.fail(f"{line}: {out!r} (a build with bk turns, decision 262)")
     return got

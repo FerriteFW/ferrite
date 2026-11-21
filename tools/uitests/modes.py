@@ -145,6 +145,11 @@ def hf_keys(t):
     next band, SIDE2 the mode, * # the filter, digits a frequency (* point, OK enters), hold 7 the recent list, hold
     MENU the options (0 there the full menu); hold # stays key lock."""
     vfo = HfVfo(t)
+
+    def key(seq):  # a key, then the screen once loaded: a band or mode change may stream the SSB patch in (HF-19)
+        t.keys(seq, settle=0.3)
+        return t.wait(lambda u: "freq" in hf_line(u), timeout=20, what=f"{seq}: HF loaded")
+
     try:
         hf_type(t, 9.6)
         u = hf_mode(t, "AM")
@@ -163,17 +168,17 @@ def hf_keys(t):
             t.r.up("SIDE2")
         u = t.ui(0.3)
         t.check(abs(float(hf_line(u)["freq"]) - (f1 + 1.0)) < 1e-6, "SIDE2 + knob: 1 MHz", hf_line(u))
-        b0 = hf_line(u)["band"]
-        u = t.keys("SIDE1", settle=0.3)
-        t.check(hf_line(u)["band"] not in ("", b0), "SIDE1: the next band", (b0, hf_line(u)))
+        b0 = hf_line(u).get("band", "")  # none between the broadcast bands (10.6 MHz here)
+        u = key("SIDE1")
+        t.check(hf_line(u).get("band", "") not in ("", b0), "SIDE1: the next band", (b0, hf_line(u)))
         s0 = hf_line(u)["step"]
-        u = t.keys("LEFT", settle=0.3)
+        u = key("LEFT")
         t.check(hf_line(u)["step"] != s0, "◀: a bigger step", (s0, hf_line(u)))
         bw0 = hf_line(u)["bw"]
-        u = t.keys("STAR", settle=0.3)
+        u = key("STAR")
         t.check(hf_line(u)["bw"] != bw0, "*: a narrower filter", (bw0, hf_line(u)))
         m0 = hf_line(u)["mode"]
-        u = t.keys("SIDE2", settle=0.3)
+        u = key("SIDE2")
         t.check(hf_line(u)["mode"] != m0, "SIDE2: the next mode", (m0, hf_line(u)))
         u = t.keys("7 STAR 1")
         t.eq(hf_line(u)["entry"], "Go to 7.1 MHz", "digits and * type a frequency")
@@ -588,7 +593,8 @@ def crossband_starts_and_stops_logged(t):
 @test("HF-19", pages=("Group", "Hf"))
 def hf_patch_streams_on_each_entry(t):
     """With the SSB patch installed every entry into HF mode streams it in (the load's progress, `hf loading=N`,
-    shows each time); changing the mode inside HF mode doesn't load it again."""
+    shows each time); a change between USB, LSB and CW keeps it (no load), and only a change from AM back to a
+    sideband loads it again (HF-19: AM powers the chip up without it)."""
     u = t.keys("MENU 0 9")
     t.need(u.row("SSB patch")["value"] == "Installed", "no SSB patch")
     vfo = HfVfo(t)
@@ -599,11 +605,14 @@ def hf_patch_streams_on_each_entry(t):
             u = t.keys("3", settle=0.05)
             t.check("loading" in hf_line(u), f"entry {i + 1}: the patch streams in", u.lines)
             t.wait(lambda u: "freq" in hf_line(u), timeout=20, what="loaded")
-        seen = []
+        bad = []
         for _ in range(5):
+            was = hf_line(t.ui(0.05)).get("mode")
             t.r.press("SIDE2")
-            for _ in range(3):
-                seen.append(hf_line(t.ui(0.05)))
-        t.check(not any("loading" in h for h in seen), "mode changes: no load again", seen[:4])
+            got = [hf_line(t.ui(0.05)) for _ in range(3)]
+            if was != "AM" and any("loading" in h for h in got):
+                bad.append((was, got))
+            t.wait(lambda u: "freq" in hf_line(u), timeout=20, what="loaded")
+        t.check(not bad, "USB, LSB and CW changes: no load again (only from AM)", bad[:2])
     finally:
         vfo.restore()

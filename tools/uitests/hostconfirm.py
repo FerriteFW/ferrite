@@ -17,7 +17,7 @@ from .chips import AWAKE, QUIET_UHF, QUIET_VHF, cal_sector, quiet, samples, set_
 from .core import test
 from .restart import clear_pin_lock, pin_lock, set_pin_lock, the_pin  # noqa: F401 (clear_pin_lock: pin_lock's)
 
-ASLEEP_37, AWAKE_37 = 0x1D00, 0x9D1F  # PWR-5
+ASLEEP_37, AWAKE_37 = 0x1D00, 0x9F1F  # PWR-5: awake and receiving, the receive set-up's (SQL-18.9)
 TARGET = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "target")
 
 
@@ -200,7 +200,7 @@ def battery_save_off_keeps_the_receiver_on(t):
 @test("PWR-3", "PWR-5", needs=("bench",), where="radio", pages=("Home",))
 def key_wakes_then_the_sleep_registers(t):
     """Battery Save Level 1, watch off, A on 2 m: a key press holds the VHF chip receiving for 10 s, then it cycles
-    about 300 ms on, 300 ms off (PWR-3); REG_37 reads 0x1D00 and 0x9D1F in turn, nothing else (PWR-5)."""
+    about 300 ms on, 300 ms off (PWR-3); REG_37 reads 0x1D00 and 0x9F1F in turn, nothing else (PWR-5)."""
     t.bench()
     stopped = quiet(t, bsave="Level 1")
     try:
@@ -230,7 +230,7 @@ def key_wakes_then_the_sleep_registers(t):
         s37 = samples(lambda: t.bk(0, 0x37), 6)
         seen = sorted({v for _, v in s37})
         t.note(f"REG_37 read {len(s37)} times: {[f'0x{v:04X}' for v in seen]}")
-        t.eq(seen, sorted([ASLEEP_37, AWAKE_37]), "REG_37: 0x1D00 asleep and 0x9D1F awake in turn, nothing else")
+        t.eq(seen, sorted([ASLEEP_37, AWAKE_37]), "REG_37: 0x1D00 asleep and 0x9F1F awake in turn, nothing else")
     finally:
         t.put_back(stopped)
 
@@ -238,7 +238,7 @@ def key_wakes_then_the_sleep_registers(t):
 @test("BCR-20", needs=("bench",), where="radio", pages=("Home", "Fm", "Hf"))
 def si_inputs_on_each_receiver(t):
     """PA7/PC5: 1/0 while the BK4829 radio has the antenna once the SI4732 has been used (0/0 from boot until then,
-    as stock), 0/0 for FM broadcast, 1/1 for HF mode's AM (the LNA path)."""
+    as stock), 0/0 for FM broadcast (slot A tuned into the band), 1/1 for HF mode's AM (the LNA path)."""
     t.bench()
     from .modes import HfVfo, hf_mode, hf_type
     stopped = quiet(t)
@@ -251,9 +251,12 @@ def si_inputs_on_each_receiver(t):
         # only on leaving broadcast): 0/0 before any broadcast since power-on, 1/0 after.
         first = (t.pin("PA7"), t.pin("PC5"))
         t.check(first in ((1, 0), (0, 0)), "home on 2 m: PA7/PC5 1/0 (0/0 before the SI4732's first use)", first)
-        t.keys("MENU 0 2 6")
+        # BCR-1 (decision 352): no FM screen; a slot tuned into the band is the broadcast receiver
+        t.cmd("slot A vfo 101.1")
+        t.home()
         time.sleep(1.0)
         t.eq((t.pin("PA7"), t.pin("PC5")), (0, 0), "FM broadcast: PA7/PC5 0/0")
+        t.cmd(f"slot A vfo {QUIET_VHF}")
         t.home()
         time.sleep(0.5)
         t.eq((t.pin("PA7"), t.pin("PC5")), (1, 0), "home after FM: PA7/PC5 1/0")

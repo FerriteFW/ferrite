@@ -13,7 +13,9 @@ def relay_mismatch(t):
     u = t.home()
     u = t.ui(0.5)
     t.eq(u.bar["watch"], 3, "watch on: TW")
-    u = t.keys("2 8 STAR 4 MENU", settle=0.05)
+    t.keys("2 8 STAR 4 MENU", settle=0.05)
+    # the cancel's toast comes with the Radio task's retune, about 0.5 s on the radio
+    u = t.wait(lambda u: u.toast is not None, timeout=2, what="the relay toast")
     toast = u.toast
     t.eq(u.active["freq"], "28.40000", "A tuned to 28.4 MHz by keys")
     u = t.ui(0.5)

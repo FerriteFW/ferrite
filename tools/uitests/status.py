@@ -139,7 +139,9 @@ def gps_icon_follows_the_fix(t):
     gps = u.bar["gps"]
     want = "off" if row.startswith("Off") else "fix" if row.startswith("Fix") else "searching"
     t.eq(gps, want, f"the bar's icon for GPS {row!r}")
-    t.eq(t.get("0 6 1") == "Off", gps == "off", "the icon is off exactly when GPS is off")
+    # Off: no icon; Auto can have the receiver off too (it says so in the GPS row, checked above)
+    if t.get("0 6 1") == "Off":
+        t.eq(gps, "off", "GPS set Off: no icon")
     if t.sim:
         t.note("GPS off and on: the simulator's GPS ignores 0 6 1 (radio only)")
         return

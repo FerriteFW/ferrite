@@ -17,8 +17,9 @@ def low_power_on_from_the_menu(t):
     t.check(u.toast and u.toast["head"] == "Low Power Mode", "the toast", u.toast)
     t.eq(u.bar["lpm"], 1, "LOW in the bar")
     t.eq(u.bar["bt_on"], 0, "Bluetooth off")
-    if not t.sim:  # the simulator's GPS ignores 0 6 1 (radio only)
-        t.eq(u.bar["gps"], "off", "GPS off")
+    if not t.sim:  # the simulator's GPS ignores 0 6 1 (radio only); the receiver takes about 2 s to stop
+        g = t.wait(lambda u: u.bar["gps"] == "off", timeout=4, what="GPS off")
+        t.eq(g.bar["gps"], "off", "GPS off")
     u = t.keys("MENU 0 0")
     t.eq(u.row("Battery Save")["value"], "Low Power Mode", "Status says so")
     t.home()

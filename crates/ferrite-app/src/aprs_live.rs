@@ -819,7 +819,7 @@ impl AprsLive {
                     self.general_query(data, &f, now_s);
                 }
             }
-            // APRS-60: third-party traffic (an IGate relaying from the internet, `}`): the relaying station is
+            // APRS-58: third-party traffic (an IGate relaying from the internet, `}`): the relaying station is
             // heard, and a message inside to us (an ack among them) is taken as from its own sender, so messages and
             // acks from APRS-IS stations and services (SMSGTE, EMAIL-2, WXBOT) aren't lost and a message sent to
             // one isn't shown as failed when it was delivered (a review of Nov 20, 2026: these were dropped).
@@ -1536,7 +1536,7 @@ pub fn miss_logged(m: &ferrite_core::audio::uafsk::Miss) -> bool {
     m.addresses
 }
 
-/// APRS-60: a third-party packet's own sender as a callsign for the message list and our acks: 1 to 9 capitals,
+/// APRS-58: a third-party packet's own sender as a callsign for the message list and our acks: 1 to 9 capitals,
 /// digits and `-` (an SSID), as APRS-IS stations and services use; anything else (`TCPIP*`, a lower-case name) none.
 fn third_party_call(src: &[u8]) -> Option<Buf<10>> {
     let ok = !src.is_empty() && src.len() <= 9 && src.iter().all(|&c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'-') && src[0] != b'-';
@@ -1914,7 +1914,7 @@ mod tests {
         assert!(a.receive(&f[..n], 140, b"VE3XYZ", &AprsCfg::DEFAULT).inbound.is_none());
     }
 
-    /// APRS-60: third-party traffic (an IGate relaying from the internet): a message inside to us is taken as from
+    /// APRS-58: third-party traffic (an IGate relaying from the internet): a message inside to us is taken as from
     /// its own sender (inbox, our ack to it by name), and an ack inside acks ours, so a message to SMSGTE shows acked
     /// when delivered (a review of Nov 20, 2026: these were dropped). Not to us, or an odd sender: nothing.
     #[test]

@@ -6,7 +6,8 @@ polled over the link (its slots' card states, about 10 a second) while the Xeon'
 
 Tests: quiet, chip and soft (the level sweep: needs a quiet floor; a bench at -98 dBm puts every level's RSSI
 threshold under it, so only the noise threshold decides), level0, monitor, ctcss and dcs (the chip's audio, REG_47),
-save and watch (Battery Save Off-3, single slot and watch A+B), scan, xb, bcast (BCR-24), busy.
+save and watch (Battery Save Off-3, single slot and watch A+B), scan, scanresume, counter (TSRCH-10: 70 cm reads;
+33 and 23 cm reach chip 1 too weak through the front end), xb, bcast (BCR-24), busy.
 
 Every setting and slot it changes is put back at the end. Remote PTT (busy lockout) only with Dry TX on.
 """
@@ -38,9 +39,9 @@ def gains(p):
     return g1, max(0, min(25, p - g1))
 
 
-def blade(name, p, repeat=1):
+def blade(name, p, repeat=1, mhz=None):
     g1, g2 = gains(p)
-    f = int(round(MHZ * 1e6)) - 200_000
+    f = int(round((mhz or MHZ) * 1e6)) - 200_000
     cmd = (f"set frequency tx {f}; set samplerate tx 1000000; set bandwidth tx 1500000; set txvga1 {g1}; "
            f"set txvga2 {g2}; tx config file=/tmp/sq/{name}.sc16 format=bin repeat={repeat}; tx start; tx wait")
     return subprocess.Popen(["ssh", XEON, f"bladeRF-cli -e '{cmd}'"], stdout=subprocess.DEVNULL,
@@ -405,6 +406,108 @@ def t_bcast(b, p):
     b.cmd("slot B vfo 146.52")
 
 
+def selects(b):
+    """VHF RX (PB0) and UHF RX (PE12), the band receive selects (SAFE-24): (pb0, pe12) as 0/1."""
+    bits = {}
+    for ln in b.r.cmd("gpio").splitlines():
+        w = ln.split()
+        if w and w[0] in ("PB", "PE") and "out" in w:
+            bits[w[0]] = "".join(w[w.index("out") + 1:])
+    return int(bits["PB"][15 - 0]), int(bits["PE"][15 - 12])
+
+
+def counter_line(b):
+    for ln in b.r.ui_text().splitlines():
+        if ln.startswith("counter "):
+            return dict(x.split("=", 1) for x in ln.split()[1:] if "=" in x)
+    return None
+
+
+def t_counter(b, p):
+    """TSRCH-10: the counter reads a carrier on chip 1's range (each within 5 kHz; amateur bands only), never keys (TSRCH-8); # holds and OK copies the frequency (TSRCH-11, TSRCH-7); both band receive paths on while
+    it is open, one again after it closes (TSRCH-10.3, SAFE-24)."""
+    b.set("0 1 1", "Off")
+    b.cmd(f"slot A vfo {MHZ} nfm low tone off offset off")
+    b.cmd("slot A active")
+    b.home()
+    b.r.keys("MENU 0 3 2")
+    time.sleep(0.8)
+    scr = b.r.ui_text().splitlines()[0]
+    sel_open = selects(b)
+    b.record("counter opens (MENU 0 3 2), both band receive paths on", "Counter" in scr and sel_open == (1, 1),
+             f"{scr[:40]}, PB0/PE12 {sel_open}")
+    # amateur bands only (70 cm, 33 cm, 23 cm); the counter is for a transmitter close by: full bladeRF gain
+    p = max(p, 21)
+    for mhz, want in ((433.92, True), (446.475, True), (915.0, True), (1270.0, True)):
+        proc = blade("c4", p, mhz=mhz)
+        got, keyed, t0 = None, False, time.time()
+        while proc.poll() is None and time.time() - t0 < 12:
+            c = counter_line(b) or {}
+            f = float(c.get("freq", "0") or 0)
+            keyed |= b.status()["keyed"] is not None
+            if f and c.get("live") == "1":
+                got = f if got is None or abs(f - mhz) < abs(got - mhz) else got
+            time.sleep(0.1)
+        proc.wait()
+        if want:
+            ok = got is not None and abs(got - mhz) <= 0.005 and not keyed
+            b.record(f"counter reads {mhz} MHz", ok, f"read {got}, keyed {keyed}")
+        else:
+            ok = (got is None or abs(got - mhz) > 0.05) and not keyed
+            b.record(f"counter: no reading in chip 1's gap ({mhz} MHz)", ok, f"read {got}")
+        time.sleep(2.5)  # the strongest of the last 2 s shows: let it age
+    # hold and copy
+    proc = blade("c4", p, mhz=446.475)
+    t0 = time.time()
+    while time.time() - t0 < 8 and not float((counter_line(b) or {}).get("freq", "0") or 0):
+        time.sleep(0.1)
+    b.r.keys("HASH")
+    time.sleep(0.3)
+    h = counter_line(b) or {}
+    proc.wait()
+    time.sleep(2.5)
+    h2 = counter_line(b) or {}
+    held = h.get("hold") == "1" and h2.get("freq") == h.get("freq")
+    b.r.keys("MENU")
+    time.sleep(0.5)
+    b.home()
+    a = b.r.cmd("slot A")
+    copied = h.get("freq", "x")[:7] in a
+    b.record("counter: # holds the reading, OK copies it to the slot", held and copied, f"held {h}, 2.5 s later {h2}; {a.strip()}")
+    b.home()
+    sel = selects(b)
+    b.record("counter closed: one band receive path again", sel in ((0, 1), (1, 0)), f"PB0/PE12 {sel}")
+    b.cmd(f"slot A vfo {MHZ} nfm low tone off offset off")
+
+
+def t_scan_resume(b, p):
+    """A VFO scan stopped on the carrier resumes after it ends (0 1 2 Resume), and passes on."""
+    b.set("0 1 1", "Off")
+    b.cmd("slot A vfo 446.300 nfm low tone off offset off")
+    b.cmd("slot A active")
+    b.home()
+    proc = blade("c4", p)
+    time.sleep(1.8)
+    b.r.keys("SIDE2")
+    b.r.keys("BACK")
+    stopped = resumed = None
+    t0 = time.time()
+    while time.time() - t0 < 20:
+        c = next((x for x in b.r.ui()["cards"] if x.get("slot") == "A"), {})
+        st, f = c.get("state"), c.get("freq")
+        if stopped is None and st == "RX":
+            stopped = (round(time.time() - t0, 1), f)
+        if stopped and proc.poll() is not None and st == "scanning" and f and abs(float(f) - MHZ) > 0.002:
+            resumed = (round(time.time() - t0, 1), f)
+            break
+        time.sleep(0.15)
+    if b.status()["slots"]["A"]["state"] in ("scanning", "RX"):
+        b.r.keys("SIDE2")
+    proc.wait()
+    b.home()
+    b.record("scan: stops on the carrier, resumes after it ends", bool(stopped and resumed), f"stopped {stopped}, resumed {resumed}")
+
+
 def restore_slots(b, text):
     """Put the slots back from `slot`'s lines ("A* vfo 446.55750 mode=FM power=low tone=off offset=-4.50000")."""
     active = None
@@ -479,6 +582,10 @@ def main():
                 b.set("0 9 5", "Chip")
         if run("scan"):
             t_scan(b, o.strong)
+        if run("scanresume"):
+            t_scan_resume(b, o.strong)
+        if run("counter"):
+            t_counter(b, o.strong)
         if run("xb"):
             t_xb(b, o.strong)
         if run("bcast"):

@@ -10,5 +10,5 @@ Alex Harvey licenses his own code in the project to everyone under the MIT licen
 
 ## Stewards
 
-- Daria Juniper ([@juniberry](https://github.com/juniberry)): to confirm; owner access being set up
+- Daria Juniper ([@juniberry](https://github.com/juniberry))
 - Second steward: pending

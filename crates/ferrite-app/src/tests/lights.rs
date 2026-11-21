@@ -357,3 +357,14 @@ fn waking_key_raises_the_clock() {
     t.tap(Key::Up);
     assert_eq!(t.app.clock_reasons(&t.live, t.t) & why::INPUT, why::INPUT, "the waking key");
 }
+
+/// SQL-13.1: level 0 or monitor opens the audio, not the carrier: the green LED and the receive activity that keeps
+/// the screen lit go by a carrier (level 0 kept the LED lit and the screen awake on an empty channel).
+#[test]
+fn an_open_squelch_without_a_carrier_lights_nothing() {
+    let mut t = T::new();
+    (t.live.slots[0].squelch_open, t.live.slots[0].carrier) = (true, false); // level 0 on an empty channel
+    assert!(!t.app.leds(&t.live, &dev(90, false)).green, "no carrier: no green");
+    t.live.slots[0].carrier = true;
+    assert!(t.app.leds(&t.live, &dev(90, false)).green, "a carrier: green");
+}

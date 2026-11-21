@@ -79,7 +79,7 @@ pub struct RadioUi {
     pub ssb_patch: bool,
     /// The slot keyed (3 = HF), if any.
     pub keyed: Option<u8>,
-    /// TX-49: the Radio task's refusal count ([`ferrite_core::msg::TxLive::refusals`]) last seen, and as it was at
+    /// TX-50: the Radio task's refusal count ([`ferrite_core::msg::TxLive::refusals`]) last seen, and as it was at
     /// the last key-up: only a refusal after that ends a transmission.
     pub refusals_seen: u8,
     pub refusals_at_key: u8,

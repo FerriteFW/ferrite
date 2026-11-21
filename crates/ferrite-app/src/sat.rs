@@ -306,7 +306,7 @@ impl App {
             self.sat.arm_until = self.now;
         }
         self.radio.keyed = Some(SAT_SLOT);
-        self.radio.refusals_at_key = self.radio.refusals_seen; // TX-49
+        self.radio.refusals_at_key = self.radio.refusals_seen; // TX-50
         self.radio.t0 = self.now;
         if let Some(now) = self.sat_now() {
             self.sat_retune(now, true);

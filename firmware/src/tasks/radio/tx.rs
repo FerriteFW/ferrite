@@ -286,7 +286,7 @@ impl Radio {
             if e != txseq::Event::PreAlert {
                 log(b"tx unkeyed by the sequencer ", e as u32);
                 self.unkeyed();
-                self.live.tx.refusals = self.live.tx.refusals.wrapping_add(1); // TX-49
+                self.live.tx.refusals = self.live.tx.refusals.wrapping_add(1); // TX-50
                 self.live.tx.refused = Some(match e {
                     txseq::Event::Hot => Refusal::Hot,
                     txseq::Event::Battery => Refusal::Battery,
@@ -432,7 +432,7 @@ impl Radio {
     }
 
     pub(super) fn refuse(&mut self, slot: u8, why: Refusal) {
-        let refusals = self.live.tx.refusals.wrapping_add(1); // TX-49
+        let refusals = self.live.tx.refusals.wrapping_add(1); // TX-50
         self.live.tx = TxLive { keyed: false, slot, mic: 0, refused: Some(why), refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
         log(b"tx refused ", why as u32);
     }

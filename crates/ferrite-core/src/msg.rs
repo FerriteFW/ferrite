@@ -436,7 +436,7 @@ pub struct TxLive {
     pub mic: u8,
     /// The Radio task refused the last key-up (its own checks: calibration, read-back, battery).
     pub refused: Option<crate::txplan::Refusal>,
-    /// TX-49: refusals since power-on (wrapping), one more with each `refused` set: the UI takes a refusal only if
+    /// TX-50: refusals since power-on (wrapping), one more with each `refused` set: the UI takes a refusal only if
     /// this moved on since its own key-up, so an earlier one still in this status can't end a key-up the Radio task
     /// is carrying out (it left the transmitter keyed with no unkey to come, a review of Nov 20, 2026).
     pub refusals: u8,

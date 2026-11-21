@@ -1269,7 +1269,7 @@ impl App {
 
     /// Time passes: long presses and repeats, toasts, undo, timeouts; and the latest snapshot.
     pub fn tick(&mut self, now: u32, live: &LiveAll, store: &impl ChannelStore) {
-        self.radio.refusals_seen = live.tx.refusals; // TX-49
+        self.radio.refusals_seen = live.tx.refusals; // TX-50
         self.tick_keys(now, store);
         // Decision 333: the store keeps the member lists of the slots' zones (CHAN-36)
         store.slot_zones([self.slots[0].zone, self.slots[1].zone, self.slots[2].zone]);

@@ -357,7 +357,7 @@ impl View for SatScr {
         let keyed = app.radio.keyed == Some(SAT_SLOT);
         if keyed {
             // the Radio task refused (calibration, read-back, battery under load)
-            // TX-49: a refusal after this key-up; unkeyed all the same, in case it keyed
+            // TX-50: a refusal after this key-up; unkeyed all the same, in case it keyed
             if let Some(r) = live.tx.refused.filter(|_| live.tx.slot == SAT_SLOT && live.tx.refusals != app.radio.refusals_at_key) {
                 app.out.push(ferrite_core::msg::RadioCmd::Transmit { slot: SAT_SLOT, on: false });
                 app.radio.keyed = None;

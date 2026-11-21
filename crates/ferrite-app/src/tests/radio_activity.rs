@@ -126,7 +126,7 @@ fn radio_refusal_shows() {
     assert_eq!(refused(&t), Some(Refusal::Locked));
 }
 
-/// TX-49: an earlier refusal still in the Radio task's status doesn't end the next key-up: the screen used to read it
+/// TX-50: an earlier refusal still in the Radio task's status doesn't end the next key-up: the screen used to read it
 /// as this key-up's answer, drop its keyed state and never unkey, while the Radio task keyed (the carrier stayed up
 /// to its 605 s backstop; a review of Nov 20, 2026). Only a refusal after the key-up counts, and it unkeys too.
 #[test]

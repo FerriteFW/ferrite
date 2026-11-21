@@ -1161,6 +1161,31 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         Ok(())
     }
 
+    /// CHAN-35.1: the channels the queued writes add to `zone` less those they take out of it (a delete, a move to
+    /// another zone), as their records stand on flash; `except`'s own write left out (the one asking).
+    fn queued_net(&self, zone: ZoneId, except: u16) -> i32 {
+        let (head, queued) = (self.head.get() as usize, self.queued.get() as usize);
+        let jobs = self.jobs.borrow();
+        let mut net = 0;
+        for i in 0..queued {
+            let (num, to) = match jobs[(head + i) % QUEUE] {
+                Some(Job::Write(ChanWrite::Put { ch, from: None })) => (ch.num, ch.zone),
+                Some(Job::Write(ChanWrite::Delete(num))) => (num, FREE),
+                _ => continue,
+            };
+            if num == except || num >= MAX_CHANNELS {
+                continue;
+            }
+            let was = self.key_of(num);
+            if to == zone && was != zone {
+                net += 1;
+            } else if was == zone && to != zone {
+                net -= 1;
+            }
+        }
+        net
+    }
+
     /// Decision 227: takes the plain channel writes (a put that doesn't move a channel, or a delete) from the
     /// front of the queue that land in `sector`, as the records they would write, in queue order; it stops at the
     /// first job of another kind, so nothing is reordered past it. Writes to other sectors stay queued.
@@ -1182,6 +1207,18 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
                 // the record as it stands: a merged one before it, or the flash's
                 let cur = out[..n].iter().rev().flatten().find(|m| m.0 == num).map_or_else(|| self.raw_ch(num), |m| Ok(m.1.unwrap_or([0xFF; CH_LEN])))?;
                 let old = key(&cur);
+                // CHAN-35.1: a put that would take its zone past 256, counting the ones merged before it, isn't merged:
+                // the run stops there, and it goes on its own (put_channel refuses it)
+                if let Some(Job::Write(ChanWrite::Put { ch, .. })) = job {
+                    let z = ch.zone;
+                    if z != NO_ZONE && old != z {
+                        let merged = out[..n].iter().flatten().filter(|m| m.2 != z && m.1.is_some_and(|r| key(&r) == z)).count() as i32
+                            - out[..n].iter().flatten().filter(|m| m.2 == z && m.1.is_none_or(|r| key(&r) != z)).count() as i32;
+                        if self.zone_len_of(z) as i32 + merged >= ferrite_app::chan::ZONE_CAP as i32 {
+                            break;
+                        }
+                    }
+                }
                 let rec = match job {
                     Some(Job::Write(ChanWrite::Put { ch, .. })) => Some(ch_encode(&ch, &cur)),
                     // LINK-53: on the record as it stands after the writes merged before it; no channel: as it is
@@ -2165,7 +2202,9 @@ impl<N: Nor, D: Data> ChannelStore for FlashStore<N, D> {
     }
 
     fn zone_room(&self, zone: ZoneId, num: u16) -> bool {
-        self.room(zone, num)
+        // CHAN-35.1: the channel writes still queued count, into the zone and out of it, so a bulk write is refused
+        // at the link (Console told why) rather than dropped later or the zone overfilled (a review of Nov 20, 2026)
+        zone == NO_ZONE || self.key_of(num) == zone || self.zone_len_of(zone) as i32 + self.queued_net(zone, num) < ferrite_app::chan::ZONE_CAP as i32
     }
 
     fn slot_zones(&self, zones: [ZoneId; 3]) {

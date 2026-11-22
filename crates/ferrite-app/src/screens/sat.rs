@@ -929,12 +929,19 @@ fn pass_page(app: &mut App, lcd: &mut impl Panel, s: SatScr, live: &LiveAll) {
     }
     let age = sat.el.age_days(now);
     let lvl = sat.age_level(now);
-    if app.dirty(6, Mix::new().b(info.as_bytes()).n(pr.hd as u32 | (lvl as u32) << 1).n(age).get()) {
+    if app.dirty(6, Mix::new().b(info.as_bytes()).n(pr.hd as u32 | (lvl as u32) << 1 | (pr.power as u32) << 3).n(age).get()) {
         ferrite_ui::canvas::banded(lcd, 0, 219, 240, 18, BG, |lcd| {
             let wd = lcd.text4(8, 232, info.as_bytes(), &UI_12, SUB, BG);
-            let x = lcd.text4(14 + wd, 232, if pr.hd { b"* HD" } else { b"* FD" }, &UI_12B, TEXT, BG) + 14 + wd;
+            let mut x = lcd.text4(14 + wd, 232, if pr.hd { b"* HD" } else { b"* FD" }, &UI_12B, TEXT, BG) + 14 + wd;
             let mut a = Buf::<8>::new();
             let _ = uwrite!(a, "{} d", age);
+            // SAT-22.1: hold 2's hint, the uplink power, when it fits before the age (a long mode line leaves it off)
+            let pw: &[u8] = [&b"Low"[..], b"Mid", b"High"][pr.power as usize % 3];
+            let need = ferrite_ui::gfx::text4_width(b"2", &UI_12B) + 4 + ferrite_ui::gfx::text4_width(pw, &UI_12);
+            if x + 10 + need + 8 + ferrite_ui::gfx::text4_width(a.as_bytes(), &UI_12) <= 232 {
+                let k = lcd.text4(x + 10, 232, b"2", &UI_12B, TEXT, BG);
+                x += 10 + k + 4 + lcd.text4(x + 10 + k + 4, 232, pw, &UI_12, SUB, BG);
+            }
             w::field(lcd, x + 6, 226 - x, 219, 237, 232, a.as_bytes(), &w::st(&UI_12, [DIM, AMBER, RED][lvl as usize % 3], BG, Align::Right));
         });
     }

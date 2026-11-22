@@ -1449,3 +1449,80 @@ fn range_presets_row_counts_them() {
     assert!(t.s.request(Op::DeletePreset(0)));
     assert_eq!(row(&t), "None");
 }
+
+/// SCAN-27 (ferrite#83): SIDE2 on a range preset scans it on the active slot: the slot's VFO at the preset's start,
+/// mode and step; the preset's range, step and skips to the Radio task before the scan starts; its resume rule;
+/// the Scan screen. A slot already inside the range stays where it is.
+#[test]
+fn side2_scans_a_range_preset() {
+    use crate::data::Op;
+    use ferrite_core::msg::{RANGE_HI, RANGE_LO, RANGE_SKIP, RANGE_STEP};
+    let mut t = T::new();
+    while t.s.data().presets() > 0 {
+        assert!(t.s.request(Op::DeletePreset(0)));
+    }
+    let mut p = crate::data::RangePreset { name: ferrite_ui::text::Buf::from(b"TEST AIR"), start: 11_800_000, end: 12_100_000, step: 7, mode: 2, narrow: false, skips: 0, resume: 11 };
+    p.step = crate::slot::STEPS.iter().position(|s| s.0 == 2_500).unwrap() as u8; // 25 kHz
+    assert!(t.s.request(Op::PutPreset(0, p)));
+    let mut f = [0u32; crate::data::SKIP_CHUNK];
+    (f[0], f[1]) = (11_900_000, 11_950_000);
+    assert!(t.s.request(Op::PresetSkips { preset: 0, at: 0, count: 2, f }));
+    assert_eq!(t.s.data().preset(0).unwrap().skips, 2);
+    let _ = t.cmds();
+    t.open(Dest::RangePresets);
+    t.tap(Key::Side(2));
+    t.wait(300); // the skips go a few a tick, then the start
+    assert_eq!(t.name(), "Scan", "the Scan screen");
+    let a = t.app.active;
+    assert_eq!(t.app.slot(a).freq(), 11_800_000, "the VFO at the preset's start");
+    assert!(!t.app.slot(a).on_channel());
+    assert_eq!((t.app.slot(a).cfg.mode, t.app.slot(a).cfg.step), (2, p.step), "the preset's mode (AM) and step");
+    let c = t.cmds();
+    let set: Vec<(u8, u32)> = c.iter().filter_map(|c| if let RadioCmd::ScanRangeSet { slot, what, f } = c { assert_eq!(*slot, a); Some((*what, *f)) } else { None }).collect();
+    assert_eq!(&set[..3], &[(RANGE_LO, 11_800_000), (RANGE_HI, 12_100_000), (RANGE_STEP, 2_500)]);
+    let start = c.iter().position(|c| *c == RadioCmd::Scan { slot: a, on: true }).expect("the scan starts");
+    let last_set = c.iter().rposition(|c| matches!(c, RadioCmd::ScanRangeSet { .. })).unwrap();
+    assert!(last_set < start, "the range is set before the scan starts");
+    let tune = c.iter().position(|c| matches!(c, RadioCmd::TuneSlot { slot, .. } if *slot == a)).expect("the slot retuned");
+    assert!(tune < start, "the retune goes before the start (a retune stops a scan)");
+    assert!(c.contains(&RadioCmd::ScanResume { slot: a, code: 11 }), "its own resume: carrier drop");
+    assert_eq!(&set[3..], &[(RANGE_SKIP, 11_900_000), (RANGE_SKIP, 11_950_000)], "its skips (SCAN-10)");
+}
+
+/// SCAN-27, SCAN-10: a preset with all 48 skips: every one reaches the Radio task, then the scan starts; the
+/// command queue (32) never drops one, as they go a few a tick.
+#[test]
+fn all_48_skips_reach_the_radio() {
+    use crate::data::{Op, SKIP_CHUNK};
+    use ferrite_core::msg::RANGE_SKIP;
+    let mut t = T::new();
+    while t.s.data().presets() > 0 {
+        assert!(t.s.request(Op::DeletePreset(0)));
+    }
+    let step = crate::slot::STEPS.iter().position(|s| s.0 == 1_250).unwrap() as u8;
+    let p = crate::data::RangePreset { name: ferrite_ui::text::Buf::from(b"70 CM"), start: 44_000_000, end: 45_000_000, step, mode: 1, narrow: true, skips: 0, resume: 0 };
+    assert!(t.s.request(Op::PutPreset(0, p)));
+    for at in (0..48u8).step_by(SKIP_CHUNK) {
+        let mut f = [0u32; SKIP_CHUNK];
+        for (k, x) in f.iter_mut().enumerate() {
+            *x = 44_000_000 + (at as u32 + k as u32 + 1) * 1_250;
+        }
+        assert!(t.s.request(Op::PresetSkips { preset: 0, at, count: 48, f }));
+    }
+    assert_eq!(t.s.data().preset(0).unwrap().skips, 48);
+    let _ = t.cmds();
+    t.open(Dest::RangePresets);
+    t.tap(Key::Side(2));
+    let mut c = Vec::new();
+    for _ in 0..20 {
+        t.wait(50);
+        c.extend(t.cmds());
+    }
+    let skips: Vec<u32> = c.iter().filter_map(|c| if let RadioCmd::ScanRangeSet { what: RANGE_SKIP, f, .. } = c { Some(*f) } else { None }).collect();
+    assert_eq!(skips.len(), 48, "every skip");
+    assert_eq!(skips[47], 44_000_000 + 48 * 1_250);
+    let a = t.app.active;
+    let start = c.iter().position(|c| *c == RadioCmd::Scan { slot: a, on: true }).expect("the scan starts");
+    let last = c.iter().rposition(|c| matches!(c, RadioCmd::ScanRangeSet { .. })).unwrap();
+    assert!(last < start, "after the last skip");
+}

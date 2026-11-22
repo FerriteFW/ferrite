@@ -302,7 +302,8 @@ impl Radio {
             let o = if self.chans.is_on(i) {
                 self.chans.tick(i, &mut self.scans[i], now, scan_open[i])
             } else {
-                self.scans[i].tick(&self.ranges[i], now, scan_open[i])
+                let r = Range { skipped: if self.preset_slot as usize == i { &self.preset_skips[..self.preset_n as usize] } else { &[] }, ..self.ranges[i] };
+                self.scans[i].tick(&r, now, scan_open[i])
             };
             if o.ended {
                 self.chans.off(i);

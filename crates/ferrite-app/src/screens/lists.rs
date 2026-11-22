@@ -292,7 +292,8 @@ fn row2_now(lcd: &mut impl Panel, y: i32, r: &Row2) {
         lcd.text4_rows(xr - rw, y + 17, r.right, &UI_12B, fg, bg, y + 2, y + 20);
         xr -= rw + 6;
     }
-    let (f, base) = if r.big { (&UI_15B, y + 18) } else { (&UI_12B, y + 17) };
+    // the big title on the tag's baseline: its capitals end 3 px above the sub line's (ferrite#33: 1 px at y + 18)
+    let (f, base) = if r.big { (&UI_15B, y + 16) } else { (&UI_12B, y + 17) };
     let mut tx = x;
     if r.dot {
         lcd.fill_r(x, y + 8, 6, 6, 3, if r.selected { BLUE_FG } else { BLUE });

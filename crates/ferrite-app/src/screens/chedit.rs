@@ -244,7 +244,8 @@ impl View for ChEdit {
             w::tag(lcd, 232, 25, b"EDIT", BLUE, BG);
         }
         if app.dirty(R_NOTE, Mix::new().h(&ch.name).h(&(cell == NAME)).get()) {
-            field_box(lcd, 7, 46, 226, 22, b"Name", ch.name(), cell == NAME, false);
+            // 20 tall, as the zone box: the 46 px digits reach up to row 68 (ferrite#33: the box touched them)
+            field_box(lcd, 7, 46, 226, 20, b"Name", ch.name(), cell == NAME, false);
         }
         // Regions: the grid takes 1-12, so the frequency uses R_SUB.
         if app.dirty(R_SUB, Mix::new().h(&ch.rx).h(&(cell == FREQ)).get()) {

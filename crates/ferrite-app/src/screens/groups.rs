@@ -1397,6 +1397,14 @@ impl Group {
                     [2, 1] => {
                         let _ = uwrite!(v, "{} channels", store.count());
                     }
+                    // SCAN-27 (ferrite#83): the presets there are; the table's "4 presets" was a placeholder
+                    [1, 4] => match store.data().presets() {
+                        0 => v.set(b"None"),
+                        1 => v.set(b"1 preset"),
+                        n => {
+                            let _ = uwrite!(v, "{} presets", n);
+                        }
+                    },
                     [4, 1] if app.log_unread > 0 => {
                         let _ = uwrite!(v, "{} new", app.log_unread);
                     }

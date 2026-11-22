@@ -208,9 +208,33 @@ pub fn stopped() -> ! {
     stop()
 }
 
-/// Stopped for good (a power cycle starts again): the watchdog, if running, kept fed so it doesn't restart it.
+/// Stopped (SAFE-8.1) until the power switch goes off: the watchdog, if running, kept fed so it doesn't restart it.
+/// The switch off (PE0 high for [`STOP_OFF_READS`] reads in a row) releases the power hold, as a normal power-off
+/// does; before this, only a battery pull got out (ferrite#73). Still powered half a second on (the switch back on
+/// before the supply dropped): a fresh start, the restart count cleared as a power cycle clears it. Interrupts are
+/// off and the clock may be anything here, so the waits are counted in cycles.
 fn stop() -> ! {
+    POWER_SW.config(Mode::InPu);
+    let mut off = 0u32;
     loop {
         crate::hal::wdt::feed();
+        cortex_m::asm::delay(STOP_READ_CYCLES);
+        off = if POWER_SW.read() { off + 1 } else { 0 };
+        if off >= STOP_OFF_READS {
+            POWER_HOLD.output(false, Mode::OutPp);
+            for _ in 0..STOP_RELEASE_READS {
+                crate::hal::wdt::feed();
+                cortex_m::asm::delay(STOP_READ_CYCLES);
+            }
+            crate::restart::settled();
+            sys::reboot();
+        }
     }
 }
+
+/// [`stop`]'s pace: 10,000 cycles a read (83 us at 120 MHz, 1.25 ms at the 8 MHz reset clock).
+const STOP_READ_CYCLES: u32 = 10_000;
+/// The switch read off this many times in a row (50 ms at 120 MHz, 0.75 s at 8 MHz): a bounce isn't a switch-off.
+const STOP_OFF_READS: u32 = 600;
+/// After the power hold is released, this many reads (0.5 s at 120 MHz) before deciding the switch came back on.
+const STOP_RELEASE_READS: u32 = 6_000;

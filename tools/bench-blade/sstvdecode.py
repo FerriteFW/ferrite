@@ -15,9 +15,15 @@ LIVE = os.path.join(HERE, "../../target/release/examples/live")
 def audio(path):
     u = np.fromfile(path, np.uint8).astype(np.float32) - 127.5
     z = u[0::2] + 1j * u[1::2]
-    s = z[len(z) // 2: len(z) // 2 + 65536]
-    sp = np.abs(np.fft.fft(s * np.hanning(len(s))))
-    f0 = np.fft.fftfreq(len(s), 1 / FS)[sp.argmax()]
+    # the strongest peak in a 64k-sample look every 2 s across the capture (the signal may fill only part of it),
+    # leaving out 50 kHz round the centre: the bladeRF's own LO leak there is stronger than a weak signal (Nov 22)
+    n, best, f0 = 65536, 0.0, 0.0
+    f = np.fft.fftfreq(n, 1 / FS)
+    for at in range(0, len(z) - n, 2 * FS):
+        sp = np.abs(np.fft.fft(z[at: at + n] * np.hanning(n)))
+        sp[np.abs(f) < 50_000] = 0
+        if sp.max() > best:
+            best, f0 = sp.max(), f[sp.argmax()]
     z = z * np.exp(-2j * np.pi * f0 * np.arange(len(z)) / FS)
     # a real channel filter before the discriminator: 8:1 by averaging (128 kS/s), then a windowed-sinc low-pass at
     # 9 kHz and 4:1 (32 kS/s). The averaging alone let the bladeRF's mirror image of the carrier (500 kHz away)

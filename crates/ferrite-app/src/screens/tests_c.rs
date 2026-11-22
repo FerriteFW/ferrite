@@ -1426,3 +1426,26 @@ fn quick_page_beacon_text_is_typed_in_t9() {
     assert!(t.app.set.predictive, "typed in T9");
     t.tap(Key::Exit);
 }
+
+/// SCAN-27 (ferrite#83): MENU 0 1's Range presets row says how many presets there are; it said "4 presets" always
+/// (the table's placeholder), with 0, 8 or 16.
+#[test]
+fn range_presets_row_counts_them() {
+    use crate::data::Op;
+    let t = T::new();
+    let grp = crate::screens::groups::Group { g: 1, sub: 0, row: 255 };
+    let row = |t: &T| {
+        let (name, v, _, _) = grp.row(&t.app, &Device::default(), &t.s, 3);
+        assert_eq!(name, "Range presets");
+        std::string::String::from_utf8(v.as_bytes().to_vec()).unwrap()
+    };
+    while t.s.request(Op::NewPreset) {}
+    assert_eq!(t.s.data().presets(), 16);
+    assert_eq!(row(&t), "16 presets");
+    while t.s.data().presets() > 1 {
+        assert!(t.s.request(Op::DeletePreset(0)));
+    }
+    assert_eq!(row(&t), "1 preset");
+    assert!(t.s.request(Op::DeletePreset(0)));
+    assert_eq!(row(&t), "None");
+}

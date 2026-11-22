@@ -39,3 +39,37 @@ impl PttGuard {
         }
     }
 }
+
+/// SND-12.7 (decision 430): which mic a key-up uses, from the speaker mic's detect (`plugged`) and the PTT inputs
+/// pressed now ([`PTT_A`], [`PTT_B`], [`PTT_EXT`]): the speaker mic's own PTT (the connector's) takes its mic; the
+/// radio's own PTTs, with the connector's not pressed, take the radio's mic; a key-up with no PTT pressed (VOX, the
+/// link, a data burst) keeps stock's choice, the speaker mic whenever one is plugged in. One of
+/// `ferrite_core::msg::MIC_SRC_*`; the route (PE1) is high for [`ferrite_core::msg::MIC_SRC_SPK`] only.
+pub fn mic_src(plugged: bool, pressed: u8) -> u8 {
+    use ferrite_core::msg::{MIC_SRC_NONE, MIC_SRC_RADIO, MIC_SRC_SPK};
+    if !plugged {
+        MIC_SRC_NONE
+    } else if pressed & PTT_EXT == 0 && pressed & (PTT_A | PTT_B) != 0 {
+        MIC_SRC_RADIO
+    } else {
+        MIC_SRC_SPK
+    }
+}
+
+#[cfg(test)]
+mod mic_tests {
+    use super::*;
+    use ferrite_core::msg::{MIC_SRC_NONE, MIC_SRC_RADIO, MIC_SRC_SPK};
+
+    /// SND-12.7: the PTT pressed picks the mic when a speaker mic is plugged in; without one, nothing changes.
+    #[test]
+    fn the_ptt_pressed_picks_the_mic() {
+        assert_eq!(mic_src(false, PTT_A), MIC_SRC_NONE);
+        assert_eq!(mic_src(false, PTT_EXT), MIC_SRC_NONE);
+        assert_eq!(mic_src(true, PTT_EXT), MIC_SRC_SPK, "the speaker mic's PTT");
+        assert_eq!(mic_src(true, PTT_A), MIC_SRC_RADIO, "the radio's PTT");
+        assert_eq!(mic_src(true, PTT_B), MIC_SRC_RADIO, "the radio's PTT B");
+        assert_eq!(mic_src(true, PTT_A | PTT_EXT), MIC_SRC_SPK, "the speaker mic's PTT held too");
+        assert_eq!(mic_src(true, 0), MIC_SRC_SPK, "no PTT (VOX, the link, data): stock's, the speaker mic");
+    }
+}

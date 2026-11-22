@@ -372,3 +372,19 @@ fn automatic_transmissions_checks() {
     assert!(!tx::data_key(&mut t.app, crate::aprs::APRS_SLOT, 0, b"Beacon"));
     assert!(t.cmds().is_empty());
 }
+
+/// TX-12.4: with a speaker mic plugged in, the mic row names the mic in use ("Spk mic", or "Radio mic" when the
+/// radio's own PTT picked its mic); without one, nothing.
+#[test]
+fn mic_row_names_the_mic_in_use() {
+    use ferrite_core::msg::{MIC_SRC_RADIO, MIC_SRC_SPK};
+    let mut t = T::ready();
+    t.down(Key::Ptt(0), true);
+    t.live.tx = TxLive { keyed: true, slot: 0, mic: 40, ..TxLive::default() };
+    let s = t.texts();
+    assert!(s.contains("Mic") && !s.contains("Spk mic") && !s.contains("Radio mic"), "{s}");
+    t.live.tx.mic_src = MIC_SRC_SPK;
+    assert!(t.texts().contains("Spk mic"));
+    t.live.tx.mic_src = MIC_SRC_RADIO;
+    assert!(t.texts().contains("Radio mic"));
+}

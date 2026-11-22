@@ -334,6 +334,9 @@ pub fn power_name(app: &App, slot: u8) -> &'static str {
     ["LOW", "MID", "HIGH"][ferrite_core::txcal::band_power(tx_freq(app, slot), p) as usize % 3]
 }
 
+/// TX-12: the mic meter's segments (10, leaving room at the right for the mic in use, TX-12.4).
+const MIC_SEGS: u8 = 10;
+
 impl View for Transmit {
     fn name(self) -> &'static str {
         "Transmit"
@@ -483,11 +486,20 @@ impl View for Transmit {
         }
         // Mic level (TX-12): how hard you are modulating; amber near full deviation. No power or drive
         // readout: the radio cannot measure output, and drive only ever reads ~100%.
-        let mic = if live.tx.keyed && live.tx.slot == s { live.tx.mic } else { 0 };
-        if app.dirty(6, Mix::new().h(&mic).get()) {
+        // TX-12.4: with a speaker mic plugged in, which mic this key-up uses (the PTT pressed picks it, SND-12.7).
+        let mine = live.tx.keyed && live.tx.slot == s;
+        let mic = if mine { live.tx.mic } else { 0 };
+        let src = if mine { live.tx.mic_src } else { ferrite_core::msg::MIC_SRC_NONE };
+        if app.dirty(6, Mix::new().h(&mic).h(&src).get()) {
             w::field(lcd, 15, 40, y + 110, y + 127, y + 123, b"Mic", const { &w::st(&UI_12, SUB, SURFACE, Align::Left) });
-            let lit = ((mic as u32 * 13 + 50) / 100) as u8;
-            parts::segs(lcd, 56, y + 115, 13, lit, 8, 10, 8, if mic >= 90 { AMBER } else { GREEN }, SURFACE);
+            let lit = ((mic as u32 * MIC_SEGS as u32 + 50) / 100) as u8;
+            parts::segs(lcd, 56, y + 115, MIC_SEGS, lit, 8, 10, 8, if mic >= 90 { AMBER } else { GREEN }, SURFACE);
+            let which: &[u8] = match src {
+                ferrite_core::msg::MIC_SRC_SPK => b"Spk mic",
+                ferrite_core::msg::MIC_SRC_RADIO => b"Radio mic",
+                _ => b"",
+            };
+            w::field(lcd, 156, 70, y + 110, y + 127, y + 123, which, const { &w::st(&UI_12, TEXT, SURFACE, Align::Right) });
         }
         // Timeout: the bar fills to the limit; amber from the pre-alert (TX-30).
         if app.dirty(7, Mix::new().h(&secs).get()) {

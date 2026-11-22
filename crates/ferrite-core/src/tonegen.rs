@@ -288,14 +288,16 @@ impl CounterPair {
     }
 }
 
-/// The mic meter (TX-12) from PA0, the mic-level tap stock's VOX reads (decision 76): stock uses the reading's top
-/// 8 bits; this many counts is shown as full deviation (to confirm on the bench, with the VOX thresholds' scale:
-/// level 1 opens at 101).
-pub const MIC_FULL: u16 = 160;
+/// The BK4829's voice amplitude (REG_64<15:0>, read only): the TX audio's level after the mic stage, whichever mic
+/// feeds it (TX-12, decision 430).
+pub const REG_VOICE_AMP: u8 = 0x64;
+/// REG_64's reading shown as a full meter: 8192, the BK4819 firmwares' scale for their mic bar (to confirm on the
+/// bench against the deviation heard).
+pub const MIC_AMP_FULL: u16 = 8192;
 
-/// PA0's 12-bit reading as % of full deviation, 0-100.
-pub fn mic_percent(adc: u16) -> u8 {
-    ((adc >> 4).min(MIC_FULL) as u32 * 100 / MIC_FULL as u32) as u8
+/// REG_64's reading as % of [`MIC_AMP_FULL`], 0-100.
+pub fn mic_amp_percent(amp: u16) -> u8 {
+    (amp.min(MIC_AMP_FULL) as u32 * 100 / MIC_AMP_FULL as u32) as u8
 }
 
 #[cfg(test)]
@@ -378,11 +380,12 @@ mod tests {
         assert_eq!(c.shown(t + 300 + COUNTER_SHOW_MS), None);
     }
 
+    /// TX-12.3: REG_64's voice amplitude as the meter's %.
     #[test]
     fn mic_meter() {
-        assert_eq!(mic_percent(0), 0);
-        assert_eq!(mic_percent(80 << 4), 50);
-        assert_eq!(mic_percent(0xFFF), 100);
+        assert_eq!(mic_amp_percent(0), 0);
+        assert_eq!(mic_amp_percent(4096), 50);
+        assert_eq!(mic_amp_percent(0xFFFF), 100, "past full scale: full");
     }
 
     /// TONE-18: tail elimination as stock: 55 Hz with no sub-tone, the phase shift on CTCSS, the DCS turn-off

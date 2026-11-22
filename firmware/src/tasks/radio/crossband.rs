@@ -255,7 +255,7 @@ impl Radio {
             return log(b"xb read-back failed", 0);
         }
         self.tx.chip = Some(n);
-        self.live.tx = TxLive { keyed: true, slot: to, mic: 0, refused: None, refusals: self.live.tx.refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
+        self.live.tx = TxLive { keyed: true, slot: to, mic: 0, refused: None, refusals: self.live.tx.refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck, mic_src: 0 };
         log(b"xb pass to khz ", f / 100);
     }
 

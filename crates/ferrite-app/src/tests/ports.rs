@@ -160,12 +160,14 @@ fn the_cable_wins() {
     assert_eq!(r.p.owner(), Port::Bt, "free again: Bluetooth takes it");
 }
 
-/// KISS-6: with 0 5 8 on Bluetooth, Bluetooth's bytes are KISS while the cable keeps its terminal; on Cable,
+/// KISS-6: with 0 3 7 on Bluetooth, Bluetooth's bytes are KISS while the cable keeps its terminal; on Cable,
 /// the cable's are.
 #[test]
 fn kiss_beside_the_terminal() {
     let mut r = Rig::new();
+    r.app.set.bt = true;
     r.app.set.kiss_port = 2;
+    r.app.open(crate::screens::nav::Dest::KissMode);
     r.send(Port::Cable, b"\r");
     assert!(r.p.term.on());
     assert_eq!(r.send(Port::Bt, &[0xC0, 0x00, 0x82]), [To::Kiss; 3]);
@@ -664,12 +666,13 @@ fn a_waiting_frame_holds_its_port() {
     assert!(r.p.ready_for(Port::Bt) && r.p.ready());
 }
 
-/// TERM-2, KISS-6: KISS on the cable (0 5 8 on Cable; 0 9 2 3 has no KISS since decision 386): every cable byte is
+/// TERM-2, KISS-6: KISS on the cable (0 3 7 on Cable; 0 9 2 3 has no KISS since decision 386): every cable byte is
 /// KISS's, none the terminal's.
 #[test]
 fn cable_port_kiss_drops_to_kiss() {
     let mut r = Rig::new();
     r.app.set.kiss_port = 1;
+    r.app.open(crate::screens::nav::Dest::KissMode);
     assert_eq!(r.send(Port::Cable, b"\r:"), [To::Kiss; 2]);
     assert!(!r.p.term.on());
 }

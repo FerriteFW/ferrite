@@ -1,15 +1,24 @@
 //! KISS (Chepponis and Karn, 1987): AX.25 frames between a TNC and a host over a serial line. Each frame is
 //! `FEND, command, data, FEND`, with FEND and FESC in the data escaped. Command 0x00 (port 0) carries a frame.
+//! Command 12 is ACKMODE (BPQ, Dire Wolf, Winlink Packet): the host asks for it, and the TNC echoes each frame
+//! back with command 12 once that frame has gone out, so the host starts its retry timer then.
 
 pub const FEND: u8 = 0xC0;
 pub const FESC: u8 = 0xDB;
 pub const TFEND: u8 = 0xDC;
 pub const TFESC: u8 = 0xDD;
+/// Command 12: ACKMODE. A byte of 1 turns it on, 0 off. A report uses this command and the frame that went out.
+pub const ACKMODE: u8 = 12;
 
 /// Data frame on port `port` (0 to 15): the KISS bytes, one at a time through `out`.
-pub fn encode(port: u8, frame: &[u8], mut out: impl FnMut(u8)) {
+pub fn encode(port: u8, frame: &[u8], out: impl FnMut(u8)) {
+    encode_cmd(port, 0, frame, out);
+}
+
+/// As [`encode`], with a command nibble. An ACKMODE report is command [`ACKMODE`].
+pub fn encode_cmd(port: u8, cmd: u8, frame: &[u8], mut out: impl FnMut(u8)) {
     out(FEND);
-    out((port & 15) << 4);
+    out((port & 15) << 4 | cmd & 15);
     for &b in frame {
         match b {
             FEND => {
@@ -100,7 +109,7 @@ impl<const N: usize> Decoder<N> {
     }
 }
 
-/// The TNC settings a host can send (KISS commands 1 to 5), in KISS's units.
+/// The TNC settings a host can send (KISS commands 1 to 5, and 12), in KISS's units.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Params {
     /// Keying delay before data, 10 ms units (command 1). Default 50 (500 ms).
@@ -114,11 +123,13 @@ pub struct Params {
     /// Command 5, kept as sent. [`Access`] never acts on it: a half-duplex radio always listens before it
     /// transmits.
     pub full_duplex: bool,
+    /// Command 12, ACKMODE. Off until a host asks: nothing is echoed after a transmission.
+    pub ack_mode: bool,
 }
 
 impl Default for Params {
     fn default() -> Self {
-        Params { tx_delay: 50, persistence: 63, slot_time: 10, tx_tail: 0, full_duplex: false }
+        Params { tx_delay: 50, persistence: 63, slot_time: 10, tx_tail: 0, full_duplex: false, ack_mode: false }
     }
 }
 
@@ -160,6 +171,7 @@ impl Params {
             (3, Some(v)) => self.slot_time = v,
             (4, Some(v)) => self.tx_tail = v,
             (5, Some(v)) => self.full_duplex = v != 0,
+            (ACKMODE, Some(v)) => self.ack_mode = v != 0,
             _ => return Command::Unknown,
         }
         Command::Set
@@ -171,6 +183,22 @@ impl Params {
         // 10 ms units x baud / 8 bits per flag / 100.
         let n = |t: u8| ((t as u32 * baud).div_ceil(800)).max(1) as u16;
         (n(self.tx_delay), n(self.tx_tail))
+    }
+
+    /// Closing flags of a 1200-baud KISS transmission: the modem's usual three, or the host's TX tail when
+    /// command 4 asked for more. A tail of 0 stays three flags, which is what a frame goes out with today.
+    pub fn closing_flags(&self) -> u16 {
+        const MIN: u16 = 3;
+        if self.tx_tail == 0 { MIN } else { self.flags(1200).1.max(MIN) }
+    }
+
+    /// Flags around one frame of a key-up at 1200 baud. The first frame gets the TX delay; a later frame gets
+    /// none, so the previous frame's closing flag opens it and the window stays one transmission. Only the last
+    /// frame carries [`Params::closing_flags`]; the others end on a single flag.
+    pub fn frame_flags(&self, first: bool, last: bool) -> (u16, u16) {
+        let pre = if first { self.flags(1200).0 } else { 0 };
+        let post = if last { self.closing_flags() } else { 1 };
+        (pre, post)
     }
 }
 

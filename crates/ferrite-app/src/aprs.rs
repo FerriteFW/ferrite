@@ -27,7 +27,7 @@ pub const APRS_SLOT: u8 = 2;
 /// few minutes on a busy frequency). The oldest heard goes when a new one comes; power off empties it.
 pub const HEARD_MAX: u16 = 50; // 20 until decision 246
 
-/// The APRS settings kept with the APRS store (0 5 6 1 - 0 5 6 4, 0 5 9 1, 0 5 4, 0 5 9 5, 0 5 7).
+/// The APRS settings kept with the APRS store (0 5 6 1 - 0 5 6 4, 0 5 8 1, 0 5 4, 0 5 8 5, 0 5 7).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AprsCfg {
     /// The frequency in 5 kHz units; 0 = the region's (APRS-15).
@@ -38,27 +38,27 @@ pub struct AprsCfg {
     pub beacon: u8,
     /// Beacon and message power: 0 low (APRS-20's default), 1 mid, 2 high.
     pub power: u8,
-    /// The path beacons and messages ask for (0 5 9 1): an index into [`PATHS`].
+    /// The path beacons and messages ask for (0 5 8 1): an index into [`PATHS`].
     pub path: u8,
     /// The digipeater (0 5 7, APRS-12, APRS-26): bit 0 on, bit 1 our callsign as an alias too, bits 4-6 the wait
     /// before relaying in seconds (0-5).
     pub digi: u8,
     /// A beacon after each voice transmission (0 5 6 2, APRS-27).
     pub after_voice: bool,
-    /// The custom path (0 5 9 2, APRS-26) as typed, like `WIDE1-1,WIDE2-2`, zero-padded; used when
+    /// The custom path (0 5 8 2, APRS-26) as typed, like `WIDE1-1,WIDE2-2`, zero-padded; used when
     /// [`AprsCfg::path`] is [`PATH_CUSTOM`]. Checked by [`path_ok`] before it is kept.
     pub custom: [u8; CUSTOM_LEN],
     /// Our SSID (0 5 5 1, APRS-30): 0-15, sent after the callsign; 0 sends the bare callsign.
     pub ssid: u8,
-    /// FX.25 on transmit (0 5 9 5, APRS-45): check bytes, one of [`FX25_CHECKS`] (0 = off).
+    /// FX.25 on transmit (0 5 8 5, APRS-45): check bytes, one of [`FX25_CHECKS`] (0 = off).
     pub fx25: u8,
     /// The message sound (0 7 5 5, APRS-6.1): an index into `tonegen::CHIMES` (0 off).
     pub sound: u8,
     /// Our map symbol (0 5 5 2, APRS-47): an index into [`SYMBOLS`].
     pub symbol: u8,
-    /// TX delay (0 5 9 3, APRS-48): flags before our own frames, in 10 ms (10-100: 100-1000 ms).
+    /// TX delay (0 5 8 3, APRS-48): flags before our own frames, in 10 ms (10-100: 100-1000 ms).
     pub txdelay: u8,
-    /// TX level (0 5 9 4, APRS-49): 0 Low, 1 Mid, 2 High (`audio::AFSK_AMPS`).
+    /// TX level (0 5 8 4, APRS-49): 0 Low, 1 Mid, 2 High (`audio::AFSK_AMPS`).
     pub tx_level: u8,
     /// The comment (0 5 5 3, APRS-50) sent at the end of every position report, zero-padded (empty: none).
     pub comment: [u8; COMMENT_LEN],
@@ -72,7 +72,7 @@ pub struct AprsCfg {
     /// APRS-50.1: the beacon text on every timed or smart beacon (0), or every 2nd, 4th or 8th (1-3: 1 << n);
     /// Beacon now and a position query's answer always carry it.
     pub text_every: u8,
-    /// APRS-57: auto reply (0 5 9 9): bit 0 on; bits 4-5 the delay, an index into [`REPLY_DELAYS_S`].
+    /// APRS-57: auto reply (0 5 8 9): bit 0 on; bits 4-5 the delay, an index into [`REPLY_DELAYS_S`].
     pub reply: u8,
     /// APRS-57: who gets the reply, as typed: `*` everyone, `VE7*` every callsign starting so, else one
     /// callsign-SSID exactly; zero-padded.
@@ -99,7 +99,7 @@ pub fn reply_pattern(pat: &[u8], call: &[u8]) -> bool {
 pub const COMMENT_LEN: usize = 40;
 /// APRS-50.1: how often the beacon text goes (0 5 6 5).
 pub const TEXT_EVERY: [&str; 4] = ["All", "1/2", "1/4", "1/8"];
-/// APRS-57: auto reply's delays (0 5 9 9), as Kenwood's: 10 s by default.
+/// APRS-57: auto reply's delays (0 5 8 9), as Kenwood's: 10 s by default.
 pub const REPLY_DELAYS_S: [u16; 4] = [10, 30, 60, 120];
 pub const REPLY_DELAY_NAMES: [&str; 4] = ["10 s", "30 s", "1 min", "2 min"];
 /// APRS-57: the pattern's room (a callsign-SSID: 9) and the reply's (45, as Kenwood's).
@@ -129,11 +129,11 @@ pub const SYMBOLS: [(&str, u8, u8); 10] = [
     ("House", b'/', b'-'),
     ("Boat", b'/', b's'),
 ];
-/// APRS-48: 0 5 9 3's range and default, in 10 ms.
+/// APRS-48: 0 5 8 3's range and default, in 10 ms.
 pub const TXDELAY_MIN: u8 = 10;
 pub const TXDELAY_MAX: u8 = 100;
 pub const TXDELAY_DEFAULT: u8 = 30;
-/// APRS-49: 0 5 9 4's names.
+/// APRS-49: 0 5 8 4's names.
 pub const TX_LEVELS: [&str; 3] = ["Low", "Mid", "High"];
 
 impl AprsCfg {
@@ -149,7 +149,7 @@ impl AprsCfg {
     }
 }
 
-/// APRS-45: 0 5 9 5's choices (check bytes; 0 = off) and their names. 16 by default: Alex, decision 230 (a default
+/// APRS-45: 0 5 8 5's choices (check bytes; 0 = off) and their names. 16 by default: Alex, decision 230 (a default
 /// to review before the first release).
 pub const FX25_CHECKS: [u8; 4] = [0, 16, 32, 64];
 pub const FX25_NAMES: [&str; 4] = ["Off", "16 bytes", "32 bytes", "64 bytes"];
@@ -240,12 +240,12 @@ impl AprsCfg {
         reply_pattern(self.reply_to_text(), call)
     }
 
-    /// A stored path value 0 5 9 1 can hold: one of the [`PATHS`], and Custom only once one is set.
+    /// A stored path value 0 5 8 1 can hold: one of the [`PATHS`], and Custom only once one is set.
     pub fn path_ok(&self, v: u8) -> bool {
         (v as usize) < PATHS.len() && (v != PATH_CUSTOM || !self.custom_text().is_empty())
     }
 
-    /// 0 5 9 1 stepped `d` places through the values it can hold, round the end.
+    /// 0 5 8 1 stepped `d` places through the values it can hold, round the end.
     pub fn path_step(&self, d: i32) -> u8 {
         let n = PATHS.len() as i32;
         let mut v = self.path as i32;
@@ -260,19 +260,19 @@ impl AprsCfg {
         v as u8
     }
 
-    /// 0 5 9 1's name for the path in use.
+    /// 0 5 8 1's name for the path in use.
     pub fn path_name(&self) -> &[u8] {
         if self.path == PATH_CUSTOM { self.custom_text() } else { PATHS[self.path as usize % PATHS.len()].0.as_bytes() }
     }
 
     /// APRS-45: FX.25 check bytes for a frame the APRS task sends (`what`, as [`crate::aprs_live::Tick`] names
-    /// it): 0 5 9 5's for our own frames (beacons, messages, acks, answers), 0 (plain AX.25) for a digipeat, which
+    /// it): 0 5 8 5's for our own frames (beacons, messages, acks, answers), 0 (plain AX.25) for a digipeat, which
     /// goes out as it came.
     pub fn fx25_for(&self, what: &str) -> u8 {
         if what == "Digipeat" { 0 } else { self.fx25 }
     }
 
-    /// 0 5 9 5's choice: an index into [`FX25_CHECKS`].
+    /// 0 5 8 5's choice: an index into [`FX25_CHECKS`].
     pub fn fx25_index(&self) -> u8 {
         FX25_CHECKS.iter().position(|&c| c == self.fx25).unwrap_or(0) as u8
     }
@@ -314,7 +314,7 @@ impl AprsCfg {
     }
 }
 
-/// The paths offered (0 5 9 1, APRS-26), indexed by the stored value: name and entries. The custom path (0 5 9 2)
+/// The paths offered (0 5 8 1, APRS-26), indexed by the stored value: name and entries. The custom path (0 5 8 2)
 /// keeps the value it has always had, [`PATH_CUSTOM`] (3), so a radio set to it before APRSAT and ARISS were added
 /// still is; its row here is a placeholder (its name and entries are the typed path's).
 pub const PATHS: [(&str, &[&[u8]]); 6] = [
@@ -326,10 +326,10 @@ pub const PATHS: [(&str, &[&[u8]]); 6] = [
     ("APRSAT", &[b"APRSAT"]),
     ("ARISS", &[b"ARISS"]),
 ];
-/// 0 5 9 1 on the custom path (0 5 9 2).
+/// 0 5 8 1 on the custom path (0 5 8 2).
 pub const PATH_CUSTOM: u8 = 3;
 
-/// A custom path (0 5 9 2, APRS-26) is one or two entries split by a comma, each a callsign or alias of 1-6
+/// A custom path (0 5 8 2, APRS-26) is one or two entries split by a comma, each a callsign or alias of 1-6
 /// capitals and digits with an optional -SSID of 1-15 (WIDE1-1, WIDE2-2, a club's call), and fits
 /// [`CUSTOM_LEN`].
 pub fn path_ok(t: &[u8]) -> bool {
@@ -493,7 +493,7 @@ impl App {
     pub fn aprs_on(&self) -> bool {
         // PWR-24: no APRS in Low Power Mode. KISS-10: KISS on suspends it (the app does APRS; the setting is kept).
         // SAT-14: and it pauses while the satellite screen is open.
-        self.set.aprs_mode && !self.low_power() && !self.set.kiss_on() && !self.sat_open()
+        self.set.aprs_mode && !self.low_power() && !self.kiss_on() && !self.sat_open()
     }
 
     /// APRS-22: without APRS mode, the active slot is on a channel flagged APRS, so what it receives is decoded
@@ -506,12 +506,12 @@ impl App {
     /// Automatic beacons are on (0 5 6 1 timed or smart; APRS-24): with APRS mode off they still hold C
     /// (APRS-29). Manual ("Beacon now" only) doesn't.
     pub fn beacons_on(&self) -> bool {
-        self.aprs.beacons_on() && !self.low_power() && !self.set.kiss_on() // KISS-10
+        self.aprs.beacons_on() && !self.low_power() && !self.kiss_on() // KISS-10
     }
 
     /// KISS-10: why the radio won't send APRS of its own now (KISS on: the app sends), if so.
     pub fn kiss_holds_aprs(&self) -> Option<&'static str> {
-        self.set.kiss_on().then_some("KISS on: the app sends")
+        self.kiss_on().then_some("KISS on: the app sends")
     }
 
     /// What holds slot C as the APRS slot, if anything: APRS mode (APRS-15), KISS (KISS-9: its frames go out
@@ -519,8 +519,8 @@ impl App {
     pub fn aprs_holder(&self) -> Option<Holder> {
         if self.low_power() {
             None // PWR-24: Low Power Mode holds nothing on C
-        } else if self.set.kiss_on() {
-            Some(Holder::Kiss) // KISS-10: first, APRS mode and beacons wait while it is on
+        } else if self.kiss_on() {
+            Some(Holder::Kiss) // KISS-10: first, APRS mode and beacons wait while the mode screen is up
         } else if self.set.aprs_mode {
             Some(Holder::Mode)
         } else if self.beacons_on() {
@@ -559,16 +559,17 @@ impl App {
         s == APRS_SLOT && self.aprs_c()
     }
 
-    /// APRS-21.2: slot `s` (A or B) receives on the APRS frequency while C is the APRS slot, so it defers to C: no
-    /// turns of its own (the Radio task's watch), its card "APRS on C" until C receives.
+    /// APRS-21.2: slot `s` (A or B) receives on the frequency C is actually on, so it defers to C: no turns of
+    /// its own (the Radio task's watch), its card "APRS on C" until C receives. While KISS holds C that
+    /// frequency is the KISS one, not the APRS frequency.
     pub fn defers_to_c(&self, s: u8) -> bool {
-        self.aprs_c() && s < APRS_SLOT && self.tuned_freq(s) == self.aprs_freq()
+        self.aprs_c() && s < APRS_SLOT && self.tuned_freq(s) == self.tuned_freq(APRS_SLOT)
     }
 
-    /// APRS-21.3: slot `s` (A or B) transmits on the APRS frequency while C is the APRS slot: voice there needs a
-    /// person's PTT twice; VOX and remote PTT never key it.
+    /// APRS-21.3: slot `s` (A or B) transmits on the frequency C is on: voice there needs a person's PTT twice;
+    /// VOX and remote PTT never key it. KISS's frequency counts the same way while KISS holds C.
     pub fn aprs_voice_gate(&self, s: u8) -> bool {
-        self.aprs_c() && s < APRS_SLOT && crate::screens::transmit::tx_freq(self, s) == self.aprs_freq()
+        self.aprs_c() && s < APRS_SLOT && crate::screens::transmit::tx_freq(self, s) == self.tuned_freq(APRS_SLOT)
     }
 
     /// Why the APRS slot can't change (APRS-19, KISS-9, APRS-29): what holds it, nothing more (decision 181).
@@ -634,9 +635,22 @@ impl App {
         }
     }
 
-    /// What the slot is tuned to: its own frequency, or the APRS frequency on the APRS slot.
+    /// The KISS TNC's frequency (0 3 7 2): its own saved value, or the region's when that is 0. Not [`aprs_freq`].
+    pub fn kiss_freq(&self) -> Freq10 {
+        let f = self.set.kiss_f5k as Freq10 * 500;
+        if self.set.kiss_f5k == 0 || !(F_MIN..=F_MAX).contains(&f) { region_freq(self.set.region()) } else { f }
+    }
+
+    /// What the slot is tuned to: its own frequency, or, on the slot KISS or APRS holds, that holder's frequency.
+    /// APRS mode and beacons use [`aprs_freq`]; KISS uses [`kiss_freq`].
     pub fn tuned_freq(&self, s: u8) -> Freq10 {
-        if self.aprs_slot(s) { self.aprs_freq() } else { self.slot(s).freq() }
+        if !self.aprs_slot(s) {
+            self.slot(s).freq()
+        } else if self.aprs_holder() == Some(Holder::Kiss) {
+            self.kiss_freq()
+        } else {
+            self.aprs_freq()
+        }
     }
 
     /// The slot's settings as the radio has them: on the APRS slot FM, no tones, simplex, busy lockout by
@@ -649,7 +663,7 @@ impl App {
         SlotCfg { mode: 0, narrow: false, power: self.aprs.power % 3, busy: 1, squelch: own.squelch, ..SlotCfg::default() }
     }
 
-    /// APRS-2, APRS-15.2: C's quick mute follows 0 5 9 6 while APRS mode is on, and is off without it.
+    /// APRS-2, APRS-15.2: C's quick mute follows 0 5 8 6 while APRS mode is on, and is off without it.
     pub(crate) fn aprs_mute_sync(&mut self) {
         let on = self.set.aprs_mode && self.set.aprs_mute;
         let m = if on { self.mute | 1 << APRS_SLOT } else { self.mute & !(1 << APRS_SLOT) };
@@ -690,12 +704,12 @@ impl App {
         }
     }
 
-    /// The custom path as typed (0 5 9 2).
+    /// The custom path as typed (0 5 8 2).
     pub fn aprs_custom_path(&self) -> &[u8] {
         self.aprs.custom_text()
     }
 
-    /// A custom path typed at 0 5 9 2, already checked by [`path_ok`]: kept and chosen (APRS-26).
+    /// A custom path typed at 0 5 8 2, already checked by [`path_ok`]: kept and chosen (APRS-26).
     pub(crate) fn set_aprs_custom_path(&mut self, t: &[u8]) {
         let mut c = self.aprs;
         c.custom = [0; CUSTOM_LEN];
@@ -745,6 +759,28 @@ impl App {
         }
         let f5k = if f == region_freq(self.set.region()) { 0 } else { (f / 500) as u16 };
         self.set_aprs(AprsCfg { f5k, ..self.aprs });
+        Ok(())
+    }
+
+    /// 0 3 7 2 by the knob: 5 kHz steps from where it is, within chip 0's range. C retunes only while KISS holds it.
+    pub(crate) fn step_kiss_freq(&mut self, d: i32) {
+        let f = (self.kiss_freq() as i64 + d as i64 * 500).clamp(F_MIN as i64, F_MAX as i64) as Freq10;
+        let _ = self.set_kiss_freq(f);
+    }
+
+    /// 0 3 7 2 typed: 64-300 MHz on the 5 kHz grid. The region's frequency is stored as 0, as the APRS frequency
+    /// is. Setting it does not change [`aprs_freq`], and C moves only while KISS holds it.
+    pub(crate) fn set_kiss_freq(&mut self, f: Freq10) -> Result<(), &'static str> {
+        if !(F_MIN..=F_MAX).contains(&f) {
+            return Err("Out of range: KISS takes 64-300 MHz");
+        }
+        if !f.is_multiple_of(500) {
+            return Err("Off the grid: KISS takes 5 kHz steps");
+        }
+        self.set.kiss_f5k = if f == region_freq(self.set.region()) { 0 } else { (f / 500) as u16 };
+        if self.aprs_holder() == Some(Holder::Kiss) {
+            self.send_slot(APRS_SLOT);
+        }
         Ok(())
     }
 

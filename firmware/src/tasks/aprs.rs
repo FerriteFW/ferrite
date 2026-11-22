@@ -18,6 +18,7 @@
 //! follows 0 5 7 (off by default, APRS-12, APRS-26).
 
 use super::dsp::{Frame, Heard, AFSK_DONE, AFSK_TX, APRS_RX};
+use super::kissq;
 use crate::chan::DSP;
 use crate::store::Store;
 use ferrite_app::aprs_live::uaprs::kiss;
@@ -44,7 +45,9 @@ enum Tx {
     Clearing { what: &'static str },
     /// Keyed for [`Aprs::frame`], waiting for the Radio task; whether it is a beacon (APRS-53's Sent page).
     Keying { at_ms: u32, beacon: bool },
-    Playing { at_ms: u32 },
+    /// On the air. The deadline is [`Aprs::play_since`]: a KISS frame finishing moves it. A KISS window that
+    /// runs out of time stays here, unkeyed, until the DSP task stops, so the next key-up is a new one.
+    Playing,
 }
 
 pub struct Aprs {
@@ -53,14 +56,21 @@ pub struct Aprs {
     tx: Tx,
     /// The frame being sent.
     frame: Frame,
-    /// The KISS TNC (chapter 26): the cable's bytes in, the app's settings, a frame waiting to go, and its
-    /// channel access.
+    /// The KISS TNC (chapter 26): the cable's bytes in, the app's settings, and channel access. Frames wait in
+    /// [`kissq`], eight deep.
     kiss: kiss::Decoder,
     params: kiss::Params,
-    kiss_q: Option<Frame>,
-    /// KISS-13: a frame was queued since the last turn, and when (its 5 s to find a clear moment).
-    kiss_queued: bool,
+    /// The oldest queued frame has started its 5 s to find a clear channel (KISS-13).
+    kiss_waiting: bool,
     kiss_at: u32,
+    /// The key-up in progress is a KISS window, not one of our own frames.
+    kiss_tx: bool,
+    /// The play timeout unkeyed this KISS window. [`Tx::Playing`] waits for the DSP task to finish it.
+    kiss_cut: bool,
+    /// When the transmission on air last made progress: a KISS frame finishing extends it.
+    play_since: u32,
+    /// [`kissq::finished`] last seen, so each frame that finishes moves `play_since`.
+    kiss_done_seen: u8,
     access: kiss::Access,
     clear: ClearWait,
     seed: u32,
@@ -69,7 +79,7 @@ pub struct Aprs {
 impl Aprs {
     pub fn new() -> Self {
         let params = kiss::Params { tx_delay: TXDELAY_10MS, ..kiss::Params::default() };
-        Aprs { on: false, last_s: u32::MAX, tx: Tx::Idle, frame: Frame { len: 0, txdelay_10ms: 0, fx25: 0, level: 1, b: [0; FRAME_MAX] }, kiss: kiss::Decoder::new(), params, kiss_q: None, kiss_queued: false, kiss_at: 0, access: kiss::Access::default(), clear: ClearWait::default(), seed: 0x2545_F491 }
+        Aprs { on: false, last_s: u32::MAX, tx: Tx::Idle, frame: Frame { len: 0, txdelay_10ms: 0, fx25: 0, level: 1, b: [0; FRAME_MAX] }, kiss: kiss::Decoder::new(), params, kiss_waiting: false, kiss_at: 0, kiss_tx: false, kiss_cut: false, play_since: 0, kiss_done_seen: 0, access: kiss::Access::default(), clear: ClearWait::default(), seed: 0x2545_F491 }
     }
 
     /// A byte from the KISS port, the cable or Bluetooth (KISS-6; TERM-2's route on the cable).
@@ -79,14 +89,36 @@ impl Aprs {
             return; // KISS-11: one port, port 0
         }
         // KISS-11: the shortest AX.25 frame is two addresses and a control byte (15). KISS-12: only data acts;
-        // settings change `params`, and hardware commands (PTT tests, a frequency set, a save) do nothing
-        if let kiss::Command::Data(d) = self.params.apply(&r) {
-            if self.kiss_q.is_none() && (15..=FRAME_MAX).contains(&d.len()) {
+        // settings change `params`, and hardware commands (PTT tests, a frequency set, a save) do nothing.
+        // A full window drops the frame; the host retries it.
+        match self.params.apply(&r) {
+            kiss::Command::Data(d) if (15..=FRAME_MAX).contains(&d.len()) => {
                 let mut f = Frame { len: d.len() as u16, txdelay_10ms: self.params.tx_delay, fx25: 0, level: 1, b: [0; FRAME_MAX] };
                 f.b[..d.len()].copy_from_slice(d);
-                self.kiss_q = Some(f);
-                self.kiss_queued = true;
+                kissq::push(f);
             }
+            kiss::Command::Set => kissq::set_tail(self.params.closing_flags()),
+            _ => {}
+        }
+    }
+
+    /// ACKMODE: a frame whose audio has finished is echoed to the host, command 12, on the port it came in on.
+    fn ack(&mut self, kiss_cable: bool) {
+        if !self.params.ack_mode {
+            while kissq::pop_done().is_some() {}
+            return;
+        }
+        while let Some(f) = kissq::pop_done() {
+            let out = if kiss_cable { &crate::chan::TERM_OUT } else { &crate::chan::BT_OUT };
+            crate::chan::term_out_locked(|| {
+                kiss::encode_cmd(0, kiss::ACKMODE, f.bytes(), |b| {
+                    out.put(b);
+                });
+            });
+            if kiss_cable {
+                crate::hal::uart::tx_ring(crate::report::UART_CPS, &crate::chan::TERM_OUT);
+            }
+            crate::chan::TERM_WAKE.signal(());
         }
     }
 
@@ -101,7 +133,7 @@ impl Aprs {
     /// PWR-26.15: something waits for this turn now (a frame heard, a KISS frame, one being sent), not only on the
     /// once-a-second turn.
     pub fn due(&self) -> bool {
-        self.busy() || self.kiss_queued || self.kiss_q.is_some() || !APRS_RX.is_empty()
+        self.busy() || kissq::pending() || !APRS_RX.is_empty()
     }
 
     /// A frame is being keyed or played: the UI task turns faster meanwhile.
@@ -116,18 +148,26 @@ impl Aprs {
         extra.aprs.readings(dev.battery_mv, dev.mcu_temp, app.aprs_freq()); // APRS-54: the values in our position reports
         let me = app.aprs_call(); // APRS-30: callsign and SSID
         extra.set_callsign(me.as_bytes());
-        // KISS-6: the cable (0 9 2 3 on KISS, or 0 5 8 on Cable) or Bluetooth (0 5 8, with Bluetooth on).
+        // KISS-6: the cable (0 9 2 3 on KISS, or 0 3 7 on Cable) or Bluetooth (0 3 7, with Bluetooth on).
         let kiss_cable = app.settings().kiss_on_cable();
         let kiss_on = app.kiss_on(); // PWR-24: none in Low Power Mode. KISS-9: C is the APRS slot meanwhile (`App::aprs_c`)
+        let heard_at = if kiss_on { app.kiss_freq() } else { app.aprs_freq() };
         let on = app.aprs_on();
         let send = app.aprs_sending();
         let decode = on || kiss_on || app.aprs_flag_decode(); // APRS-22
-        // KISS-13: a client's frame doesn't outlive KISS (nor wait in Low Power Mode, PWR-24).
-        if !kiss_on {
-            self.kiss_q = None;
+        let n = kissq::take_extra();
+        for _ in 0..n {
+            extra.kiss_sent(); // a continuation frame of the window, once its audio starts
         }
-        if core::mem::take(&mut self.kiss_queued) {
-            self.kiss_at = now_ms;
+        // KISS-13: a client's frame doesn't outlive KISS (nor wait in Low Power Mode, PWR-24). One already on
+        // air finishes; the ones still queued do not.
+        if kiss_on {
+            self.ack(kiss_cable);
+        } else if matches!(self.tx, Tx::Idle) {
+            kissq::clear();
+            self.kiss_waiting = false;
+        } else {
+            kissq::drop_queued();
         }
         if decode != self.on && DSP.try_send(DspCmd::Decoder(if decode { DecoderKind::Afsk } else { DecoderKind::Off })).is_ok() {
             self.on = decode;
@@ -139,10 +179,10 @@ impl Aprs {
             let mut block;
             let (f, fx) = match h {
                 Heard::Frame(ref f) => (f.bytes(), None),
-                // APRS-56: heard, not decoded; logged only with 0 5 9 8 on, read (no badge: a diagnosis, not news)
+                // APRS-56: heard, not decoded; logged only with 0 5 8 8 on, read (no badge: a diagnosis, not news)
                 Heard::Miss(m, peak) => {
                     if app.settings().decode_log && ferrite_app::aprs_live::miss_logged(&m) {
-                        let mut e = log_event(app.aprs_freq(), b"", b"");
+                        let mut e = log_event(heard_at, b"", b"");
                         ferrite_app::aprs_live::miss_text(&m, peak, &mut e.name, &mut e.text);
                         e.unread = false;
                         store.log(&e);
@@ -154,7 +194,7 @@ impl Aprs {
                     let Some(d) = block.decode() else {
                         super::dsp::FX25_FAILED.fetch_add(1, core::sync::atomic::Ordering::Relaxed); // APRS-56
                         if app.settings().decode_log {
-                            let mut e = log_event(app.aprs_freq(), b"?", b"Not decoded: FX.25 block, too many errors");
+                            let mut e = log_event(heard_at, b"?", b"Not decoded: FX.25 block, too many errors");
                             e.unread = false;
                             store.log(&e);
                         }
@@ -194,7 +234,7 @@ impl Aprs {
             if let Some((from, text)) = rx.inbound.filter(|(f, t)| !store.message_heard(f.as_bytes(), rx.inbound_id.as_bytes(), t.as_bytes())) {
                 app.notify_message(from.as_bytes(), text.as_bytes()); // INBOX-3.1
                 store.message_to_us(from.as_bytes(), text.as_bytes(), rx.inbound_id.as_bytes());
-                store.log(&log_event(app.aprs_freq(), from.as_bytes(), text.as_bytes())); // INBOX-6
+                store.log(&log_event(heard_at, from.as_bytes(), text.as_bytes())); // INBOX-6
             }
             if let Some((peer, text, st)) = rx.state {
                 store.message_state(peer.as_bytes(), text.as_bytes(), st);
@@ -204,7 +244,7 @@ impl Aprs {
             }
             if let Some(by) = rx.echo {
                 msgs::digipeated(app, by.as_bytes()); // APRS-36
-                store.log(&log_event(app.aprs_freq(), by.as_bytes(), b"digipeated our frame")); // APRS-36.1: findable later
+                store.log(&log_event(heard_at, by.as_bytes(), b"digipeated our frame")); // APRS-36.1: findable later
             }
             if rx.changed || rx.state.is_some() {
                 extra.changed();
@@ -228,6 +268,7 @@ impl Aprs {
                 match self.clear.poll(now_ms, busy, r) {
                     Clear::Wait => {}
                     Clear::Send => {
+                        self.kiss_tx = false;
                         self.tx = if transmit::data_key(app, SLOT_C, extra.cfg().power, what.as_bytes()) { Tx::Keying { at_ms: now_ms, beacon: what == "Beacon" } } else { Tx::Idle };
                     }
                     Clear::GiveUp => {
@@ -240,35 +281,83 @@ impl Aprs {
             }
             &Tx::Keying { at_ms, beacon } => {
                 if live.tx.keyed && live.tx.slot == SLOT_C {
+                    if self.kiss_tx {
+                        kissq::arm_burst(); // the DSP task sends whatever is queued behind this frame before it unkeys
+                    }
                     AFSK_TX.signal(self.frame);
                     if beacon {
                         extra.aprs.beacon_sent(now_s); // APRS-53: on the Sent page
                         extra.changed();
                     }
-                    self.tx = Tx::Playing { at_ms: now_ms };
+                    self.play_since = now_ms;
+                    self.kiss_done_seen = kissq::finished();
+                    self.tx = Tx::Playing;
                 } else if now_ms.wrapping_sub(at_ms) > KEY_WAIT_MS {
                     transmit::data_unkey(app, SLOT_C); // refused by the Radio task (its toast says why)
+                    if self.kiss_tx {
+                        kissq::abandon_on_air();
+                        self.kiss_tx = false;
+                    }
                     self.tx = Tx::Idle;
                 }
             }
-            Tx::Playing { at_ms } => {
-                if AFSK_DONE.try_take().is_some() || now_ms.wrapping_sub(*at_ms) > PLAY_WAIT_MS {
+            Tx::Playing => {
+                // A frame that finishes while the carrier is up extends the deadline. Once the timeout has
+                // unkeyed, nothing further counts: the DSP task is stopping, and this turn waits for it.
+                if self.kiss_tx && !self.kiss_cut {
+                    let n = kissq::finished();
+                    if n != self.kiss_done_seen {
+                        self.kiss_done_seen = n; // that frame is out: the next one has its own 6 s
+                        self.play_since = now_ms;
+                    }
+                }
+                if AFSK_DONE.try_take().is_some() {
+                    if !self.kiss_cut {
+                        transmit::data_unkey(app, SLOT_C);
+                    }
+                    self.kiss_tx = false;
+                    self.kiss_cut = false;
+                    kissq::end_burst();
+                    self.tx = Tx::Idle;
+                } else if !self.kiss_cut && now_ms.wrapping_sub(self.play_since) > PLAY_WAIT_MS {
                     transmit::data_unkey(app, SLOT_C);
-                    self.tx = Tx::Idle;
+                    if self.kiss_tx {
+                        // The frames still queued are dropped. One whose bits finish after this is not echoed,
+                        // and the next key-up waits until the modulator has stopped.
+                        kissq::stop_burst();
+                        self.kiss_cut = true;
+                    } else {
+                        self.tx = Tx::Idle;
+                    }
                 }
             }
-            // KISS-2: the app's frame, exempt from the 30 s spacing, once the channel is clear (p-persistence).
-            // KISS-13: a frame the channel stays busy for gives up after APRS-10's 5 s (the client resends as it
-            // sees fit), so it neither waits for ever nor holds back the frames after it.
-            Tx::Idle if kiss_on && self.kiss_q.is_some() && now_ms.wrapping_sub(self.kiss_at) >= CLEAR_WAIT_MS => self.kiss_q = None,
-            Tx::Idle if kiss_on && self.kiss_q.is_some() => {
-                let busy = live.slots[SLOT_C as usize].carrier; // SQL-13.1
-                let r = self.random();
-                if self.access.may_send(&self.params, now_ms, busy, r) {
-                    self.frame = self.kiss_q.take().unwrap();
-                    if transmit::data_key(app, SLOT_C, extra.cfg().power, b"KISS") {
-                        extra.kiss_sent(); // APRS-17.2
-                        self.tx = Tx::Keying { at_ms: now_ms, beacon: false };
+            // KISS-2: the host's frame, exempt from the 30 s spacing, once the channel is clear (p-persistence,
+            // once per key-up). KISS-13: a frame the channel stays busy for gives up after APRS-10's 5 s (the
+            // client resends as it sees fit), and only that frame, so the one behind it gets its own wait.
+            Tx::Idle if kiss_on && kissq::has_queued() => {
+                if !self.kiss_waiting {
+                    self.kiss_waiting = true;
+                    self.kiss_at = now_ms;
+                }
+                if now_ms.wrapping_sub(self.kiss_at) >= CLEAR_WAIT_MS {
+                    kissq::drop_oldest_queued();
+                    self.kiss_waiting = false;
+                } else {
+                    let busy = live.slots[SLOT_C as usize].carrier; // SQL-13.1
+                    let r = self.random();
+                    if self.access.may_send(&self.params, now_ms, busy, r) {
+                        if let Some(f) = kissq::take_for_air() {
+                            self.frame = f;
+                            self.kiss_waiting = false;
+                            if transmit::data_key(app, SLOT_C, extra.cfg().power, b"KISS") {
+                                extra.kiss_sent(); // APRS-17.2: the first frame of the key-up; the rest as they start
+                                kissq::set_tail(self.params.closing_flags());
+                                self.kiss_tx = true;
+                                self.tx = Tx::Keying { at_ms: now_ms, beacon: false };
+                            } else {
+                                kissq::abandon_on_air();
+                            }
+                        }
                     }
                 }
             }
@@ -285,8 +374,8 @@ impl Aprs {
                     extra.changed();
                 }
                 if t.len > 0 {
-                    // APRS-45: our own frames as FX.25 when 0 5 9 5 says so (a digipeat goes out plain).
-                    // APRS-48, APRS-49: 0 5 9 3's delay and 0 5 9 4's level for our own frames (KISS's frames keep the host's)
+                    // APRS-45: our own frames as FX.25 when 0 5 8 5 says so (a digipeat goes out plain).
+                    // APRS-48, APRS-49: 0 5 8 3's delay and 0 5 8 4's level for our own frames (KISS's frames keep the host's)
                     self.frame = Frame { len: t.len as u16, txdelay_10ms: cfg.txdelay_10ms(), fx25: cfg.fx25_for(t.what), level: cfg.tx_level.min(2), b: [0; FRAME_MAX] };
                     self.frame.b[..t.len].copy_from_slice(&out[..t.len]);
                     self.clear.start(now_ms);

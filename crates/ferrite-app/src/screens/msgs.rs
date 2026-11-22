@@ -298,7 +298,7 @@ const PUNCT: &[u8] = b".,?!'/-@:";
 /// Compose's text is the draft's, unless a quick message is being edited (TEXT-7) or the comment (APRS-50).
 const DRAFT: u8 = 255;
 const COMMENT: u8 = 254;
-/// APRS-57: auto reply's text (0 5 9 9).
+/// APRS-57: auto reply's text (0 5 8 9).
 const REPLY: u8 = 253;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -385,7 +385,7 @@ impl Compose {
         self.edit == COMMENT
     }
 
-    /// APRS-57: auto reply's text in the editor (0 5 9 9).
+    /// APRS-57: auto reply's text in the editor (0 5 8 9).
     pub fn reply_edit() -> Self {
         Compose { field: 1, edit: REPLY, ..Compose::new() }
     }

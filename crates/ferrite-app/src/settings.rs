@@ -107,10 +107,10 @@ pub const POWER_ON: [&str; 3] = ["Off", "Callsign", "Text"];
 /// Boot screen (0 7 3 3).
 pub const BOOT_SCREENS: [&str; 2] = ["Logo", "Owner card"];
 /// The cable port (0 9 2 3, TERM-2): auto picks from the first bytes; the others force one.
-pub const CABLE_PORTS: [&str; 3] = ["Auto", "Link", "Terminal"]; // KISS on the cable is 0 5 8 alone (decision 386)
-/// 0 5 8's values (KISS-6): which port is the KISS TNC.
+pub const CABLE_PORTS: [&str; 3] = ["Auto", "Link", "Terminal"]; // KISS on the cable is 0 3 7 alone (decision 386)
+/// 0 3 7's values (KISS-6): which port is the KISS TNC.
 pub const KISS_PORTS: [&str; 3] = ["Off", "Cable", "Bluetooth"];
-/// 0 5 9 7 (WATCH-17.3, decision 295): who wins a chip shared with the APRS slot. 0, the default, APRS first.
+/// 0 5 8 7 (WATCH-17.3, decision 295): who wins a chip shared with the APRS slot. 0, the default, APRS first.
 pub const APRS_SHARE: [&str; 2] = ["APRS first", "A\u{b7}B first"];
 
 /// SAT-22 (decision 341): the satellite options' minimum elevation, whole degrees: a pass whose highest point is
@@ -157,8 +157,10 @@ pub struct Settings {
     pub bt: bool,
     /// 0 9 2 3: what the cable carries, an index into [`CABLE_PORTS`] (TERM-2).
     pub cable_port: u8,
-    /// 0 5 8: the KISS TNC's port, an index into [`KISS_PORTS`] (KISS-6).
+    /// 0 3 7 1: the KISS TNC's port, an index into [`KISS_PORTS`] (KISS-6).
     pub kiss_port: u8,
+    /// 0 3 7 2: the KISS TNC's frequency in 5 kHz units; 0 = the region's. Not the APRS frequency.
+    pub kiss_f5k: u16,
     /// 0 4 5 1 (US and Canada only).
     pub same: bool,
     /// 0 4 2 (DEC-4, DEC-18): the pager decoder on or off, its frequency, and the one capcode it keeps (0: every
@@ -324,18 +326,18 @@ pub struct Settings {
     /// 0.9.4's 0 9 5 (`sq_chip`, true = the chip), kept in its stored place so the fields after it stay put; read
     /// and ignored.
     pub sq_chip_old: bool,
-    /// 0 5 9 6: C starts muted in APRS mode (APRS-2, APRS-15.2); \* on C in APRS mode flips it.
+    /// 0 5 8 6: C starts muted in APRS mode (APRS-2, APRS-15.2); \* on C in APRS mode flips it.
     pub aprs_mute: bool,
     /// 0 4 3 DTMF decode (DEC-6): the digits heard on a slot's card.
     pub dtmf_rx: bool,
-    /// 0 5 9 7 (WATCH-17.3, decision 295): [`APRS_SHARE`]: 0 APRS first (APRS mode's C takes long turns on a chip
+    /// 0 5 8 7 (WATCH-17.3, decision 295): [`APRS_SHARE`]: 0 APRS first (APRS mode's C takes long turns on a chip
     /// it shares, the other slots short looks), 1 A·B first (WATCH-17.2's turns; decision 313 renamed Voice first).
     pub aprs_share: u8,
     /// 0 2 5 Local zone (CHAN-34, decision 326): an index into [`crate::local::RANGES`], 0 Off; 50 km by default.
     pub local: u8,
     /// SAT-22 (decision 341): the pass list's minimum elevation, an index into [`SAT_MIN_EL`]; 10° by default.
     pub sat_min_el: u8,
-    /// 0 5 9 8 Decode log (APRS-56): each packet heard but not decoded goes to the event log. Off by default.
+    /// 0 5 8 8 Decode log (APRS-56): each packet heard but not decoded goes to the event log. Off by default.
     pub decode_log: bool,
 }
 
@@ -429,12 +431,12 @@ pub const COORD_FORMATS: [&str; 4] = ["Decimal", "DDM", "DMS", "Grid square"];
 pub const SAME_CODES: usize = 8;
 
 impl Settings {
-    /// KISS-6: the cable carries raw KISS (0 5 8 on Cable).
+    /// KISS-6: the cable carries raw KISS (0 3 7 on Cable).
     pub fn kiss_on_cable(&self) -> bool {
         self.kiss_port == 1
     }
 
-    /// KISS-5, KISS-6: Bluetooth carries raw KISS (0 5 8 on Bluetooth).
+    /// KISS-5, KISS-6: Bluetooth carries raw KISS (0 3 7 on Bluetooth).
     pub fn kiss_on_bt(&self) -> bool {
         self.kiss_port == 2
     }
@@ -468,6 +470,7 @@ impl Settings {
         bt: false,
         cable_port: 0,
         kiss_port: 0,
+        kiss_f5k: 0,
         same: true,
         pocsag_on: false,
         pocsag_freq: 43_998_750,
@@ -562,7 +565,7 @@ impl Settings {
     /// which overflowed on a bad record (found in the settings table refactor). Most other list
     /// settings are read modulo their list and need nothing here.
     pub fn sanitize(&mut self) {
-        // Decision 386: 0 9 2 3's KISS (3) did what 0 5 8 on Cable does: a radio saved with it keeps KISS on the cable
+        // Decision 386: 0 9 2 3's KISS (3) did what 0 3 7 on Cable does: a radio saved with it keeps KISS on the cable
         if self.cable_port == 3 {
             (self.cable_port, self.kiss_port) = (0, 1);
         }

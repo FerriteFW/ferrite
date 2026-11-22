@@ -25,7 +25,7 @@ pub const DAC_HZ: u32 = 48_000;
 /// 71 % 3.03-3.09 kHz with twist -0.18 dB, so 5500 x 0.71. (In the voice set-up MIC AGC holds it near 4 kHz: 8000
 /// made 4.35 kHz, 5500 4.0 kHz.)
 pub const AFSK_AMP: i16 = 3_900;
-/// APRS-49: 0 5 9 4's levels around it (deviation is linear in the amplitude): Low about 2.5 kHz, Mid 3.0 kHz
+/// APRS-49: 0 5 8 4's levels around it (deviation is linear in the amplitude): Low about 2.5 kHz, Mid 3.0 kHz
 /// (`AFSK_AMP`), High about 3.5 kHz. A named static: the DSP task reads it, so it sits in fast flash (slowcheck).
 pub static AFSK_AMPS: [i16; 3] = [3_250, AFSK_AMP, 4_550];
 

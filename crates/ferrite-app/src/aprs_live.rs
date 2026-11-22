@@ -1,7 +1,7 @@
 //! The radio's APRS task logic (manual chapter 25, roadmap 5b-5d): AX.25 frames from the AFSK decoder in, frames
 //! for the modulator out. The heard list (APRS-3, APRS-4: its details from flash but for the most recent, APRS-4.5), messages to us acked (APRS-6), ours tried
 //! on APRS-13's schedule until an ack, beacons by the beacon mode (APRS-24) and after voice (APRS-27), the
-//! fill-in digipeater (APRS-12, APRS-26: off unless asked), the path (0 5 9 1), APRS-9's 30 s spacing and
+//! fill-in digipeater (APRS-12, APRS-26: off unless asked), the path (0 5 8 1), APRS-9's 30 s spacing and
 //! APRS-20's wait for the band relay; a message heard again stored once (APRS-32), queries answered (APRS-33,
 //! APRS-35), rejections (APRS-34). Pure logic: the firmware's UI task feeds it frames and ticks it once a second
 //! (the store and the App are there); the host tests run the same code on recorded audio. The simulators keep
@@ -1258,7 +1258,7 @@ impl AprsLive {
         t
     }
 
-    /// Our frame with 0 5 9 1's path (APRS-26).
+    /// Our frame with 0 5 8 1's path (APRS-26).
     fn framed(&self, me: Address, dest: &[u8; 6], info: &[u8], what: &'static str, cfg: &AprsCfg, out: &mut [u8; FRAME_MAX], t: Tick) -> Tick {
         let names = cfg.path();
         let mut path = [me; 2];
@@ -1508,7 +1508,7 @@ fn crc16(mut crc: u16, b: u8) -> u16 {
     crc
 }
 
-/// APRS-56: the event log's words for a packet heard but not decoded (0 5 9 8 on): the sender's best guess as
+/// APRS-56: the event log's words for a packet heard but not decoded (0 5 8 8 on): the sender's best guess as
 /// the name (`?` for each character a bit error spoiled), and "Not decoded: 84 B, peak 35%, >APRS,WIDE1-1" (its
 /// length with the FCS, the audio's peak then as a share of full scale, its destination and path). Only a miss
 /// with an address field is logged ([`miss_logged`]).
@@ -1653,7 +1653,7 @@ mod tests {
     }
 
     /// APRS-44: a frame that came as FX.25 marks its station with the bytes corrected (the station screen's Path
-    /// row); the station's next plain frame clears it. APRS-45: our own frames take 0 5 9 5's check bytes, a
+    /// row); the station's next plain frame clears it. APRS-45: our own frames take 0 5 8 5's check bytes, a
     /// digipeat none.
     #[test]
     fn fx25_heard_and_sent() {
@@ -2221,7 +2221,7 @@ mod tests {
         assert!(Frame::parse(&out[..t.len]).unwrap().digis()[0].repeated);
     }
 
-    /// 0 5 9 1: the path our frames ask for.
+    /// 0 5 8 1: the path our frames ask for.
     #[test]
     fn path_setting() {
         let mut out = [0u8; FRAME_MAX];

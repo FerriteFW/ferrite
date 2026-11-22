@@ -130,7 +130,7 @@ pub enum Job {
 
 /// The APRS record: the settings (4), the quick messages (each a length, 0xFF for the factory text, and 67
 /// bytes), then the settings added later (path, digipeater, beacon after voice with telemetry as its bit 1
-/// (APRS-54) and the beacon text's rate as bits 2-3 (APRS-50.1), the SSID: [`APRS_MORE`]), then the custom path (0 5 9 2, zero-padded: [`APRS_PATH`]), then FX.25 on transmit (0 5 9 5, APRS-45:
+/// (APRS-54) and the beacon text's rate as bits 2-3 (APRS-50.1), the SSID: [`APRS_MORE`]), then the custom path (0 5 8 2, zero-padded: [`APRS_PATH`]), then FX.25 on transmit (0 5 8 5, APRS-45:
 /// [`APRS_FX25`]), the message sound, symbol, TX delay and level, then the comment and ambiguity
 /// ([`APRS_COMMENT`]), then Mic-E ([`APRS_MIC_E`]), then auto reply ([`APRS_REPLY`]). A record from before them
 /// is shorter and reads them as their defaults.

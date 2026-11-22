@@ -610,7 +610,8 @@ impl SimCore {
                 if let Some((from, text)) = n.inbound {
                     app.notify(from.as_bytes(), text.as_bytes(), false); // APRS-6
                     store.message_in(true, from.as_bytes(), text.as_bytes(), 0);
-                    store.log(&log_event(Src::Aprs, 2, app.aprs_freq(), from.as_bytes(), text.as_bytes())); // INBOX-6
+                    let at = if app.kiss_on() { app.kiss_freq() } else { app.aprs_freq() };
+                    store.log(&log_event(Src::Aprs, 2, at, from.as_bytes(), text.as_bytes())); // INBOX-6
                 }
                 for (peer, text, st) in n.states.into_iter().flatten() {
                     store.message_state(peer.as_bytes(), text.as_bytes(), st);

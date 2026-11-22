@@ -770,9 +770,9 @@ fn command_line_set_and_get() {
     r.cmd("set 0 1 1 off");
     assert_eq!(r.app.watch, 0);
     // WATCH-17.3 (decision 313): "A·B first" typed with a full stop for its middle dot
-    r.cmd("set 0 5 9 7 A.B first");
+    r.cmd("set 0 5 8 7 A.B first");
     assert_eq!(r.app.settings().aprs_share, 1, "{}", r.bottom());
-    r.cmd("set 0 5 9 7 APRS first");
+    r.cmd("set 0 5 8 7 APRS first");
     assert_eq!(r.app.settings().aprs_share, 0, "{}", r.bottom());
     // Typed values: the pager capcode (DEC-4), the custom APRS path (APRS-26), Popups (DEC-7).
     r.cmd("set 0 4 2 3 1234567");
@@ -781,12 +781,12 @@ fn command_line_set_and_get() {
     assert_eq!(r.app.set.pocsag_cap, 0);
     r.cmd("set 0 4 2 3 9999999");
     assert!(r.bottom().contains("a capcode up to 2097151"), "{}", r.bottom());
-    r.cmd("set 0 5 9 2 wide2-2");
+    r.cmd("set 0 5 8 2 wide2-2");
     assert_eq!(r.app.aprs_cfg().custom_text(), b"WIDE2-2");
     assert_eq!(r.app.aprs_cfg().path, crate::aprs::PATH_CUSTOM);
-    r.cmd("set 0 5 9 2 WIDE1-1,WIDE2-1,WIDE3-1");
+    r.cmd("set 0 5 8 2 WIDE1-1,WIDE2-1,WIDE3-1");
     assert!(r.bottom().contains("one or two entries"), "{}", r.bottom());
-    r.cmd("set 0 5 9 2 None");
+    r.cmd("set 0 5 8 2 None");
     assert!(r.app.aprs_cfg().custom_text().is_empty());
     r.cmd("set 0 4 4 off");
     assert!(!r.app.set.popups);
@@ -2813,7 +2813,7 @@ fn command_answers_golden() {
         "set 0 7 1 Daylight", "set 0 7 1 night", "set 0 7 1 purple", "set 0 7 1", "set 7 1 Dark", "set 0 9 4 EU",
         "set 0 9 3 1 Off", "set 0 8 8 5 off", "set 0 8 8 5 on", "set 0 4 2 3 1234", "set 0 4 2 3 99999999",
         "set 0 4 2 3 none", "set 0 5 5 3 Hello there", "set 0 5 5 3 none", "set 0 5 4 144.390", "set 0 5 4 abc",
-        "set 0 4 2 2 439.9875", "set 0 5 9 2 wide1-1,wide2-1", "set 0 5 9 2 bad,,bad,,", "set 0 5 9 2 none",
+        "set 0 4 2 2 439.9875", "set 0 5 8 2 wide1-1,wide2-1", "set 0 5 8 2 bad,,bad,,", "set 0 5 8 2 none",
         "set 0 6 9 FN25", "set 0 6 9 45.5 -75.6", "set 0 6 9 north", "set 0 6 9 none", "set 0 7 7 1", "set 0 7 7 x",
         "set 0 7 2 10", "set 0 1 1 Off", "set", "set x",
         "ch", "ch 12", "ch 999", "ch 4001", "ch x", "ch 12 power high", "ch 12 power ultra", "ch 12 tone 100.0",

@@ -233,13 +233,13 @@ fn aprs_symbol_delay_and_level() {
     assert_eq!(t.app.aprs_cfg().symbol_chars(), (b'/', b'['), "what beacons always sent");
     change(&mut t.app, &[5, 5, 2], 1);
     assert_eq!(t.app.aprs_cfg().symbol_chars(), (b'/', b'>'), "Car");
-    change(&mut t.app, &[5, 9, 3], 2);
+    change(&mut t.app, &[5, 8, 3], 2);
     assert_eq!(t.app.aprs_cfg().txdelay_10ms(), TXDELAY_DEFAULT + 10, "50 ms a step");
-    change(&mut t.app, &[5, 9, 3], -100);
+    change(&mut t.app, &[5, 8, 3], -100);
     assert_eq!(t.app.aprs_cfg().txdelay_10ms(), 10, "100 ms at least");
-    change(&mut t.app, &[5, 9, 4], 1);
+    change(&mut t.app, &[5, 8, 4], 1);
     assert_eq!(t.app.aprs_cfg().tx_level, 2);
-    crate::screens::groups::reset(&mut t.app, &[5, 9, 4]);
+    crate::screens::groups::reset(&mut t.app, &[5, 8, 4]);
     assert_eq!(t.app.aprs_cfg().tx_level, 1);
     let a = ferrite_core::audio::AFSK_AMPS;
     assert!(a[0] < a[1] && a[1] == ferrite_core::audio::AFSK_AMP && a[1] < a[2]);

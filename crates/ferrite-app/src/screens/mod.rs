@@ -64,6 +64,7 @@ pub mod gps;
 pub mod groups;
 pub mod help;
 pub mod hf;
+pub mod kiss;
 pub mod home;
 pub mod info;
 pub mod keytest;
@@ -179,6 +180,8 @@ pub enum Screen {
     Dtmf(dtmf::DtmfPad),
     /// Satellite mode (chapter 28a): the pass list, pass page and pointing page.
     Sat(sat::SatScr),
+    /// KISS TNC (MENU 0 3 7): on only while this screen is up.
+    Kiss(kiss::Kiss),
 }
 
 /// Runs `$e` with `$s` bound to the screen's state: the one place that lists every variant.
@@ -239,6 +242,7 @@ macro_rules! each {
             Screen::AutoReply($s) => $e,
             Screen::Dtmf($s) => $e,
             Screen::Sat($s) => $e,
+            Screen::Kiss($s) => $e,
         }
     };
 }

@@ -1208,6 +1208,11 @@ impl App {
             if matches!(self.screen, Screen::Compose(c) if !c.quick_edit_on()) {
                 return screens::msgs::send(self, store);
             }
+            // The KISS screen's PTT does nothing, including while its frequency box is up: the host keys
+            // the transmitter. The box is its own screen, and slot C is still the APRS slot underneath.
+            if screens::kiss::up(self) {
+                return;
+            }
             if self.aprs_slot(s) {
                 return self.open(Dest::Compose);
             }
@@ -1503,10 +1508,10 @@ impl App {
     /// Opens a screen by where it is in the manual ([`Dest`]), remembering this one for BACK. Screens not built
     /// yet open as a "coming" placeholder ([`screens::nav::enter`]).
     pub fn open(&mut self, dest: Dest) {
-        // PWR-24.4: Low Power Mode has no scan, band scope, counter, broadcast, HF mode or crossband (two VFOs):
+        // PWR-24.4: Low Power Mode has no scan, band scope, counter, broadcast, HF mode, KISS or crossband (two VFOs):
         // nothing that keeps a receiver sweeping or listening; menus, editing and tone search stay.
         if self.low_power()
-            && matches!(dest, Dest::Scan | Dest::BandScope | Dest::Counter | Dest::HfMode | Dest::Crossband)
+            && matches!(dest, Dest::Scan | Dest::BandScope | Dest::Counter | Dest::HfMode | Dest::KissMode | Dest::Crossband)
         {
             return self.lpm_refuse();
         }

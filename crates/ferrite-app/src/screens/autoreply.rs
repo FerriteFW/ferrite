@@ -1,4 +1,4 @@
-//! Auto reply (APRS-57; MENU 0 5 9 9): a message to us gets one reply, after a delay, from the stations a pattern
+//! Auto reply (APRS-57; MENU 0 5 8 9): a message to us gets one reply, after a delay, from the stations a pattern
 //! takes. Four rows: on or off, who it answers (`*` everyone, `VE7*` every call starting so, or one callsign-SSID),
 //! the delay (10 s to 2 min) and the reply. ▲▼ pick a row; the knob (and ◀▶, KEY-19) changes on/off and the
 //! delay; OK changes them too, or types the pattern (the text editor) or the reply (the message editor, 45
@@ -109,7 +109,7 @@ impl View for AutoReply {
         } else {
             txt!("One reply per station, then none for 30 min.")
         };
-        app.help_txt(lcd, 300 - 52, 48, help, b"MENU 0 5 9 9");
+        app.help_txt(lcd, 300 - 52, 48, help, b"MENU 0 5 8 9");
     }
 
     fn hints(self, _: &App) -> Hints {

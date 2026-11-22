@@ -4,6 +4,7 @@
 pub mod aprs;
 pub mod decode;
 pub mod dsp;
+pub mod kissq;
 pub mod gps;
 pub mod input;
 pub mod link;

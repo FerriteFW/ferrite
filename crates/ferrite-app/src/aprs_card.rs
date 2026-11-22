@@ -1,7 +1,7 @@
 //! Home's APRS card (APRS-17, decisions 181 and 313): what slot C shows while it is the APRS slot, for the drawing
 //! (`screens::home`) and the readback (`uistate`, TERM-37) alike.
 //!
-//! The header names the holder ("APRS Mode", "APRS KISS", "APRS Beacon") and, like every card, the state at its
+//! The header names the holder ("APRS Mode", "KISS", "APRS Beacon") and, like every card, the state at its
 //! right; while C shares the VHF chip, who wins it beside the state ("APRS first", "A·B first": [`App::aprs_priority`]).
 //!
 //! The large card (M3, decision 313): the frequency at the compact cards' size with "3 heard · 11 /hr" at its right;
@@ -148,7 +148,7 @@ impl App {
         (boot, hour, data.station_ram(0).filter(|s| since_boot(s, up_s)))
     }
 
-    /// APRS-21, WATCH-17.3: who wins the VHF chip C shares with A or B (0 5 9 7), for the header beside the state:
+    /// APRS-21, WATCH-17.3: who wins the VHF chip C shares with A or B (0 5 8 7), for the header beside the state:
     /// "APRS first" (grey) or "A·B first" (amber, true); None while C has its chip to itself.
     pub fn aprs_priority(&self) -> Option<(&'static str, bool)> {
         self.aprs_shared()?;

@@ -313,7 +313,7 @@ fn settings_round_trip_keeps_protected() {
 }
 
 /// PWR-24.1 (decision 328): a settings write sets Low Power Mode (0 7 7 2) and its Auto level (0 7 7 3) as the menu
-/// does: On goes in at once, Off comes out; the KISS port stays the radio's (LINK-5, KISS-7).
+/// does: On goes in at once, Off comes out; the KISS port and its frequency stay the radio's (LINK-5, KISS-7).
 #[test]
 fn settings_write_sets_low_power_mode() {
     let mut pc = Pc::new(true);
@@ -327,10 +327,10 @@ fn settings_write_sets_low_power_mode() {
         let n = w.n;
         assert_eq!(pc.write(what::SETTINGS, 0, &out[..n], 100).0, 0);
     };
-    let kiss = pc.app.set.kiss_port;
-    (s.lpm, s.lpm_below, s.kiss_port) = (1, 30, 2);
+    let (kiss, freq) = (pc.app.set.kiss_port, pc.app.set.kiss_f5k);
+    (s.lpm, s.lpm_below, s.kiss_port, s.kiss_f5k) = (1, 30, 2, 29_018);
     put(&mut pc, &s);
-    assert_eq!((pc.app.set.lpm, pc.app.set.lpm_below, pc.app.set.kiss_port), (1, 30, kiss));
+    assert_eq!((pc.app.set.lpm, pc.app.set.lpm_below, pc.app.set.kiss_port, pc.app.set.kiss_f5k), (1, 30, kiss, freq));
     assert!(pc.app.low_power(), "On: in at once");
     s.lpm = 0;
     put(&mut pc, &s);
@@ -437,8 +437,8 @@ fn cable_routing() {
     assert_eq!(route(2, true, 0), Route::Term);
 }
 
-/// Decision 386: 0 9 2 3 has no KISS any more (0 5 8 is KISS's one switch); a radio saved with it (3) comes back
-/// with KISS on the cable by 0 5 8 and the cable port on Auto, as it behaved.
+/// Decision 386: 0 9 2 3 has no KISS any more (0 3 7 is KISS's one switch); a radio saved with it (3) comes back
+/// with KISS on the cable by 0 3 7 and the cable port on Auto, as it behaved.
 #[test]
 fn cable_port_kiss_moves_to_kiss_tnc() {
     let mut s = crate::settings::Settings::DEFAULT;
@@ -990,6 +990,7 @@ fn beacon_from_the_link() {
     assert!(pc.st.beacon_asked(), "the APRS task asked for a beacon");
     assert_eq!(pc.ask(msg::BEACON, &[1]).0, Status::BadArg as u8);
     (pc.app.set.bt, pc.app.set.kiss_port) = (true, 2);
+    pc.app.open(crate::screens::nav::Dest::KissMode);
     let (s, a) = pc.ask(msg::BEACON, &[]);
     assert_eq!((s, text(&a)), (Status::Invalid as u8, "KISS on: the app sends"));
 }

@@ -31,7 +31,7 @@ use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
 
 static VOICE_FIRST: AtomicBool = AtomicBool::new(false);
 
-/// WATCH-17.3 (decision 295): 0 5 9 7 is APRS first (the default); the UI task passes the setting on each frame.
+/// WATCH-17.3 (decision 295): 0 5 8 7 is APRS first (the default); the UI task passes the setting on each frame.
 pub fn aprs_first() -> bool {
     !VOICE_FIRST.load(Relaxed)
 }

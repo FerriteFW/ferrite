@@ -7,6 +7,7 @@ use super::{Cx, Hints, View};
 use crate::chan::ChannelStore;
 use crate::keys::{KeyEvent, Press};
 use crate::sstv::{headers, mode_secs, views, SEND_MODES, FORCE_MODES, VIEW_CARD};
+use crate::slot::Item;
 use crate::{App, Screen};
 use ferrite_core::keys::Key;
 use ferrite_core::sstv::{self, Header, HEADER_LEN, LINES, ROW_LEN, SLOTS, TEST_CARD, WIDTH};
@@ -25,6 +26,10 @@ pub struct Sstv {
 /// The picture area: its top and its height (256 lines at three quarters).
 const TOP: i32 = 22;
 const H: i32 = 192;
+/// SSTV-5.5: the picture while sending, half size: 160 x 128 at x 40.
+const TX_W: i32 = 160;
+const TX_H: i32 = 128;
+const TX_X: i32 = 40;
 /// A picture coming in: the source rows drawn again each time more arrive (more than come between two passes).
 const RECENT: i32 = 16;
 
@@ -98,6 +103,80 @@ impl Sstv {
             }
             lcd.window(0, TOP + d, 239, TOP + d);
             lcd.push_buf(&px);
+        }
+    }
+
+    /// SSTV-5.5: while sending, the picture at half size (160 x 128 for 256 lines), centred: rows `from..to` of it,
+    /// source row and column `d * 2` and `x * 2`.
+    fn draw_small(app: &App, lcd: &mut impl Panel, st: &impl ChannelStore, from: i32, to: i32) {
+        let v = app.sstv.view;
+        let call = app.set.callsign.as_bytes();
+        let mut src = [0u8; ROW_LEN];
+        let mut px = [0u16; TX_W as usize];
+        let (r0, r1) = lcd.rows();
+        for d in from.max(r0 - TOP)..to.min(r1 - TOP + 1) {
+            let sy = (d * 2) as u16;
+            if v == VIEW_CARD {
+                for (x, p) in px.iter_mut().enumerate() {
+                    let (r, g, b) = sstv::test_card(x * 2, sy as usize, call);
+                    *p = ferrite_core::usstv::color::rgb565(r, g, b);
+                }
+            } else {
+                if !st.data().data_read(sstv::row_addr(v, sy), &mut src) {
+                    return;
+                }
+                for (x, p) in px.iter_mut().enumerate() {
+                    let sx = (x * 2).min(WIDTH - 1);
+                    *p = u16::from_le_bytes([src[2 * sx], src[2 * sx + 1]]);
+                }
+            }
+            lcd.window(TX_X, TOP + d, TX_X + TX_W - 1, TOP + d);
+            lcd.push_buf(&px);
+        }
+    }
+
+    /// SSTV-5.5: the screen while a picture goes out: the picture small, the mode with the slot and power, the TX
+    /// frequency large, a progress bar, the line and the time left (TEXT, not dimmed).
+    fn render_tx(app: &mut App, lcd: &mut impl Panel, st: &impl ChannelStore, t: crate::sstv::Tx) {
+        let (_, total) = Self::avail(app, st);
+        let height = (total as i32 / 2).min(TX_H);
+        if app.dirty(R_FRAME, Mix::new().h(&0x55u8).h(&app.sstv.view).h(&app.sstv.ver).h(&total).get()) {
+            ferrite_ui::canvas::banded(lcd, 0, TOP, 240, w::HINT_Y - 4 - TOP, BG, |b| Self::draw_small(app, b, st, 0, height));
+            app.dirty(R_HEAD, 0);
+        }
+        let f = app.tuned_freq(app.active);
+        let mut pw = Buf::<16>::new();
+        app.item_text(Item::Power, false, &mut pw);
+        let mut side = Buf::<24>::new();
+        let _ = ufmt::uwrite!(side, "{} \u{b7} {}", ["A", "B", "C"][app.active as usize % 3], Bytes(pw.as_bytes()));
+        let mut title = Buf::<40>::new();
+        let _ = ufmt::uwrite!(title, "Sending {}", sstv::mode_name(t.vis));
+        if app.dirty(R_INFO, Mix::new().h(&0x55u8).h(&title).h(&f).h(&side).get()) {
+            ferrite_ui::canvas::banded(lcd, 0, TOP + TX_H + 4, 240, 62, BG, |lcd| {
+                let y = TOP + TX_H + 4;
+                lcd.text4(8, y + 18, title.as_bytes(), &UI_15B, TEXT, BG);
+                let sw = text4_width(side.as_bytes(), &UI_12);
+                lcd.text4(232 - sw, y + 17, side.as_bytes(), &UI_12, SUB, BG);
+                w::freq(lcd, 8, 232, y + 54, f, &DIG_28, &DIG_17, TEXT, SUB, BG);
+            });
+        }
+        let frames = ferrite_core::usstv::Mode::by_vis(t.vis).map_or(1, |m| m.frames).max(1);
+        let line = (app.sstv.frame + 1).min(frames);
+        let left = mode_secs(t.vis).saturating_sub(app.now.wrapping_sub(t.at_ms) / 1000);
+        if app.dirty(R_SUB, Mix::new().h(&line).h(&frames).h(&left).get()) {
+            let y = TOP + TX_H + 70;
+            ferrite_ui::canvas::banded(lcd, 0, y, 240, 40, BG, |lcd| {
+                lcd.fill_r(8, y + 2, 224, 8, 4, LINE);
+                let wd = (224 * line as i32 / frames as i32).clamp(8, 224);
+                lcd.fill_r(8, y + 2, wd, 8, 4, BLUE);
+                let mut a = Buf::<24>::new();
+                let _ = ufmt::uwrite!(a, "Line {} of {}", line, frames);
+                lcd.text4(8, y + 30, a.as_bytes(), &UI_12, TEXT, BG);
+                let mut b = Buf::<16>::new();
+                let _ = ufmt::uwrite!(b, "{}:{}{} left", left / 60, if left % 60 < 10 { "0" } else { "" }, left % 60);
+                let bw = text4_width(b.as_bytes(), &UI_12);
+                lcd.text4(232 - bw, y + 30, b.as_bytes(), &UI_12, TEXT, BG);
+            });
         }
     }
 
@@ -223,6 +302,9 @@ impl View for Sstv {
 
     fn render(self, app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
         let st = cx.store;
+        if let Some(t) = app.sstv.tx {
+            return Self::render_tx(app, lcd, st, t);
+        }
         // the picture: all of it when the view or its picture changed (about 30 ms), else a received picture's
         // newest rows as they come
         // SSTV-3.2: the lines the picture has are in the key too, should they change under the same view (a header

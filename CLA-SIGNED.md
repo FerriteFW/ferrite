@@ -4,3 +4,4 @@ Everyone below agreed to the contributor agreement in [CLA.md](CLA.md), which co
 
 | Name | GitHub | Agreed on | Version | Where |
 | --- | --- | --- | --- | --- |
+| Josh Samuelson | samuelson | 11/21/2026 | 0.9.5 | Milwaukie, OR |

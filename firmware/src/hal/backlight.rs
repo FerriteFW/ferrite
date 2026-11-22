@@ -97,6 +97,17 @@ pub fn keypad(permille: u16) {
     wr(TMR2 + TMR_C2DT, counts(clock::tree(), permille));
 }
 
+/// The keypad light's PWM at `hz` (0: the normal [`PWM_HZ`]) by TMR2's prescaler, the duty unchanged (a bench test,
+/// ferrite#74: whether a lower frequency is heard in the audio). A speed switch keeps it (`retime` writes PR only).
+#[cfg(feature = "bench")]
+pub fn keypad_hz(hz: u16) {
+    let div = if hz == 0 { 0 } else { (PWM_HZ / hz as u32).clamp(1, 65_536) - 1 };
+    if rd(TMR2 + TMR_DIV) != div {
+        wr(TMR2 + TMR_DIV, div);
+        wr(TMR2 + TMR_SWEVT, 1);
+    }
+}
+
 /// PWR-24.9: both PWMs at 25 kHz from the new tree, at the same duties (interrupts are off). Before `init`
 /// (TMR8 unclocked) nothing to do. Period and duty are loaded together by a software event (the counters restart:
 /// one short period, unseen).

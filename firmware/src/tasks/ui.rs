@@ -1258,6 +1258,8 @@ pub async fn task() {
         );
         backlight::set(bl); // DISP-16, DISP-23: 0 while dark
         backlight::keypad(keys); // DISP-22: the same level, 0 while off
+        #[cfg(feature = "bench")]
+        backlight::keypad_hz(lcdb.key_hz);
         let leds = app.leds(&live, &dev);
         LED_RED.write(leds.red == LED_ACTIVE_HIGH);
         LED_GREEN.write(leds.green == LED_ACTIVE_HIGH);

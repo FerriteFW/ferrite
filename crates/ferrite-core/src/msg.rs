@@ -584,6 +584,8 @@ pub enum LcdSet {
     Bl(Option<u8>),
     /// The keypad light at this %, or the settings' (None).
     Keys(Option<u8>),
+    /// The keypad light's PWM frequency in Hz (0: the normal 25 kHz), for interference tests (ferrite#74).
+    KeyHz(u16),
     /// Time one whole-screen fill (153,600 bytes) on the panel bus, then redraw; the answer carries it.
     Bus,
 }
@@ -598,6 +600,8 @@ pub struct LcdBench {
     pub fps: u8,
     pub bl: Option<u8>,
     pub keys: Option<u8>,
+    /// The keypad light's PWM in Hz, 0 the normal one (`lcd keyhz`).
+    pub key_hz: u16,
     /// The last `lcd bus` (none yet: `None`): the whole-screen fill's microseconds and the MCU clock in MHz.
     pub bus: Option<(u32, u16)>,
 }
@@ -615,6 +619,7 @@ impl LcdBench {
             LcdSet::Fps(n) => self.fps = n.min(20),
             LcdSet::Bl(p) => self.bl = p.map(|p| p.min(100)),
             LcdSet::Keys(p) => self.keys = p.map(|p| p.min(100)),
+            LcdSet::KeyHz(h) => self.key_hz = h,
             LcdSet::Bus => {} // the UI task fills in `bus`
         }
         self

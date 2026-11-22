@@ -1907,6 +1907,8 @@ fn debug_lcd() {
     for (cmd, want) in [
         ("lcd bl 30", LcdSet::Bl(Some(30))),
         ("lcd keys 0", LcdSet::Keys(Some(0))),
+        ("lcd keyhz 2000", LcdSet::KeyHz(2000)),
+        ("lcd keyhz normal", LcdSet::KeyHz(0)),
         ("lcd bl normal", LcdSet::Bl(None)),
         ("lcd fps 1", LcdSet::Fps(1)),
         ("lcd fps 0", LcdSet::Fps(0)),

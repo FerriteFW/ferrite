@@ -2269,7 +2269,7 @@ fn bk_save(t: &mut Toks) -> Result<Done, No> {
 /// `lcd bus` times a whole-screen fill.
 fn lcd(t: &mut Toks) -> Result<Done, No> {
     use ferrite_core::msg::LcdSet;
-    const USAGE: Txt = txt!("lcd [idle|partial|sleep on|off] [fps 0-20] [bl|keys 0-100|normal] [paint old|new] [bus] [reset]");
+    const USAGE: Txt = txt!("lcd [idle|partial|sleep on|off] [fps 0-20] [bl|keys 0-100|normal] [keyhz 100-25000|normal] [paint old|new] [bus] [reset]");
     fn word<'a>(t: &mut Toks<'a>) -> Result<Option<&'a [u8]>, No> {
         match t.next()? {
             None => Ok(None),
@@ -2311,6 +2311,8 @@ fn lcd(t: &mut Toks) -> Result<Done, No> {
             _ if same(what, b"fps") => LcdSet::Fps(pct(20).ok_or_else(|| t.say_t(USAGE))?.unwrap_or(0)),
             _ if same(what, b"bl") => LcdSet::Bl(pct(100).ok_or_else(|| t.say_t(USAGE))?),
             _ if same(what, b"keys") => LcdSet::Keys(pct(100).ok_or_else(|| t.say_t(USAGE))?),
+            // ferrite#74: the keypad light's PWM frequency, to hear whether a lower one reaches the audio
+            _ if same(what, b"keyhz") => LcdSet::KeyHz(if same(arg, b"normal") { 0 } else { number(arg).filter(|n| (100..=25_000).contains(n)).ok_or_else(|| t.say_t(USAGE))? as u16 }),
             _ => return Err(t.say_t(USAGE)),
         }
     };

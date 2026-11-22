@@ -144,11 +144,17 @@ fn speaker(on: bool) {
     AMP_EN[1].write(on);
 }
 
+/// SND-12.7: this key-up uses the radio's own mic with a speaker mic connected (its PTT pressed), so PB8, which
+/// silences the radio's mic, isn't held on for the speaker mic. Set by `mic_route` and cleared at the unkey.
+static RADIO_MIC: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
 /// The shared audio stage (PB8). Held on while a speaker mic is connected (SND-12): stock's arbiter and PTT
-/// handler never clear it while its PC15 flag is set.
+/// handler never clear it while its PC15 flag is set. Not during a key-up on the radio's mic (SND-12.7).
 #[inline(never)]
 fn pb8(on: bool) {
-    AMP_EN[0].write(on || crate::chan::ACCESSORY.load(core::sync::atomic::Ordering::Relaxed) & ferrite_core::acc::ON != 0);
+    use core::sync::atomic::Ordering::Relaxed;
+    let held = crate::chan::ACCESSORY.load(Relaxed) & ferrite_core::acc::ON != 0 && !RADIO_MIC.load(Relaxed);
+    AMP_EN[0].write(on || held);
 }
 
 /// What the Radio task keeps of a slot's settings for receiving (the transmit side is the `tx` build's).

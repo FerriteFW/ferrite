@@ -43,6 +43,12 @@ impl Radio {
     pub(super) fn mic_route(&mut self) -> u8 {
         let src = ferrite_radio::ptt::mic_src(acc_plugged(), ptt_pressed());
         crate::board::ACC_ROUTE.write(src == ferrite_core::msg::MIC_SRC_SPK);
+        // SND-12.7: the radio's mic is silenced while PB8 is on; a speaker mic holds it on, so let it go.
+        let radio = src == ferrite_core::msg::MIC_SRC_RADIO;
+        super::RADIO_MIC.store(radio, core::sync::atomic::Ordering::Relaxed);
+        if radio {
+            crate::board::AMP_EN[0].write(false);
+        }
         src
     }
 
@@ -441,6 +447,10 @@ impl Radio {
         self.live.tx.keyed = false;
         // SND-12.7: the speaker mic's route back to stock's (PE1 follows the detect).
         crate::board::ACC_ROUTE.write(acc_plugged());
+        // SND-12.7: after a key-up on the radio's mic, PB8 held for the speaker mic again (its audio, SND-12).
+        if super::RADIO_MIC.swap(false, core::sync::atomic::Ordering::Relaxed) {
+            super::pb8(false);
+        }
         self.live.tx.mic_src = 0;
         log(b"tx unkey", 0);
     }

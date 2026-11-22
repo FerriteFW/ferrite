@@ -298,3 +298,29 @@ fn pd120_averages_its_line_pairs() {
     let (r, g, b) = from565(px[160]);
     assert!([r, g, b].iter().all(|&v| (100..=155).contains(&v)), "a mid grey: {r} {g} {b}");
 }
+
+/// The last columns (`score` leaves the edges out): a scan that runs into a tone (Robot 36's colour into the next
+/// sync) had the tone smeared into its last pixels, a green edge on every line (Nov 22, 2026). Each mode's right
+/// edge, clean, within reach of its whole picture's error.
+#[test]
+#[allow(clippy::needless_range_loop)] // x is the card's coordinate too
+fn right_edge_clean() {
+    for &m in MODES.iter() {
+        let (got, mean, _) = run(m, 24_000, 0.0, true);
+        let card = Card { h: sent_h(m) };
+        let (mut s, mut n) = (0.0f32, 0.0f32);
+        for (y, px) in &got.lines {
+            for x in WIDTH - 4..WIDTH {
+                let (r, g, b) = from565(px[x]);
+                let (r0, g0, b0) = expected(m, &card, x, *y as usize);
+                s += ((r as f32 - r0 as f32).abs() + (g as f32 - g0 as f32).abs() + (b as f32 - b0 as f32).abs()) / 3.0;
+                n += 1.0;
+            }
+        }
+        let edge = s / n;
+        println!("{:10} right edge {edge:.1} (whole {mean:.1})", m.name);
+        assert!(edge < RIGHT_EDGE_MAX, "{}: the right edge {edge:.1} off", m.name);
+    }
+}
+/// Under 10 in every mode with the guard (PD120 9.8); without it Robot 36 was 54.9, Scottie 15.9, PD90 15.2, PD120 20.
+const RIGHT_EDGE_MAX: f32 = 11.0;

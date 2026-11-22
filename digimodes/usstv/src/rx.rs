@@ -18,6 +18,12 @@ pub trait Sink {
 }
 
 const BOX: usize = 16;
+/// The end of a scan that runs straight into a tone (a sync, a porch, Robot 36's separator) is left out, this long
+/// (µs): the filters smear the tone back into its last pixels, a green edge on every line where the sync's 1200 Hz
+/// follows Robot 36's colour (Nov 22, 2026: the right edge 53 levels off on a clean Robot 36 loop; 63 to 24 with
+/// this, and Martin M1 7.2 to 3.3, Scottie S1 9.3 to 3.5, PD90 11.9 to 9.0). Those pixels repeat the last one before
+/// (`Acc::levels` fills gaps from the left).
+const SYNC_GUARD_US: f32 = 600.0;
 
 /// A second-order section (RBJ's cookbook, transposed direct form II).
 #[derive(Clone, Copy)]
@@ -427,7 +433,10 @@ impl Decoder {
         }
         if let Seg::Scan(ch, _) = segs[i.seg] {
             let x = ((rel - i.seg_start) / (i.seg_end - i.seg_start) * WIDTH as f32) as usize;
-            if x < WIDTH {
+            let next = segs.get(i.seg + 1).or_else(|| i.mode.frame(i.frame.wrapping_add(1)).first());
+            let into_tone = matches!(next, Some(Seg::Tone(..)));
+            let guarded = into_tone && rel >= i.seg_end - SYNC_GUARD_US * i.per_us;
+            if x < WIDTH && !guarded {
                 let s = slot(ch);
                 self.acc.sum[s][x] = self.acc.sum[s][x].saturating_add(level(f) as u16);
                 self.acc.n[s][x] = self.acc.n[s][x].saturating_add(1);

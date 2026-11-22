@@ -491,3 +491,29 @@ fn downlink_retunes_only_past_a_kilohertz() {
     assert!(moved > 3 * crate::sat::DOWN_STEP, "Doppler at the pass's peak moves the downlink: {moved}");
     assert!(sent.len() < 20, "retunes in a minute at the peak: {} ({sent:?})", sent.len());
 }
+
+/// SAT-22.1: hold 2 on the pass page cycles the satellite's uplink power, Low, Mid, High and round, as hold 2 cycles
+/// TX power on home (KEY-11): a popup names it, the options page shows the same value, the radio gets it for the
+/// next key-up; a tap of 2 still picks the second transponder.
+#[test]
+fn hold_2_cycles_the_uplink_power() {
+    let p = a_pass(1);
+    let mut t = sat_app(p.aos + 120);
+    t.open(crate::screens::nav::Dest::Satellites);
+    t.wait(3000);
+    t.app.sat.cur = Some(p);
+    t.app.screen = Screen::Sat(SatScr::pass_of(&p));
+    t.wait(1100);
+    let _ = t.cmds();
+    assert_eq!(t.app.sat_data().prefs(1).power, 0, "Low to start");
+    for want in [1u8, 2, 0] {
+        t.hold(Key::Digit(2));
+        let pop = t.app.toast.filter(|x| x.center).map(|x| (std::string::String::from_utf8_lossy(x.head.as_bytes()).into_owned(), std::string::String::from_utf8_lossy(x.body.as_bytes()).into_owned()));
+        assert_eq!(pop.as_ref().map(|p| p.0.as_str()), Some("Uplink power"), "{pop:?}");
+        assert_eq!(pop.map(|p| p.1).as_deref(), Some(["Low", "Mid", "High"][want as usize]));
+        assert_eq!(t.app.sat_data().prefs(1).power, want);
+        t.wait(1100);
+        assert!(sat_cmds(&mut t).iter().any(|c| matches!(c, RadioCmd::SatTone { power, .. } if *power == want)), "the next key-up's power: {want}");
+    }
+    assert!(matches!(t.app.screen(), Screen::Sat(s) if s.page == 1 && s.opt == 0), "still on the pass page");
+}

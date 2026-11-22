@@ -206,6 +206,18 @@ impl View for SatScr {
     }
 
     fn key(self, app: &mut App, e: KeyEvent, _: &impl ChannelStore) {
+        // SAT-22.1: hold 2 on the pass or pointing page cycles the satellite's uplink power, as hold 2 cycles TX
+        // power on home (KEY-11); the same value as the options page's, used from the next key-up.
+        if e.press == Press::Long && e.key == Key::Digit(2) && self.opt == 0 && self.picker == 0 && self.page() != LIST {
+            let mut pr = app.sat_data().prefs(self.sat);
+            pr.power = (pr.power + 1) % 3;
+            set_prefs(app, self.sat, pr);
+            let name: &[u8] = [&b"Low"[..], b"Mid", b"High"][pr.power as usize];
+            let body: &[u8] = if self.page & TX != 0 { b"from the next key-up" } else { name };
+            let head: &[u8] = if self.page & TX != 0 { [&b"Uplink power: Low"[..], b"Uplink power: Mid", b"Uplink power: High"][pr.power as usize] } else { b"Uplink power" };
+            app.show_popup(head, body);
+            return;
+        }
         if !matches!(e.press, Press::Short | Press::Repeat) {
             return;
         }

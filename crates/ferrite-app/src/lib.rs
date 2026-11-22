@@ -1208,8 +1208,9 @@ impl App {
             if matches!(self.screen, Screen::Compose(c) if !c.quick_edit_on()) {
                 return screens::msgs::send(self, store);
             }
-            // The KISS screen's PTT does nothing: the host keys the transmitter.
-            if matches!(self.screen, Screen::Kiss(_)) {
+            // The KISS screen's PTT does nothing, including while its frequency box is up: the host keys
+            // the transmitter. The box is its own screen, and slot C is still the APRS slot underneath.
+            if screens::kiss::up(self) {
                 return;
             }
             if self.aprs_slot(s) {

@@ -212,7 +212,7 @@ fn kiss_frequency_is_not_the_aprs_frequency() {
 }
 
 /// The mode screen: the knob, the keypad and # tune the KISS frequency, SIDE2 flips the port, OK opens the
-/// box, PTT does nothing, and Low Power Mode will not open it.
+/// box, PTT does nothing on the screen or the box, and Low Power Mode will not open it.
 #[test]
 fn kiss_mode_screen() {
     use crate::screens::Screen;
@@ -248,6 +248,11 @@ fn kiss_mode_screen() {
     a.tap(Key::Menu);
     assert!(matches!(a.app.screen(), Screen::Entry(_)), "OK types the frequency");
     assert!(a.app.kiss_on(), "the mode stays under the box");
+    a.app.key_down(Key::PTT, a.t, &a.s);
+    assert!(a.app.radio.keyed.is_none());
+    assert!(matches!(a.app.screen(), Screen::Entry(_)), "PTT on the frequency box stays there");
+    a.t += 50;
+    a.app.key_up(Key::PTT, a.t, &a.s);
     a.tap(Key::Exit);
     assert!(matches!(a.app.screen(), Screen::Kiss(_)));
     a.app.key_down(Key::PTT, a.t, &a.s);

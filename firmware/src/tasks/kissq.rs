@@ -17,6 +17,8 @@ const FREE: u8 = 0;
 const QUEUED: u8 = 1;
 const ON_AIR: u8 = 2;
 const DONE: u8 = 3;
+/// On air when the key-up was cut. Not echoed: the host retries it.
+const CUT: u8 = 4;
 
 const EMPTY: Frame = Frame { len: 0, txdelay_10ms: 0, fx25: 0, level: 1, b: [0; FRAME_MAX] };
 
@@ -110,6 +112,9 @@ impl Ring {
     }
 
     fn pop_done(&mut self) -> Option<Frame> {
+        while self.len > 0 && self.state[self.head as usize] == CUT {
+            self.free_head();
+        }
         if self.len == 0 || self.state[self.head as usize] != DONE {
             return None;
         }
@@ -124,6 +129,18 @@ impl Ring {
         }
     }
 
+    /// The frame on air is not echoed.
+    fn cut_on_air(&mut self) {
+        let mut i = self.head;
+        for _ in 0..self.len {
+            if self.state[i as usize] == ON_AIR {
+                self.state[i as usize] = CUT;
+                return;
+            }
+            i = (i + 1) % WINDOW as u8;
+        }
+    }
+
     fn clear(&mut self) {
         *self = Self::new();
     }
@@ -135,6 +152,9 @@ static HOLD: Mutex<RefCell<Frame>> = Mutex::new(RefCell::new(EMPTY));
 
 /// Set by the UI task immediately before it hands the DSP task the first frame of a KISS key-up.
 static BURST: AtomicBool = AtomicBool::new(false);
+/// The UI task unkeyed this window on the play timeout. The modulator sends nothing more, and a frame still
+/// on air is not echoed.
+static CUT_BURST: AtomicBool = AtomicBool::new(false);
 /// Closing flags for the last frame of the key-up (at least 3). The UI task writes it from the host's TX tail.
 static TAIL: AtomicU16 = AtomicU16::new(3);
 /// Continuation frames whose audio has started, for the UI task to count as sent.
@@ -187,6 +207,26 @@ pub fn arm_burst() {
     BURST.store(true, Relaxed);
 }
 
+/// The play timeout dropped the carrier. Frames still queued are dropped. The one on air is not echoed, and
+/// [`KissBits`] sends nothing after its next bit.
+pub fn stop_burst() {
+    critical_section::with(|cs| {
+        CUT_BURST.store(true, Relaxed);
+        let mut ring = RING.borrow_ref_mut(cs);
+        ring.drop_queued();
+        ring.cut_on_air();
+    });
+}
+
+/// The DSP task has finished the key-up ([`super::dsp::AFSK_DONE`]). The next one may send.
+pub fn end_burst() {
+    CUT_BURST.store(false, Relaxed);
+}
+
+fn burst_cut() -> bool {
+    CUT_BURST.load(Relaxed)
+}
+
 pub fn take_burst() -> bool {
     BURST.swap(false, Relaxed)
 }
@@ -204,8 +244,16 @@ pub fn finished() -> u8 {
 }
 
 fn finish_on_air() {
-    let found = critical_section::with(|cs| RING.borrow_ref_mut(cs).finish_on_air());
-    if found {
+    let echoed = critical_section::with(|cs| {
+        let mut ring = RING.borrow_ref_mut(cs);
+        if CUT_BURST.load(Relaxed) {
+            ring.cut_on_air();
+            false
+        } else {
+            ring.finish_on_air()
+        }
+    });
+    if echoed {
         FINISHED.fetch_add(1, Relaxed);
         crate::chan::TERM_WAKE.signal(());
     }
@@ -227,7 +275,8 @@ fn stage_next() -> Option<&'static [u8]> {
 
 /// Bits of one KISS key-up. The first frame carries the TX delay and one closing flag. Each frame queued
 /// behind it follows with no delay of its own, so that flag opens it. Then the TX tail, and if a frame
-/// arrived during the tail it goes out before the key-up ends.
+/// arrived during the tail it goes out before the key-up ends. Once [`stop_burst`] has run, the next bit is
+/// the last: nothing queued goes out, and the frame still on air is not echoed.
 pub struct KissBits<'a> {
     src: Src<'a>,
 }
@@ -247,6 +296,12 @@ impl<'a> KissBits<'a> {
 impl Iterator for KissBits<'_> {
     type Item = u8;
     fn next(&mut self) -> Option<u8> {
+        if burst_cut() {
+            // Drop the Framer before anything else looks at the ring slot it was sending.
+            self.src = Src::End;
+            critical_section::with(|cs| RING.borrow_ref_mut(cs).cut_on_air());
+            return None;
+        }
         loop {
             match &mut self.src {
                 Src::Frame(f) => {
@@ -266,6 +321,9 @@ impl Iterator for KissBits<'_> {
             self.src = Src::End;
             if from_frame {
                 finish_on_air();
+            }
+            if burst_cut() {
+                return None;
             }
             if let Some(bytes) = stage_next() {
                 self.src = Src::Frame(Framer::new(bytes, 0, 1));

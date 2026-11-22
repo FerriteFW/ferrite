@@ -45,7 +45,8 @@ enum Tx {
     Clearing { what: &'static str },
     /// Keyed for [`Aprs::frame`], waiting for the Radio task; whether it is a beacon (APRS-53's Sent page).
     Keying { at_ms: u32, beacon: bool },
-    /// On the air. The deadline is [`Aprs::play_since`]: a KISS frame finishing moves it.
+    /// On the air. The deadline is [`Aprs::play_since`]: a KISS frame finishing moves it. A KISS window that
+    /// runs out of time stays here, unkeyed, until the DSP task stops, so the next key-up is a new one.
     Playing,
 }
 
@@ -64,6 +65,8 @@ pub struct Aprs {
     kiss_at: u32,
     /// The key-up in progress is a KISS window, not one of our own frames.
     kiss_tx: bool,
+    /// The play timeout unkeyed this KISS window. [`Tx::Playing`] waits for the DSP task to finish it.
+    kiss_cut: bool,
     /// When the transmission on air last made progress: a KISS frame finishing extends it.
     play_since: u32,
     /// [`kissq::finished`] last seen, so each frame that finishes moves `play_since`.
@@ -76,7 +79,7 @@ pub struct Aprs {
 impl Aprs {
     pub fn new() -> Self {
         let params = kiss::Params { tx_delay: TXDELAY_10MS, ..kiss::Params::default() };
-        Aprs { on: false, last_s: u32::MAX, tx: Tx::Idle, frame: Frame { len: 0, txdelay_10ms: 0, fx25: 0, level: 1, b: [0; FRAME_MAX] }, kiss: kiss::Decoder::new(), params, kiss_waiting: false, kiss_at: 0, kiss_tx: false, play_since: 0, kiss_done_seen: 0, access: kiss::Access::default(), clear: ClearWait::default(), seed: 0x2545_F491 }
+        Aprs { on: false, last_s: u32::MAX, tx: Tx::Idle, frame: Frame { len: 0, txdelay_10ms: 0, fx25: 0, level: 1, b: [0; FRAME_MAX] }, kiss: kiss::Decoder::new(), params, kiss_waiting: false, kiss_at: 0, kiss_tx: false, kiss_cut: false, play_since: 0, kiss_done_seen: 0, access: kiss::Access::default(), clear: ClearWait::default(), seed: 0x2545_F491 }
     }
 
     /// A byte from the KISS port, the cable or Bluetooth (KISS-6; TERM-2's route on the cable).
@@ -299,15 +302,33 @@ impl Aprs {
                 }
             }
             Tx::Playing => {
-                let n = kissq::finished();
-                if n != self.kiss_done_seen {
-                    self.kiss_done_seen = n; // that frame is out: the next one has its own 6 s
-                    self.play_since = now_ms;
+                // A frame that finishes while the carrier is up extends the deadline. Once the timeout has
+                // unkeyed, nothing further counts: the DSP task is stopping, and this turn waits for it.
+                if self.kiss_tx && !self.kiss_cut {
+                    let n = kissq::finished();
+                    if n != self.kiss_done_seen {
+                        self.kiss_done_seen = n; // that frame is out: the next one has its own 6 s
+                        self.play_since = now_ms;
+                    }
                 }
-                if AFSK_DONE.try_take().is_some() || now_ms.wrapping_sub(self.play_since) > PLAY_WAIT_MS {
-                    transmit::data_unkey(app, SLOT_C);
+                if AFSK_DONE.try_take().is_some() {
+                    if !self.kiss_cut {
+                        transmit::data_unkey(app, SLOT_C);
+                    }
                     self.kiss_tx = false;
+                    self.kiss_cut = false;
+                    kissq::end_burst();
                     self.tx = Tx::Idle;
+                } else if !self.kiss_cut && now_ms.wrapping_sub(self.play_since) > PLAY_WAIT_MS {
+                    transmit::data_unkey(app, SLOT_C);
+                    if self.kiss_tx {
+                        // The frames still queued are dropped. One whose bits finish after this is not echoed,
+                        // and the next key-up waits until the modulator has stopped.
+                        kissq::stop_burst();
+                        self.kiss_cut = true;
+                    } else {
+                        self.tx = Tx::Idle;
+                    }
                 }
             }
             // KISS-2: the host's frame, exempt from the 30 s spacing, once the channel is clear (p-persistence,

@@ -204,7 +204,11 @@ pub fn make() -> (Option<(u32, u32)>, &'static Store) {
     let (spi, id) = match W25q::new(Flash::new(), &mut BusyDelay, WRITE_OK) {
         Ok(mut f) => {
             let id = (f.jedec_id(), f.size());
-            (Some(f.release()), Some(id))
+            let mut spi = f.release();
+            // SAFE-1.5: a restart (a fault, a hang, the updater) doesn't reset the chip: a program or erase started
+            // before it may still be running. Wait for it (busy-polled, as stock waits) before anything is read.
+            let _ = Chip::wait_idle(&mut spi);
+            (Some(spi), Some(id))
         }
         Err(_) => (None, None),
     };

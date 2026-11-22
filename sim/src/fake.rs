@@ -119,6 +119,10 @@ pub struct FakeRadio {
     /// The engines, as the Radio task runs them.
     watcher: Watch,
     scans: [Scan; 3],
+    /// SCAN-27: each slot's range preset (lo, hi, step) while its scan is one, armed for the next scan; the skips.
+    preset: [Option<(Freq10, Freq10, Freq10)>; 3],
+    preset_arm: u8,
+    pub preset_skips: std::vec::Vec<Freq10>,
     /// Channel scans: the sets the UI sends and the frequencies it answers with, as the Radio task keeps them.
     chans: ferrite_core::scan::ChanScans,
     seq: TxSeq,
@@ -205,6 +209,9 @@ impl FakeRadio {
             watch: 0b111,
             watcher: Watch::new(),
             scans,
+            preset: [None; 3],
+            preset_arm: 0,
+            preset_skips: std::vec::Vec::new(),
             chans: ferrite_core::scan::ChanScans::new(),
             seq: TxSeq::new(),
             path,
@@ -320,11 +327,33 @@ impl FakeRadio {
                 if on {
                     s.hits = 0;
                     s.skips = 0;
-                    // The fake scans its band (a range): the fast pass (SCAN-21).
+                    // The fake scans its band (a range), or a range preset set for this scan (SCAN-27): the fast
+                    // pass (SCAN-21).
+                    if self.preset_arm & 1 << i != 0 {
+                        self.preset_arm &= !(1 << i);
+                    } else {
+                        self.preset[i] = None;
+                    }
+                    let r = range_of(self.preset[i], &self.preset_skips, s.freq);
                     self.scans[i].fast = true;
-                    self.scans[i].start(scan_pos(s.freq), now);
+                    self.scans[i].start(ferrite_core::scan::range_pos(&r, s.freq), now);
                 } else {
                     self.scans[i].stop();
+                }
+            }
+            RadioCmd::ScanRangeSet { slot, what, f } => {
+                use ferrite_core::msg::{RANGE_HI, RANGE_LO, RANGE_SKIP, RANGE_STEP};
+                let i = slot as usize % 3;
+                match what {
+                    RANGE_LO => {
+                        self.preset[i] = Some((f, f, 1));
+                        self.preset_arm |= 1 << i;
+                        self.preset_skips.clear();
+                    }
+                    RANGE_HI => self.preset[i] = self.preset[i].map(|(lo, _, st)| (lo, f.max(lo), st)),
+                    RANGE_STEP => self.preset[i] = self.preset[i].map(|(lo, hi, _)| (lo, hi, f.max(1))),
+                    RANGE_SKIP => self.preset_skips.push(f),
+                    _ => {}
                 }
             }
             RadioCmd::Watch(m) => self.watch = m,
@@ -349,7 +378,7 @@ impl FakeRadio {
                 let o = if self.chans.is_on(i) {
                     self.chans.skip_once(i, &mut self.scans[i], now)
                 } else {
-                    self.scans[i].skip_once(&scan_range(self.live.slots[i].freq), now)
+                    self.scans[i].skip_once(&range_of(self.preset[i], &self.preset_skips, self.live.slots[i].freq), now)
                 };
                 self.scan_out(i, o);
             }
@@ -363,7 +392,7 @@ impl FakeRadio {
                 let o = if self.chans.is_on(i) {
                     self.chans.dir(i, &mut self.scans[i], up, now)
                 } else {
-                    self.scans[i].dir(up, &scan_range(self.live.slots[i].freq), now)
+                    self.scans[i].dir(up, &range_of(self.preset[i], &self.preset_skips, self.live.slots[i].freq), now)
                 };
                 self.scan_out(i, o);
             }
@@ -698,7 +727,7 @@ impl FakeRadio {
                 let o = if self.chans.is_on(i) {
                     self.chans.tick(i, &mut self.scans[i], now, open)
                 } else {
-                    self.scans[i].tick(&scan_range(self.live.slots[i].freq), now, open)
+                    self.scans[i].tick(&range_of(self.preset[i], &self.preset_skips, self.live.slots[i].freq), now, open)
                 };
                 self.scan_out(i, o);
             }
@@ -729,6 +758,14 @@ const SCAN_STEP: Freq10 = 2_500;
 fn scan_range(f: Freq10) -> Range<'static> {
     let b = &BANDS[band_of(f).unwrap_or(2)];
     Range { lo: b.lo, hi: b.hi - SCAN_STEP, step: SCAN_STEP, skipped: &[] }
+}
+
+/// A slot's scan range: its range preset with the skips (SCAN-27, SCAN-10), or its band's.
+fn range_of(preset: Option<(Freq10, Freq10, Freq10)>, skips: &[Freq10], f: Freq10) -> Range<'_> {
+    match preset {
+        Some((lo, hi, step)) => Range { lo, hi, step, skipped: skips },
+        None => scan_range(f),
+    }
 }
 
 /// Where `f` is in its scan range.

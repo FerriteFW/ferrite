@@ -357,14 +357,43 @@ impl Radio {
         }
     }
 
-    /// A scan on `slot`: its band from where it is, the fast pass (SCAN-21).
+    /// SCAN-27: one part of a range preset for `slot`'s next scan ([`RadioCmd::ScanRangeSet`]).
+    pub(super) fn scan_range_set(&mut self, slot: u8, what: u8, f: Freq10) {
+        use ferrite_core::msg::{RANGE_HI, RANGE_LO, RANGE_SKIP, RANGE_SKIPS, RANGE_STEP};
+        let i = slot as usize % SLOTS;
+        match what {
+            RANGE_LO => {
+                self.ranges[i] = Range { lo: f, hi: f, step: 1, skipped: &[] };
+                self.preset_arm |= 1 << i;
+                (self.preset_slot, self.preset_n) = (i as u8, 0);
+            }
+            RANGE_HI => self.ranges[i].hi = f.max(self.ranges[i].lo),
+            RANGE_STEP => self.ranges[i].step = f.max(1),
+            RANGE_SKIP if self.preset_slot as usize == i && (self.preset_n as usize) < RANGE_SKIPS => {
+                self.preset_skips[self.preset_n as usize] = f;
+                self.preset_n += 1;
+            }
+            _ => {}
+        }
+    }
+
+    /// A scan on `slot`: its band from where it is, or the range preset set for it, the fast pass (SCAN-21).
     pub(super) fn scan(&mut self, slot: u8, on: bool) {
         let i = slot as usize % SLOTS;
         let sl = &mut self.live.slots[i];
         sl.scanning = on;
         if on {
             (sl.hits, sl.skips) = (0, 0);
-            let r = scan::band_range(self.slots[i].freq);
+            // SCAN-27: a range preset set for this scan, or the band it's in (a band scan drops a preset's skips)
+            let r = if self.preset_arm & 1 << i != 0 {
+                self.preset_arm &= !(1 << i);
+                self.ranges[i]
+            } else {
+                if self.preset_slot as usize == i {
+                    self.preset_n = 0;
+                }
+                scan::band_range(self.slots[i].freq)
+            };
             self.ranges[i] = r;
             let sc = &mut self.scans[i];
             sc.fast = true; // the resume rule is the last ScanResume's (SCAN-5, SCAN-24)

@@ -268,6 +268,12 @@ struct Radio {
     hop: Hop,
     scans: [Scan; SLOTS],
     ranges: [Range<'static>; SLOTS],
+    /// SCAN-27: a slot whose next scan is the range set in `ranges` (a bit per slot), and the one preset's skips
+    /// (SCAN-10: for `preset_slot`'s range scan only).
+    preset_arm: u8,
+    preset_slot: u8,
+    preset_n: u8,
+    preset_skips: [Freq10; ferrite_core::msg::RANGE_SKIPS],
     /// Channel scans: each slot's set of channel numbers and the frequencies asked for (SCAN-3, SCAN-12,
     /// SCAN-22; decision 86).
     chans: scan::ChanScans,
@@ -814,6 +820,10 @@ pub async fn task() {
         hop: Hop::new(),
         scans: [Scan::new(); SLOTS],
         ranges: [scan::band_range(DEFAULT); SLOTS],
+        preset_arm: 0,
+        preset_slot: u8::MAX,
+        preset_n: 0,
+        preset_skips: [0; ferrite_core::msg::RANGE_SKIPS],
         chans: scan::ChanScans::new(),
         tuned: [None; 2],
         maybe_awake: 0,

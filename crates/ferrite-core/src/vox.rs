@@ -17,10 +17,10 @@ pub const MIC_STOCK: u8 = 0x24;
 /// writes the mic gain again.
 pub const MIC_DATA: u8 = 0x34;
 
-/// VOX-15: REG_7D[5:0] (0.5 dB a step) for Mic gain 1-9 (0 8 3), 2.5 dB a step: 9 is the field's top, 0x3F, 1 dB
-/// over stock's loudest (its setting High, the calibration's 0xF210 byte 0: 0x37 on both bench radios); 5 (the
-/// default) is 0x2B, about stock's Mid (0x2D); 1 is 0x17. A stock radio on High measured 340 Hz deviation against
-/// Ferrite's 71 Hz at the old 5 (0x25) with the same tone (decision 431, Nov 22, 2026).
+/// VOX-15: REG_7D[5:0] (0.5 dB a step) for Mic gain 1-9 (0 8 3), 2.5 dB a step: 9 (the default) is the field's
+/// top, 0x3F; 5 is 0x2B; 1 is 0x17. With the same 1 kHz tone, black on stock V0.29 (Mic Gain High) gave 75 Hz
+/// deviation, Ferrite on black 77-80 Hz at 0x2B and 259 Hz at 0x3F, another stock radio on High 340 Hz: the
+/// radios differ, so Ferrite starts at the top (decision 431, Nov 22, 2026).
 pub fn mic_reg(gain: u8) -> u8 {
     0x3F - (9 - gain.clamp(1, 9)) * 5
 }

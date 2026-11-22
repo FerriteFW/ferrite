@@ -458,3 +458,36 @@ fn every_satellite_page_draws() {
     t.hold(Key::Exit);
     assert_eq!(t.app.screen(), Screen::Home);
 }
+
+/// SAT-8.2 (ferrite#79): through the minute around a pass's highest point, where Doppler moves fastest, the downlink
+/// is retuned only once it has drifted 1 kHz from what the chip has (each retune is the chip's receive off and on,
+/// a click with monitor on), never every second; and still within 1 kHz of the true Doppler.
+#[test]
+fn downlink_retunes_only_past_a_kilohertz() {
+    let p = a_pass(1);
+    let mut t = sat_app(p.aos + p.tmax as u32 - 30);
+    t.open(crate::screens::nav::Dest::Satellites);
+    t.wait(3000); // predicted
+    t.app.sat.cur = Some(p);
+    t.app.screen = Screen::Sat(SatScr::pass_of(&p));
+    t.wait(1100);
+    let first = sat_cmds(&mut t).iter().rev().find_map(|c| if let RadioCmd::SatRx(f) = c { Some(*f) } else { None }).expect("tuned");
+    let (mut sent, mut last) = (std::vec![first], first);
+    for _ in 0..60 {
+        t.wait(1000);
+        for c in sat_cmds(&mut t) {
+            if let RadioCmd::SatRx(f) = c {
+                assert!(f.abs_diff(last) >= crate::sat::DOWN_STEP, "a retune under 1 kHz: {last} -> {f}");
+                sent.push(f);
+                last = f;
+            }
+        }
+        let (_, _, tp, pr) = t.app.sat_cur().expect("the pass");
+        let now = t.app.sat_now().unwrap();
+        let (want, _) = crate::sat::corrected(&tp, &t.app.sat_data().look(p.sat, now).unwrap_or_default(), &pr);
+        assert!(want.abs_diff(last) < crate::sat::DOWN_STEP, "the chip within 1 kHz of Doppler: {want} vs {last}");
+    }
+    let moved = sent.last().unwrap().abs_diff(first);
+    assert!(moved > 3 * crate::sat::DOWN_STEP, "Doppler at the pass's peak moves the downlink: {moved}");
+    assert!(sent.len() < 20, "retunes in a minute at the peak: {} ({sent:?})", sent.len());
+}

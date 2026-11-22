@@ -26,6 +26,12 @@ pub const ARM_MS: u32 = 2_000;
 /// SAT-8: the uplink is retuned this often while keyed (seconds): every 5 s until the bench shows the BK4829
 /// retunes cleanly while keyed, then every second.
 pub const TX_RETUNE_S: u32 = 5;
+/// SAT-8.2: the downlink is retuned only once Doppler has moved it this far from what the chip has (10 Hz units: 1
+/// kHz). Each retune needs the BK4829's receive off and on (a frequency write alone doesn't move it: black, Nov 21,
+/// 2026), a click with monitor on or a signal open (ferrite#79); at 10 Hz a step it retuned nearly every second.
+/// 1 kHz off is nothing to FM's filter; at a pass's fastest Doppler (about 150 Hz a second on 70 cm) that is a
+/// retune every 6 s or so, and before the rise much less.
+pub const DOWN_STEP: Freq10 = 100;
 /// The uplink's power names and meter bars on the keyed page, by TX-9 level (0 Low, the default, 1 Mid, 2 High:
 /// the satellite's choice, SAT-22).
 pub const POWER_NAMES: [&str; 3] = ["LOW", "MID", "HIGH"];
@@ -251,6 +257,8 @@ impl App {
         let (down, up) = corrected(&t, &l, &pr);
         let was = self.sat.sent;
         self.sat.sent_s = now;
+        // SAT-8.2: only past DOWN_STEP of drift (a key, or the first tune from SAT_IDLE, always)
+        let down = if force || was.0 == ferrite_core::msg::SAT_IDLE || down.abs_diff(was.0) >= DOWN_STEP { down } else { was.0 };
         if down != was.0 || force {
             self.out.push(RadioCmd::SatRx(down));
         }

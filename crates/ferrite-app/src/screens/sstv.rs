@@ -33,7 +33,12 @@ const TX_X: i32 = 40;
 /// A picture coming in: the source rows drawn again each time more arrive (more than come between two passes).
 const RECENT: i32 = 16;
 
+/// SSTV-1: refused while transmitting or repeating, as the satellite screen (SAT-1); a running scan stops.
 pub fn open(app: &mut App) -> Screen {
+    if app.radio.keyed.is_some() || app.radio.mode == super::activity::Mode::Xb {
+        app.show_toast(b"SSTV", if app.radio.keyed.is_some() { b"not keyed" } else { b"stop repeater first" }, false);
+        return app.screen;
+    }
     app.sstv_enter();
     Screen::Sstv(Sstv { send: None })
 }
@@ -285,7 +290,7 @@ impl View for Sstv {
             }
             (Key::Hash, Short) => app.sstv_force_next(),
             (Key::Exit, Short) => {
-                app.sstv_close();
+                app.sstv_close(st);
                 app.back();
             }
             _ => {}

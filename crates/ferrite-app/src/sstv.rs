@@ -116,7 +116,14 @@ impl App {
         self.sstv.view = VIEW_CARD;
         self.sstv.prep = true;
         self.sstv.ver = self.sstv.ver.wrapping_add(1);
-        self.out.push(RadioCmd::Watch(1 << self.active));
+        self.out.push(RadioCmd::Watch(self.watch_mask()));
+        // SSTV-1: a scan moving the slot would cut a picture: stopped where it is
+        for s in 0..crate::SLOTS as u8 {
+            if self.scan_mask & 1 << s != 0 {
+                self.out.push(RadioCmd::Scan { slot: s, on: false });
+                self.scan_mask &= !(1 << s);
+            }
+        }
     }
 
     /// After [`App::sstv_enter`], with the store (the UI task's next turn): the newest picture received shown, and
@@ -141,10 +148,14 @@ impl App {
         self.sstv_prepare(st);
     }
 
-    /// The screen closed: the decoders back, the watch as it was.
-    pub fn sstv_close(&mut self) {
+    /// The screen closed: the decoders back, the watch as it was. A picture still coming in ends there, marked
+    /// incomplete (SSTV-2.4), so its slot doesn't read as receiving for ever.
+    pub fn sstv_close(&mut self, st: &impl ChannelStore) {
         if !self.sstv.open {
             return;
+        }
+        if self.sstv.rx.is_some() {
+            self.sstv_event(Event::End(false), &[0; WIDTH], st);
         }
         self.sstv.open = false;
         self.sstv.prep = false;

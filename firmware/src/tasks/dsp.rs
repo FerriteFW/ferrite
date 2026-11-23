@@ -704,7 +704,8 @@ impl FlashPic {
             let mut h = [0xFFu8; HEADER_LEN];
             lines = (crate::store::part_read(slot_addr(s.src), &mut h)).then(|| Header::decode(&h)).flatten().and_then(|h| h.lines).unwrap_or(LINES as u16).max(1);
         }
-        let skip = (LINES as u16).saturating_sub(mode.lines) / 2;
+        // SSTV-5.3: the picture's own middle (a 256-line one sent in Robot 36 loses 8 at each end; a 240-line one none).
+        let skip = lines.saturating_sub(mode.lines) / 2;
         FlashPic { src: s.src, call: s.call, lines, skip, rows: [[0x80; ferrite_core::sstv::ROW_LEN]; 4], tag: [u16::MAX; 4] }
     }
 

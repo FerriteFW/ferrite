@@ -182,9 +182,9 @@ pub fn auto_tx(app: &mut App, slot: u8, what: &[u8]) -> bool {
         b"emergency frequency"
     } else if app.set.callsign.as_bytes().is_empty() {
         b"no callsign set"
-    } else if app.set.callsign.as_bytes().split(|&c| c == b'-').next().map_or(0, <[u8]>::len) > AX25_CALL && what != b"KISS" {
-        // SETUP-13: AX.25 carries 6; KISS frames carry the client's own addresses. An SSID typed into the callsign
-        // isn't counted: 0 5 5 1's replaces it (APRS-30).
+    } else if app.set.callsign.as_bytes().split(|&c| c == b'-').next().map_or(0, <[u8]>::len) > AX25_CALL && what != b"KISS" && what != b"SSTV" {
+        // SETUP-13: AX.25 carries 6; KISS frames carry the client's own addresses; SSTV draws it, any length. An
+        // SSID typed into the callsign isn't counted: 0 5 5 1's replaces it (APRS-30).
         b"callsign over 6"
     } else if let Some(r) = refusal(app, slot) {
         short(r).as_bytes()

@@ -19,6 +19,9 @@ use ferrite_core::msg::{DspCmd, LiveAll};
 const KEY_WAIT_MS: u32 = 3_000;
 /// The longest picture (Martin M1, 115 s) and some: a DSP task that never answers unkeys anyway.
 const PLAY_WAIT_MS: u32 = 140_000;
+/// SSTV-5: how long a send waits for the store's queued work (a slot's erase as the screen opens, about 2 s) before
+/// keying, so the picture's rows can be read as it goes; after this it goes anyway.
+const STORE_WAIT_MS: u32 = 5_000;
 
 enum Tx {
     Idle,
@@ -30,11 +33,13 @@ pub struct Sstv {
     /// What the DSP task was last told (None: not yet).
     on: Option<bool>,
     tx: Tx,
+    /// When a send started waiting for the store (SSTV-5), if it is.
+    wait_ms: Option<u32>,
 }
 
 impl Sstv {
     pub const fn new() -> Self {
-        Sstv { on: None, tx: Tx::Idle }
+        Sstv { on: None, tx: Tx::Idle, wait_ms: None }
     }
 
     /// Whether the next turn has anything to do (the screen open, a picture going out, news waiting).
@@ -46,7 +51,7 @@ impl Sstv {
     pub fn poll(&mut self, app: &mut App, store: &Store, live: &LiveAll, now_ms: u32) {
         // SSTV-1: the screen gone (BACK, or something took its place) and nothing going out: the decoders back
         if app.sstv.open && !matches!(app.screen(), Screen::Sstv(_)) && matches!(self.tx, Tx::Idle) && app.sstv.send.is_none() {
-            app.sstv_close();
+            app.sstv_close(store);
         }
         app.sstv_prepare(store); // SSTV-1: the slots read once the screen opened
         let want = app.sstv.open;
@@ -68,6 +73,12 @@ impl Sstv {
         match self.tx {
             Tx::Idle => {
                 if let Some(send) = app.sstv.send {
+                    // the store busy (an erase): its reads fail meanwhile and the rows would go out grey
+                    let since = *self.wait_ms.get_or_insert(now_ms);
+                    if store.has_jobs() && !app.sstv.stop && now_ms.wrapping_sub(since) < STORE_WAIT_MS {
+                        return;
+                    }
+                    self.wait_ms = None;
                     let slot = app.active();
                     let power = app.slot(slot).cfg().power;
                     if app.sstv.stop || !transmit::sstv_key(app, slot, power) {
@@ -79,6 +90,7 @@ impl Sstv {
             }
             Tx::Keying { at_ms, send, slot } => {
                 if live.tx.keyed && live.tx.slot == slot {
+                    SSTV_DONE.reset(); // an earlier picture's late end isn't this one's
                     SSTV_TX.signal(send);
                     app.sstv.send = None;
                     app.sstv_sending(&send);
@@ -99,6 +111,9 @@ impl Sstv {
                     SSTV_STOP.store(true, Relaxed);
                 }
                 let done = SSTV_DONE.try_take();
+                if done.is_none() && now_ms.wrapping_sub(at_ms) > PLAY_WAIT_MS {
+                    SSTV_STOP.store(true, Relaxed); // the DSP task stops playing too, not only the key
+                }
                 if done.is_some() || now_ms.wrapping_sub(at_ms) > PLAY_WAIT_MS {
                     transmit::data_unkey(app, slot);
                     app.sstv_sent(done.unwrap_or(false));

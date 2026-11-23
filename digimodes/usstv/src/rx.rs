@@ -495,7 +495,7 @@ impl Decoder {
             self.img = Some(i);
             return;
         }
-        if next >= i.mode.frames || i.missed > 12 {
+        if next >= i.mode.frames || i.missed >= 12 { // SSTV-2.4: 12 frames in a row without a sync
             self.last = Some((i.mode, i.mode.lines_of(i.frame).end, next >= i.mode.frames));
             sink.end(next >= i.mode.frames);
             return;

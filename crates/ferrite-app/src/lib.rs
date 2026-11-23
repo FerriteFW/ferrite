@@ -1659,6 +1659,9 @@ impl App {
 
     /// The watched slots: Watch's, and C while it is the APRS slot (APRS-16, KISS-9).
     pub(crate) fn watch_mask(&self) -> u8 {
+        if self.sstv.open {
+            return 1 << self.active; // SSTV-1: paused while the screen is open, whoever asks for the watch
+        }
         if self.low_power() {
             return 0; // PWR-24.4: the active slot alone
         }

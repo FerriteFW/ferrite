@@ -405,6 +405,16 @@ mod tests {
         assert_eq!(b.gps, GPS_AUTO, "out of range: Auto");
     }
 
+    /// A scan priority period past 0 1 3's choices (a damaged record) loads as the default (found by fuzzing).
+    #[test]
+    fn scan_priority_out_of_range_loads_as_the_default() {
+        for (v, want) in [(5u8, 5u8), (6, Settings::DEFAULT.scan_prio), (195, Settings::DEFAULT.scan_prio)] {
+            let mut b = Settings { scan_prio: v, ..Settings::DEFAULT };
+            b.sanitize();
+            assert_eq!(b.scan_prio, want, "{v}");
+        }
+    }
+
     /// VOX-15.1 (decision 436): a record from before 0.9.6 (no `mic_v2`, its last byte) with Mic gain at the old
     /// default 5 loads with the new default 8; another choice stays; a 0.9.6 record keeps a 5 chosen since.
     #[test]

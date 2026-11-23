@@ -97,6 +97,8 @@ const _: () = assert!(TIME_ZONES[TZ_DEFAULT as usize] == 0);
 pub const CLOCKS: [&str; 2] = ["24 h", "12 h"];
 /// 0 2 6 2, FM AGC: 0 is Auto, 1-10 fixed gain (0-36 dB in 4 dB steps).
 pub const AGC_MAX: u8 = 10;
+/// 0 1 3's choices: Off, then every 1 to 5 s (the priority check's period, SCAN).
+pub const SCAN_PRIOS: u8 = 6;
 pub const UNITS: [&str; 3] = ["Metric", "Imperial", "Nautical"];
 pub const LAYOUTS: [&str; 3] = ["Watch", "Single + scope", "Watch + activity"];
 pub const THEMES: [&str; 4] = ["Dark", "Daylight", "Night red", "Cyberpunk"];
@@ -618,6 +620,11 @@ impl Settings {
         }
         if self.cable_port as usize >= CABLE_PORTS.len() {
             self.cable_port = Self::DEFAULT.cable_port;
+        }
+        // a damaged record's scan priority period: shown as "Every 195 s" and sent to the scan as it was (found by
+        // fuzzing the settings record)
+        if self.scan_prio >= SCAN_PRIOS {
+            self.scan_prio = Self::DEFAULT.scan_prio;
         }
         if self.fm_agc > AGC_MAX {
             self.fm_agc = Self::DEFAULT.fm_agc;

@@ -787,9 +787,9 @@ fn message_retries_row_steps_through_its_values() {
 
 /// MODE-5.1, APRS-15.3 (ferrite#120, ferrite#59): C on airband in AM, then APRS mode on the single + scope
 /// layout. C goes to the Radio task as FM on the APRS frequency, the card's settings are the APRS slot's (it read
-/// AM), and home's strip doesn't sweep while APRS listens (a sweep is all the Radio task does while it runs: no
-/// turn for C, nothing decoded; with C active it swept around 118.950), whichever slot is active. APRS mode off:
-/// C is back in AM on airband and the strip sweeps again.
+/// AM), and with C active home's strip doesn't sweep (a sweep is all the Radio task does while it runs: no turn
+/// for C, nothing decoded; it swept around 118.950). With A active the strip sweeps and APRS waits (decision 438);
+/// # pauses the strip and APRS listens, # again sweeps. APRS mode off: C is back in AM on airband.
 #[test]
 fn aprs_from_an_am_slot_is_fm_and_the_strip_waits() {
     use crate::screens::activity::Mode;
@@ -817,11 +817,21 @@ fn aprs_from_an_am_slot_is_fm_and_the_strip_waits() {
     assert!(!c.iter().any(|c| matches!(c, RadioCmd::Sweep { on: true, .. })), "and not started again: {c:?}");
     assert!(a.app.strip_blocked() && a.app.radio.mode != Mode::Strip);
     assert_eq!((a.app.tuned_cfg(APRS_SLOT).mode, a.app.slot(APRS_SLOT).cfg().mode), (0, 2), "the card's FM; C's own AM kept aside");
-    // A active, on 2 m beside APRS: still no strip
+    // A active, on 2 m beside APRS: the strip sweeps (APRS waits); # pauses it, # again sweeps (MODE-5.1)
     a.app.active = 0;
     a.wait(700);
-    assert!(a.app.strip_blocked() && a.app.radio.mode != Mode::Strip);
-    assert!(!a.cmds().iter().any(|c| matches!(c, RadioCmd::Sweep { on: true, .. })));
+    assert!(!a.app.strip_blocked() && a.app.strip_pausable());
+    assert_eq!(a.app.radio.mode, Mode::Strip);
+    a.cmds();
+    a.tap(Key::Hash);
+    a.wait(700);
+    assert!(a.app.strip_paused && a.app.radio.mode != Mode::Strip, "paused: the receiver is APRS's and the watch's");
+    assert!(a.cmds().iter().any(|c| matches!(c, RadioCmd::Sweep { on: false, .. })));
+    assert_eq!(a.app.screen(), Screen::Home, "this layout's # is the pause, not the quick help");
+    a.tap(Key::Hash);
+    a.wait(700);
+    assert!(!a.app.strip_paused);
+    assert_eq!(a.app.radio.mode, Mode::Strip);
     // off: C as it was, and the strip again
     a.app.active = APRS_SLOT;
     a.mode(false);

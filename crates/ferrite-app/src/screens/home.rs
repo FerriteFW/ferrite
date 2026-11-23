@@ -441,7 +441,16 @@ impl View for Home {
             (Key::VfoMem, Short) => toggle_vfo(app, store),
             (Key::VfoMem, Long) => app.open(Dest::Zones), // KEY-26: the zone list, in VFO and channel mode alike
             (Key::Hash, Short) => {
-                if app.watched_rx() {
+                if app.strip_pausable() {
+                    // MODE-5.1 (ferrite#120): single + scope: # pauses the strip, so the watch and APRS have the
+                    // receiver; # again sweeps (this view's # is the pause, not the quick help)
+                    app.strip_paused = !app.strip_paused;
+                    if app.strip_paused {
+                        app.show_toast(b"Scope paused", b"APRS, watch on", false);
+                    } else {
+                        app.show_toast(b"Scope on", b"# pauses it", false);
+                    }
+                } else if app.watched_rx() {
                     // HOME-10, WATCH-6
                     let pause = app.set.pause_s(); // 0 1 6 1
                     app.paused_until = Some(app.now.wrapping_add(pause as u32 * 1000));
@@ -499,7 +508,14 @@ impl View for Home {
             return Hints::new(&[("#", "Hold: unlock")]);
         }
         let group = if app.slots[app.active as usize].on_channel() { "Zone" } else { "Band" };
-        let mid = if app.watched_rx() { ("#", "Pause") } else { ("OK", "Quick") };
+        // MODE-5.1: in single + scope # is the strip's pause and says which way it goes
+        let mid = if app.strip_pausable() {
+            ("#", if app.strip_paused { "Scope" } else { "Pause" })
+        } else if app.watched_rx() {
+            ("#", "Pause")
+        } else {
+            ("OK", "Quick")
+        };
         if app.aprs_slot(app.active) {
             // APRS-17 (decision 181): OK leads to the heard list, or with beacons alone to Beacon now; # pauses
             // watch while a watched slot is receiving (WATCH-6), else hold MENU is the APRS page.

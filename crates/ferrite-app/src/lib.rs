@@ -390,6 +390,8 @@ pub struct App {
     /// APRS-29.2: 0 5 6 1's mode before Tracker started its own beacons (it was off or manual), put back when 0 5 3
     /// leaves Tracker unless 0 5 6 1 changed meanwhile, so stepping through Tracker to On leaves no beacons behind.
     tracker_was: Option<u8>,
+    /// MODE-5.1: # paused home's scope strip (single + scope), so the watch and APRS have the receiver (RAM only).
+    pub(crate) strip_paused: bool,
     /// The armed reset's # was held 3 s ([`screens::confirm`]): done at the next tick, which has the store.
     want_reset: bool,
     /// A clock set by hand (GPS-23), UTC seconds, for the clock's owner to take ([`App::take_clock_set`]).
@@ -537,6 +539,7 @@ impl App {
             aprs: aprs::AprsCfg::DEFAULT,
             aprs_st: 0,
             tracker_was: None,
+            strip_paused: false,
             want_reset: false,
             clock_set: None,
             rx_mask: 0,

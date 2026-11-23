@@ -204,7 +204,11 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
     // HOME-13: the strip and the other slots' lines wait while the knob turns.
     if !app.held(10) {
         if bcast || app.strip_blocked() {
-            scope::strip_off(app, lcd, 10, 200, 34); // HOME-14: the broadcast slot is active (or needs the relay); MODE-5.1: APRS listens
+            // HOME-14: the broadcast slot is active (or needs the relay); MODE-5.1: the APRS slot is, and APRS listens
+            let note: &[u8] = if !bcast && app.aprs_slot(a) { b"Scope off: APRS listens" } else { b"" };
+            scope::strip_off(app, lcd, 10, 200, 34, note);
+        } else if app.strip_paused {
+            scope::strip_off(app, lcd, 10, 200, 34, b"Scope paused"); // MODE-5.1: # paused it
         } else {
             scope::strip(app, lcd, 10, 200, 34, centre, STRIP_STEP, &bars[..scope::STRIP_BARS]);
         }
@@ -216,12 +220,17 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
         let mut t = Buf::<40>::new();
         t.push(w::freq3(app.shown_freq(o, live)).as_bytes());
         t.push(" \u{b7} ".as_bytes());
-        match sl.ch.filter(|_| sl.on_channel()) {
-            Some(ch) => t.push(ch.name()),
-            None => t.push(band_name(sl.freq()).as_bytes()),
+        // APRS-15.3: the APRS slot is named for what holds it, never the channel C held before
+        let holder = app.aprs_slot(o).then(|| app.aprs_holder()).flatten();
+        match (holder, sl.ch.filter(|_| sl.on_channel())) {
+            (Some(h), _) => t.push(h.name().as_bytes()),
+            (None, Some(ch)) => t.push(ch.name()),
+            (None, None) => t.push(band_name(sl.freq()).as_bytes()),
         }
         let y = 256 + 21 * i as i32;
         let st = if st.len() > 9 { "relay" } else { st }; // "Watch off: relay" (BCR-15) in the line's room
+        // MODE-5.1: while the strip sweeps, APRS waits: "paused" in amber (# pauses the strip to give it back)
+        let (st, c) = if holder.is_some() && app.radio.mode == super::activity::Mode::Strip { ("paused", AMBER) } else { (st, c) };
         if !app.held(11 + i) && app.dirty(11 + i, Mix::new().h(&o).h(&t).h(&st).get()) {
             w::badge(lcd, 8, y + 2, o, false, BG);
             // a long channel name cut on purpose, to the room the state leaves

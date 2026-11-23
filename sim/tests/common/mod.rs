@@ -18,6 +18,15 @@
 use ferrite_core::keys::Key;
 use ferrite_sim::simcore::{Event, SimCore, Stored};
 
+/// DISP-31's misses known and logged (docs/fix-batch.md), each with what it is: a miss on that screen inside rows y0..y1 is left out,
+/// anything else on it still fails. Shrink this list; never widen an entry to make a test pass.
+pub const REPAINT_KNOWN: &[(&str, u16, u16, &str)] = &[(
+    "C4 APRS station",
+    296,
+    319,
+    "a station with a two-line comment and a two-line message runs past the hint bar: the page doesn't scroll",
+)];
+
 /// The step the harness advances time by, as a frame (ms).
 pub const FRAME: u32 = 20;
 

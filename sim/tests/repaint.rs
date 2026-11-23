@@ -52,17 +52,8 @@ fn report(misses: &[RepaintMiss], what: &str) -> Option<String> {
     ) + &shot)
 }
 
-/// Known and logged (docs/fix-batch.md), each with what it is: a miss on that screen inside rows y0..y1 is left out,
-/// anything else on it still fails. Shrink this list; never widen an entry to make a test pass.
-const KNOWN: &[(&str, u16, u16, &str)] = &[(
-    "C4 APRS station",
-    296,
-    319,
-    "a station with a two-line comment and a two-line message runs past the hint bar: the page doesn't scroll",
-)];
-
 fn known(name: &str, m: &RepaintMiss) -> bool {
-    KNOWN.iter().any(|&(n, y0, y1, _)| name.ends_with(n) && m.area.1 >= y0 && m.area.3 <= y1)
+    common::REPAINT_KNOWN.iter().any(|&(n, y0, y1, _)| name.ends_with(n) && m.area.1 >= y0 && m.area.3 <= y1)
 }
 
 /// DISP-31: every screen the simulator can open: let it run (live values, countdowns, timers), then a few keys and

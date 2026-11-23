@@ -354,7 +354,8 @@ impl<B: Bus> Bk4829<B> {
     pub fn freq(&mut self) -> u32 {
         let lo = self.read(reg::FREQ_LO) as u32;
         let hi = self.read(reg::FREQ_HI) as u32;
-        (hi << 16 | lo) * 10
+        // a garbled read (bits no frequency word sets) overflowed the u32 Hz: found by fuzzing
+        (hi << 16 | lo).saturating_mul(10)
     }
 
     /// Receive (stock: REG_30 0x0200 then 0xBFF1; the 0-to-1 of bit 15 recalibrates the VCO).

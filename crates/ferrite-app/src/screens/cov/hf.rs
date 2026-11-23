@@ -118,7 +118,10 @@ fn options_page() {
     t.tap(Key::Up); // wraps to the recent list
     assert!(matches!(t.screen(), Screen::Hf(Hf { row: 3, .. })));
     t.tap(Key::Right); // nothing to turn
+    t.app.set.hf.recent[0] = 707_400 | 3 << 28;
     t.tap(Key::Hash);
+    assert!(matches!(t.screen(), Screen::Confirm(_)), "HF-28.1: asked first");
+    t.tap(Key::Menu);
     assert_eq!(t.toast(), "Recent list / cleared");
     assert!(hf::recent(&t.app.set.hf).next().is_none());
     t.tap(Key::Menu);

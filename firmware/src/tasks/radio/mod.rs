@@ -334,6 +334,9 @@ struct Radio {
     /// The DAC beep's level (1-11, `hal::tone`), from the beep volume (SND-3: Low, Mid, High -> 5, 7, 9).
     beep_level: u8,
     hf: Option<HfOn>,
+    /// HF-23.1 (ferrite#130): a key-up ended while HF mode runs: its receive route, tune and speaker go back on the
+    /// next tick (the unkey leaves the BK path and the speaker off, and the UI doesn't send HF mode again).
+    hf_resume: bool,
     /// Satellite mode (SAT-1), while the satellite screen is open.
     sat: Option<sat::SatRun>,
     /// HF-31, BCR-18: an SI4732 seek running (HF mode's or FM broadcast's), polled by the tick (MODE-7: no command
@@ -863,6 +866,7 @@ pub async fn task() {
         beep_gain: tonegen::beep_gain(3), // Mid
         beep_level: 7,
         hf: None,
+        hf_resume: false,
         sat: None,
         seek: None,
         counter: None,

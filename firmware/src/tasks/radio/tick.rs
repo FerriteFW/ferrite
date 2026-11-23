@@ -103,6 +103,13 @@ impl Radio {
             if self.path.keyed().is_some() {
                 return self.tx_tick(now_ms() as u32).await;
             }
+            // HF-23.1 (ferrite#130): after a key-up (PTT on 10 m or 6 m, a beacon) HF's receive was left off
+            if core::mem::take(&mut self.hf_resume) {
+                if let Some(h) = self.hf {
+                    self.hf(h.freq, h.mode, true).await;
+                }
+                return;
+            }
             if self.seek.is_none() {
                 self.hf_poll();
             }

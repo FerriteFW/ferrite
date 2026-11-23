@@ -48,7 +48,7 @@ knob +1    -> =
 knob -1    -> =
 
 ## 21 B4 Shortcut map
-MENU       -> Home | VoxScreen(true) | popup "No home channel" "hold ABC to set"
+MENU       -> Home | VoxScreen(true) | popup "No home channel" "channel editor"
 BACK       -> Home | VoxScreen(true)
 UP         -> =
 DOWN       -> =
@@ -227,7 +227,7 @@ hold ABC   -> Edit | VoxScreen(false)
 hold V/M   -> Zones | VoxScreen(false)
 hold STAR  -> = | VoxScreen(false)
 hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
-hold 0     -> = | popup "No home channel" "hold ABC to set"
+hold 0     -> = | popup "No home channel" "channel editor"
 hold 1     -> Scope | ScopeCfg { bars: 60, dwell: 100, strip: false }; Sweep { centre: 14652000, step: 2500, on: true }; VoxScreen(false) | popup "Band scope" ""
 hold 2     -> = | SlotParam { slot: 0, param: Power, value: 1 } | popup "TX power" "Mid"
 hold 3     -> Value editor | VoxScreen(false) | popup "Squelch" ""

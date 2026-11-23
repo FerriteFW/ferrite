@@ -22,7 +22,8 @@ fn side_combo(t: &mut T, ms: u32) {
 }
 
 /// PWR-24.2, PWR-24.4, PWR-24.5: 0 7 7 2 On enters (home, Battery Save's cycle, watch to the active slot alone);
-/// the overrides apply while in it and none touches a stored setting; Off leaves and everything is as it was.
+/// the overrides apply while in it and none touches a stored setting; Off leaves and everything is as it was. The
+/// mode screens are refused, satellite mode too (ferrite#133: it kept both chips awake).
 #[test]
 fn on_and_off_restore_everything() {
     let mut t = T::new();
@@ -61,6 +62,8 @@ fn on_and_off_restore_everything() {
     assert_eq!(t.app.screen, Screen::Home, "no band scope (a sweeping receiver)");
     t.app.open(Dest::Counter);
     assert_eq!(t.app.screen, Screen::Home, "no counter (a listening receiver)");
+    t.app.open(Dest::Satellites);
+    assert_eq!(t.app.screen, Screen::Home, "no satellite mode (both chips awake; ferrite#133)");
     t.app.open(Dest::Group(7));
     assert_ne!(t.app.screen, Screen::Home, "the menus stay");
     t.app.go_home();

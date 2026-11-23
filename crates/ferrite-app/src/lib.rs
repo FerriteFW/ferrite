@@ -406,6 +406,8 @@ pub struct App {
     /// SCAN-27: a range preset scan waiting for its skips to reach the Radio task, a few each tick (the command queue
     /// holds 32): the slot, the preset, the next skip to send, the resume code.
     pub(crate) range_feed: Option<(u8, u8, u8, u8)>,
+    /// SCAN-17: the slot scanning a range preset and the preset, while the scan runs (# adds a hit to its skips).
+    pub(crate) range_scan: Option<(u8, u8)>,
     relay_mask: u8,
     /// The tone hint per slot (TSRCH-13, TSRCH-16): the tone word the Radio task heard, kept from the last tick
     /// for the quick settings' Tones row.
@@ -547,6 +549,7 @@ impl App {
             update_told: false,
             last_hit: [0; SLOTS],
             range_feed: None,
+            range_scan: None,
             relay_mask: 0,
             scan_hit: [0; SLOTS],
             heard: [0; SLOTS],
@@ -873,6 +876,7 @@ impl App {
     pub(crate) fn stop_scan(&mut self, slot: u8, store: &impl ChannelStore) {
         self.out.push(RadioCmd::Scan { slot, on: false });
         self.range_feed = self.range_feed.filter(|f| f.0 != slot); // SCAN-27: a preset scan not started yet
+        self.range_scan = self.range_scan.filter(|r| r.0 != slot); // SCAN-17: its skips go to no preset now
         let f = core::mem::take(&mut self.last_hit[slot as usize % SLOTS]);
         if self.set.scan_return_hit {
             self.scan_move(slot, f, store);
@@ -1543,10 +1547,11 @@ impl App {
     /// Opens a screen by where it is in the manual ([`Dest`]), remembering this one for BACK. Screens not built
     /// yet open as a "coming" placeholder ([`screens::nav::enter`]).
     pub fn open(&mut self, dest: Dest) {
-        // PWR-24.4: Low Power Mode has no scan, band scope, counter, broadcast, HF mode or crossband (two VFOs):
-        // nothing that keeps a receiver sweeping or listening; menus, editing and tone search stay.
+        // PWR-24.4: Low Power Mode has no scan, band scope, counter, broadcast, HF mode, crossband (two VFOs) or
+        // satellite mode (both chips awake, and no GPS: ferrite#133): nothing that keeps a receiver sweeping or
+        // listening; menus, editing and tone search stay.
         if self.low_power()
-            && matches!(dest, Dest::Scan | Dest::BandScope | Dest::Counter | Dest::HfMode | Dest::Crossband)
+            && matches!(dest, Dest::Scan | Dest::BandScope | Dest::Counter | Dest::HfMode | Dest::Crossband | Dest::Satellites)
         {
             return self.lpm_refuse();
         }
@@ -1729,6 +1734,16 @@ impl App {
                 self.out.push(RadioCmd::Monitor { slot: a, on: true });
             }
             _ => {}
+        }
+    }
+
+    /// SQL-14.1 (ferrite#129): the active slot changed from `old`: a monitor latched on `old` goes off. It held the
+    /// receiver for that slot (the watch kept it open), so the new active slot heard nothing.
+    pub(crate) fn monitor_off_leaving(&mut self, old: u8) {
+        if old != self.active && self.monitor & 1 << old != 0 {
+            self.monitor &= !(1 << old);
+            self.out.push(RadioCmd::Monitor { slot: old, on: false });
+            self.show_toast(b"Monitor off", b"slot changed", false);
         }
     }
 

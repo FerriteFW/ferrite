@@ -155,7 +155,7 @@ const G9: [Entry; 9] = [
     Entry(concat!("Connections|BT off|", txtc!("Bluetooth, link status, cable port."))),
     Entry(concat!("PIN and lock|Off|", txtc!("PIN lock, channel-only mode, PIN."))),
     Entry(concat!("Region|Not set|", txtc!("Your amateur bands and defaults."))),
-    Entry(concat!("Squelch|Software|", txtc!("Decided in software, or by the chip as stock."))),
+    Entry(concat!("Squelch|Chip|", txtc!("Decided by the chip as stock, or in software."))),
     Entry(concat!("SSB patch||", txtc!("USB, LSB and CW in HF mode."))),
     Entry(concat!("Setup and reset||", txtc!("Run setup again, reset settings."))),
     Entry(concat!("About||", txtc!("Version, identity, checks, battery."))),
@@ -183,7 +183,7 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
     ((3, 1), &[
         Entry(concat!("Bars|60|", txtc!("Bars across; span is bars x step."))),
         Entry(concat!("Step|25 kHz|", txtc!("Distance between bars."))),
-        Entry(concat!("Sweep speed|1 ms|", txtc!("Time on each point."))),
+        Entry(concat!("Sweep speed|10 ms|", txtc!("Time on each point."))),
         Entry(concat!("Trigger|Off|", txtc!("Over the line: monitor or log."))),
         Entry(concat!("Waterfall row|Off|", txtc!("History under the scope."))),
         Entry(concat!("Open band scope||", txtc!("Sweep around the active slot. Home: hold 1."))),

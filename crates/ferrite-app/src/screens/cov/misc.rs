@@ -79,7 +79,7 @@ fn link_pages() {
     t.ptt(false);
 }
 
-/// HF-28: HF mode's recent list: each frequency in MHz with its mode; # clears it.
+/// HF-28, HF-28.1: HF mode's recent list: each frequency in MHz with its mode; # clears it after a confirm.
 #[test]
 fn hf_recent_list() {
     let mut t = T::new();
@@ -91,6 +91,9 @@ fn hf_recent_list() {
     t.shows("7.074 MHz");
     t.shows("USB");
     t.tap(Key::Hash);
+    assert!(matches!(t.screen(), Screen::Confirm(_)), "asked first");
+    assert!(crate::screens::hf::recent(&t.app.set.hf).next().is_some(), "nothing cleared yet");
+    t.tap(Key::Menu);
     assert_eq!(t.toast(), "Recent list / cleared");
     assert!(crate::screens::hf::recent(&t.app.set.hf).next().is_none());
 }

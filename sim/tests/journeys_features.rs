@@ -45,7 +45,7 @@ fn setup_without_a_callsign() {
 #[test]
 fn no_home_channel() {
     let mut r = Radio::new();
-    r.run("hold 0; expect text \"No home channel\"; expect text \"hold ABC to set\"");
+    r.run("hold 0; expect text \"No home channel\"; expect text \"channel editor\"");
 }
 
 /// Hold *, then PTT A (the quick menu) toggles reverse on the active slot: the shift chip shows R once the menu is

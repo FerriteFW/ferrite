@@ -665,6 +665,11 @@ impl Settings {
         PAUSE_TIMES_S[(self.pause_time as usize).min(PAUSE_TIMES_S.len() - 1)]
     }
 
+    /// WATCH-6: the pause as 0 1 6 1 shows it ("30 s", "1 min", "5 min"), for the toast.
+    pub fn pause_name(&self) -> &'static str {
+        PAUSE_TIME_NAMES[(self.pause_time as usize).min(PAUSE_TIME_NAMES.len() - 1)]
+    }
+
     /// APRS-6.2: the message sound's DAC level.
     pub fn msg_level(&self) -> u8 {
         ferrite_core::tonegen::CHIME_LEVELS[(self.msg_vol as usize).min(3)]

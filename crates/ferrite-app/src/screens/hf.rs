@@ -746,9 +746,9 @@ impl View for Hf {
                 (Key::Digit(0), Short) => app.open(Dest::Advanced),
                 (Key::Menu, Short) if self.row == ROW_RECENT => app.open(Dest::HfRecent),
                 (Key::Menu, Short) => self.option(app, 1),
-                (Key::Hash, Short) if self.row == ROW_RECENT => {
-                    app.set.hf.recent = [0; RECENT];
-                    app.show_toast(b"Recent list", b"cleared", false);
+                // HF-28.1: asked first, as the recent list's own page asks
+                (Key::Hash, Short) if self.row == ROW_RECENT && recent(&app.set.hf).next().is_some() => {
+                    super::confirm::ask(app, super::confirm::Ask::ClearRecent)
                 }
                 (Key::Exit, Short) => Hf { menu: false, ..self }.put(app),
                 _ => {}

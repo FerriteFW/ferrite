@@ -433,15 +433,18 @@ impl View for Home {
             (Key::Left | Key::Right, Short | Repeat) => group(app, if e.key == Key::Right { 1 } else { -1 }, store),
             (Key::Slot, Short) => {
                 // NAV-5
+                let old = app.active;
                 app.active = (app.active + 1) % SLOTS as u8;
                 app.out.push(RadioCmd::Active(app.active));
+                app.monitor_off_leaving(old); // SQL-14.1
             }
             (Key::Slot, Long) if app.slots[app.active as usize].on_channel() => app.screen = Screen::ChEdit(super::chedit::ChEdit { cell: 0 }), // EDIT-2
             (Key::Slot, Long) => app.screen = Screen::Edit(super::edit::Edit { cell: 0 }), // EDIT-1
             (Key::VfoMem, Short) => toggle_vfo(app, store),
             (Key::VfoMem, Long) => app.open(Dest::Zones), // KEY-26: the zone list, in VFO and channel mode alike
             (Key::Hash, Short) => {
-                if app.strip_pausable() {
+                // ferrite#134: with the strip paused and a watched slot receiving, # is the watch's pause (WATCH-6)
+                if app.strip_pausable() && !(app.strip_paused && app.watched_rx()) {
                     // MODE-5.1 (ferrite#120): single + scope: # pauses the strip, so the watch and APRS have the
                     // receiver; # again sweeps (this view's # is the pause, not the quick help)
                     app.strip_paused = !app.strip_paused;
@@ -455,7 +458,10 @@ impl View for Home {
                     let pause = app.set.pause_s(); // 0 1 6 1
                     app.paused_until = Some(app.now.wrapping_add(pause as u32 * 1000));
                     app.out.push(RadioCmd::PauseWatch(pause));
-                    app.show_toast(b"Watch paused", b"for 1 min", false);
+                    // WATCH-6: the time 0 1 6 1 set, not always a minute
+                    let mut t = Buf::<12>::from(b"for ");
+                    t.push(app.set.pause_name().as_bytes());
+                    app.show_toast(b"Watch paused", t.as_bytes(), false);
                 } else {
                     // HOME-10: the quick help, its first page the holds; # goes on through the help pages,
                     // BACK home (the Status page is MENU 0 0 since decision 376)
@@ -509,7 +515,7 @@ impl View for Home {
         }
         let group = if app.slots[app.active as usize].on_channel() { "Zone" } else { "Band" };
         // MODE-5.1: in single + scope # is the strip's pause and says which way it goes
-        let mid = if app.strip_pausable() {
+        let mid = if app.strip_pausable() && !(app.strip_paused && app.watched_rx()) {
             ("#", if app.strip_paused { "Scope" } else { "Pause" })
         } else if app.watched_rx() {
             ("#", "Pause")

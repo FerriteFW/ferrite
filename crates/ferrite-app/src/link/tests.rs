@@ -2146,6 +2146,9 @@ mod more;
 /// Quick messages, waypoints and DTMF memories (LINK-54 – LINK-56).
 mod lists;
 
+/// Every request with any payload, the wire damaged, noise on the port (ferrite-fuzzkit).
+mod fuzz;
+
 /// LINK-53 (decision 325): channel positions by number. `READ_MANY` of positions lists only the channels that have
 /// one (lat, lon: i32, 1e-7 degree); `WRITE_MANY` sets one (8 bytes), clears one (0 bytes), refuses one out of
 /// range with its reason (CHAN-2's checks, as the terminal's `pos=`) and a record of another length as malformed;

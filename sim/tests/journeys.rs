@@ -548,3 +548,31 @@ fn layout_change_on_home_leaves_nothing_behind() {
         assert!(rows.is_empty(), "{name}: rows {:?}..{:?} differ from a fresh home", rows.first(), rows.last());
     }
 }
+
+/// A VFO set to FM where the region's default is NFM (Europe) stays FM through a slot switch and a power cycle
+/// (PWR-17.1); only a band change brings the new band's mode (NAV-2, VFO-4). From a Discord report (ferrite#97).
+#[test]
+fn vfo_fm_survives_slot_switch_and_power_cycle() {
+    use ferrite_core::txplan::Region;
+    let mut r = Radio::new();
+    r.sim.app_mut().settings_mut().set_region(Some(Region::Europe));
+    r.sim.term_feed(b"\r:slot a vfo 145.500 fm active\r");
+    r.wait(400);
+    let _ = r.sim.term_take();
+    r.run("home; wait 500ms");
+    let mode = |r: &Radio| (r.sim.app().slot(0).vfo_mode, r.sim.app().slot(0).cfg.mode);
+    assert_eq!(mode(&r), (true, 0), "A is a VFO on FM");
+    r.run("press SLOT; wait 300ms; press SLOT; wait 300ms; press SLOT; wait 500ms");
+    assert_eq!(r.sim.app().active(), 0, "back on A");
+    assert_eq!(mode(&r), (true, 0), "a slot switch keeps FM");
+    r.run("wait 3s");
+    r.event(Event::PowerSwitch);
+    r.wait(3000);
+    r.event(Event::PowerSwitch);
+    r.wait(4000);
+    r.expect_screen("Home");
+    assert_eq!(mode(&r), (true, 0), "a power cycle keeps FM");
+    assert_eq!(r.sim.app().slot(0).vfo, mhz(145) + 50_000);
+    r.run("press RIGHT; wait 300ms; press LEFT; wait 500ms");
+    assert_eq!(mode(&r), (true, 1), "a band change brings the band's NFM (NAV-2)");
+}

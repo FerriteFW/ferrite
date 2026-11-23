@@ -157,3 +157,15 @@ fn satellite_list_limits() {
     assert_eq!(n.nsat, 24);
     assert_eq!(n.sat[23].prn, 7 * 4 + 1);
 }
+
+/// A number too long for its field is refused, the last good value kept: fifteen digits of latitude scaled to
+/// 1e-7 degree overflowed (found by fuzzing).
+#[test]
+fn overlong_numbers_are_refused() {
+    let mut n = Nmea::new();
+    assert_eq!(feed(&mut n, "GPRMC,183413.00,A,4900.60000,N,12305.40000,W,0.0,,290926,,,A", false), 1);
+    assert_eq!(feed(&mut n, "GPRMC,183413.00,A,999999999999999,N,12305.40000,W,0.0,,290926,,,A", false), 1);
+    assert_eq!(n.lat_e7, 490_100_000);
+    assert_eq!(feed(&mut n, "GNGGA,000000.00,99968438368563,S,17959.99999,E,2,12,99.9,-420.5,M,,M,,", false), 1);
+    assert_eq!(n.lat_e7, 490_100_000, "past i32: kept, not wrapped");
+}

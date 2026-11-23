@@ -460,6 +460,13 @@ impl Radio {
 
     pub(super) fn refuse(&mut self, slot: u8, why: Refusal) {
         let refusals = self.live.tx.refusals.wrapping_add(1); // TX-50
+        // TX-24.2: refused because a transmission is under way: that one carries on, still keyed (reporting it
+        // unkeyed stopped an SSTV picture when an APRS frame or a PTT came due during it)
+        if why == Refusal::InProgress {
+            (self.live.tx.refused, self.live.tx.refusals) = (Some(why), refusals);
+            log(b"tx refused ", why as u32);
+            return;
+        }
         self.live.tx = TxLive { keyed: false, slot, mic: 0, refused: Some(why), refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck, mic_src: 0 };
         log(b"tx refused ", why as u32);
     }

@@ -548,6 +548,18 @@ impl App {
         }
     }
 
+    /// GPS-1.5 (a): APRS wants positions: APRS mode on, or Tracker holding C for its beacons (APRS-29.2; Tracker
+    /// leaves `aprs_mode` off, so `aprs_on` alone missed it and GPS Auto never woke for a Tracker beacon).
+    pub fn aprs_positions(&self) -> bool {
+        self.aprs_on() || matches!(self.aprs_holder(), Some(Holder::Beacon))
+    }
+
+    /// TX-24.2: another transmission is under way (a person's PTT, or a data key-up: an APRS frame, an SSTV
+    /// picture), so the APRS task waits before keying for its own.
+    pub fn tx_busy(&self) -> bool {
+        self.radio.keyed.is_some() || self.radio.data_keyed
+    }
+
     /// Slot C is the APRS slot: APRS mode, KISS or beacons hold it (APRS-15, KISS-9, APRS-29).
     pub fn aprs_c(&self) -> bool {
         self.aprs_holder().is_some()

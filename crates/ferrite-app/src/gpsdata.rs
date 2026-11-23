@@ -78,7 +78,7 @@ pub fn needs(app: &crate::App, alarm: bool) -> Needs {
     let set = app.settings();
     let c = app.aprs_cfg();
     Needs {
-        aprs: app.aprs_on() && (c.mode() != 0 || c.after_voice) && !set.fixed_on,
+        aprs: app.aprs_positions() && (c.mode() != 0 || c.after_voice) && !set.fixed_on,
         screen: matches!(app.screen(), crate::Screen::Gps(_)),
         alarm,
         clock: set.clock_gps,
@@ -146,7 +146,7 @@ pub fn demand(app: &crate::App, data: &dyn Data, alarm: bool, now_ms: u32) -> Gp
     let watch = alarm || matches!(app.screen(), crate::Screen::Gps(_));
     let sky = matches!(app.screen(), crate::Screen::Gps(g) if matches!(g.page, Page::Position | Page::Satellites));
     let (mut track, mut beacon_at) = (false, None);
-    if app.aprs_on() {
+    if app.aprs_positions() {
         let c = data.aprs_cfg();
         track = c.smart();
         // Due now or overdue (waiting for a fix, the relay or a callsign) holds nothing: the minute wakes bring the fix.
@@ -697,6 +697,21 @@ mod tests {
         app.settings_mut().fixed_on = false;
         app.go_home();
         assert!(!needs(&app, false).any(), "the tracker closed");
+    }
+
+    /// GPS-1.5 (a), APRS-29.2: Tracker (beacons only, APRS mode itself off) needs a position like APRS mode does,
+    /// so Auto powers the module for its beacons; a fixed position stands in.
+    #[test]
+    fn auto_needs_a_position_for_tracker() {
+        let mut app = auto_app();
+        app.set_aprs_select(1);
+        assert!(!app.aprs_on() && app.aprs_positions(), "Tracker: APRS mode off, beacons on");
+        assert!(needs(&app, false).aprs, "Tracker's beacons need a position");
+        app.settings_mut().fixed_on = true;
+        assert!(!needs(&app, false).aprs, "the fixed position stands in (GPS-3)");
+        app.settings_mut().fixed_on = false;
+        app.set_aprs_select(0);
+        assert!(!needs(&app, false).aprs, "Off needs nothing");
     }
 
     /// GPS-1.5: when the last need ends the module powers off a minute later, and a screen closed and opened

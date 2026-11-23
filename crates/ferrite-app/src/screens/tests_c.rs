@@ -1551,6 +1551,20 @@ fn all_48_skips_reach_the_radio() {
     assert!(last < start, "after the last skip");
 }
 
+/// DISP-18.1: in night red, compose's quick messages list has no filled ground: rows are red text on black and the
+/// selected row is the one red bar (a Discord report, ferrite#119: the whole box was red and the selection lost).
+#[test]
+fn night_red_quick_list_shows_the_selection() {
+    let ground = |t: &T, row: i32| t.fb.at(228, 108 + 19 * row + 2);
+    let mut t = T::new();
+    t.app.set.theme = crate::settings::NIGHT_RED;
+    compose_to(&mut t);
+    t.draw();
+    let (sel, other) = (ground(&t, 0), ground(&t, 1));
+    assert_eq!(sel, ferrite_ui::theme::NIGHT_INK, "the selected row: the red bar");
+    assert_eq!(other, ferrite_ui::gfx::BLACK, "the other rows: no ground");
+}
+
 /// WATCH-6: the watch-pause toast says the time 0 1 6 1 set (it always said 1 min); TX-20: the refusals' fixes
 /// name the right place: Status is MENU 0 0 (# is the quick help, decision 376), Extend TX is 0 8 8 4.
 #[test]

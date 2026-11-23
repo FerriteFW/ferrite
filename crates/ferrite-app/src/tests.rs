@@ -836,6 +836,12 @@ fn status_value_change_redraws_its_row_only() {
             assert!(px <= 3 * ROW_PX, "{px} px");
             continue;
         }
+        if row == 13 {
+            // a speaker mic plugged in: its row and the status bar's SPK mark (SBAR-26), nothing else
+            assert!(wins.iter().all(|w| w.3 < 20 || (w.1 >= y0 && w.3 <= y1)), "row 13 and the status bar only: {wins:?}");
+            assert!(px > 0 && px <= 2 * ROW_PX, "{px} px");
+            continue;
+        }
         assert!(px > 0 && px <= ROW_PX, "row {row}: {px} px, one row is {ROW_PX}");
         assert!(wins.iter().all(|w| w.1 >= y0 && w.3 <= y1), "row {row} ({y0}-{y1}) only: {wins:?}");
     }

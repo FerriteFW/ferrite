@@ -660,7 +660,8 @@ impl App {
     /// tail and receive-only flag.
     fn slot_step(&self, slot: u8, step: u8) -> RadioCmd {
         match step {
-            0 => RadioCmd::TuneSlot { slot, freq: self.tuned_freq(slot) },
+            // VFO-7: reverse listens on the input (the TX side), so the receiver is tuned there
+            0 => RadioCmd::TuneSlot { slot, freq: self.tuned_cfg(slot).rx_of(self.tuned_freq(slot)) },
             // After the slot's settings: its end tone and tail (the channel's over the radio's), and whether its
             // channel is receive-only (CHAN-4, for the Radio task's own refusal: TX audit F11).
             k if k as usize > slot::params(&DEFAULT_CFG).len() => {
@@ -1886,6 +1887,9 @@ impl App {
         let c = self.slots[a as usize].cfg_mut();
         (c.split, c.offset) = (true, tx as i32);
         self.out.push(RadioCmd::SlotParam { slot: a, param: Param::Split, value: tx as i32 });
+        if self.slots[a as usize].cfg().reverse {
+            self.out.sync(a); // VFO-7: reversed, the receiver listens on the new TX side
+        }
         self.save_channel(a, None);
         true
     }
@@ -1914,6 +1918,9 @@ impl App {
         self.out.push(RadioCmd::SlotParam { slot: a, param, value });
         if was_split {
             self.out.push(RadioCmd::SlotParam { slot: a, param: Param::Split, value: 0 });
+        }
+        if c.reverse {
+            self.out.sync(a); // VFO-7: reversed, the receiver listens on the new TX side
         }
         self.save_channel(a, None);
         true
@@ -2029,6 +2036,9 @@ impl App {
                     }
                     if was_split && param == Param::Offset {
                         self.out.push(RadioCmd::SlotParam { slot: a, param: Param::Split, value: 0 });
+                    }
+                    if param == Param::Reverse || (new.reverse && matches!(param, Param::Offset | Param::Split)) {
+                        self.out.sync(a); // VFO-7: the receiver moves to (or back from) the input
                     }
                 }
                 self.save_channel(a, None);

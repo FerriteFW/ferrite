@@ -79,6 +79,8 @@ pub struct AprsCfg {
     pub reply_to: [u8; REPLY_TO_LEN],
     /// APRS-57: the reply, zero-padded (empty: none is sent).
     pub reply_text: [u8; REPLY_TEXT_LEN],
+    /// APRS-13.6: tries after the first while no ack comes, 0 (off: sent once) to 4 ([`RETRIES_DEFAULT`]).
+    pub retries: u8,
 }
 
 /// APRS-57.1: [`AprsCfg::reply_matches`]'s rule, on the pattern as typed.
@@ -181,7 +183,12 @@ impl<'a> core::ops::Deref for PathNames<'a> {
 }
 
 impl AprsCfg {
-    pub const DEFAULT: AprsCfg = AprsCfg { f5k: 0, beacon: 0, power: 0, path: PATH_DEFAULT, digi: 0, after_voice: false, custom: [0; CUSTOM_LEN], ssid: SSID_DEFAULT, fx25: FX25_DEFAULT, sound: ferrite_core::tonegen::CHIME_DEFAULT, symbol: 0, txdelay: TXDELAY_DEFAULT, tx_level: 1, comment: [0; COMMENT_LEN], ambiguity: 0, mic_e: 0, telemetry: false, text_every: 0, reply: 0, reply_to: REPLY_TO_DEFAULT, reply_text: [0; REPLY_TEXT_LEN] };
+    pub const DEFAULT: AprsCfg = AprsCfg { f5k: 0, beacon: 0, power: 0, path: PATH_DEFAULT, digi: 0, after_voice: false, custom: [0; CUSTOM_LEN], ssid: SSID_DEFAULT, fx25: FX25_DEFAULT, sound: ferrite_core::tonegen::CHIME_DEFAULT, symbol: 0, txdelay: TXDELAY_DEFAULT, tx_level: 1, comment: [0; COMMENT_LEN], ambiguity: 0, mic_e: 0, telemetry: false, text_every: 0, reply: 0, reply_to: REPLY_TO_DEFAULT, reply_text: [0; REPLY_TEXT_LEN], retries: RETRIES_DEFAULT };
+
+    /// APRS-13.6: how often a message is tried in all: the first, then the retries (0 5 2's options).
+    pub fn tries(&self) -> u8 {
+        self.retries.min(RETRIES_DEFAULT) + 1
+    }
 
     /// The path's entries: one of [`PATHS`], or the custom path split at its comma.
     pub fn path(&self) -> PathNames<'_> {
@@ -373,9 +380,11 @@ pub const BEACON_MODES: usize = SMART + 1;
 pub const BEACON_STEPS: usize = DROPPED + 1;
 pub const POWERS: [&str; 3] = ["Low", "Mid", "High"];
 
-/// A message is tried this often (APRS-13), the waits between tries, and after the last try how long an ack
-/// may still come before it is marked failed.
+/// A message is tried at most this often (APRS-13; fewer with fewer retries, APRS-13.6), the waits between tries,
+/// and after the last try how long an ack may still come before it is marked failed.
 pub const TRIES: u8 = 5;
+/// APRS-13.6: the retries after the first try, by default (five tries in all, as before the setting).
+pub const RETRIES_DEFAULT: u8 = TRIES - 1;
 pub const RETRY_S: [u16; 4] = [30, 60, 120, 240];
 pub const LAST_WAIT_S: u16 = 240;
 
@@ -386,6 +395,11 @@ pub const LAST_WAIT_S: u16 = 240;
 pub const INFO_MAX: usize = 256;
 
 /// After try `n` (1-5): seconds until the next try, or (after the fifth) until it is marked failed.
+/// APRS-13.6: the wait after try `n` of `tries`: the schedule's, or [`LAST_WAIT_S`] after the last.
+pub fn retry_wait_of(n: u8, tries: u8) -> u16 {
+    if n >= tries { LAST_WAIT_S } else { retry_wait(n) }
+}
+
 pub fn retry_wait(n: u8) -> u16 {
     RETRY_S.get((n as usize).wrapping_sub(1)).copied().unwrap_or(LAST_WAIT_S)
 }

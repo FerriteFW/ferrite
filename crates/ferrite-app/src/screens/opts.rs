@@ -86,6 +86,8 @@ pub(crate) enum Act {
     Grid,
     /// The arrival alarm's next radius (GPS-12, 0 6 7): off, 50 m ... 1 km.
     Arrival,
+    /// APRS-13.6: message retries, the next of 0 (off) to 4.
+    Retries,
     /// On the station, contact or waypoint under the page; true asks first (MENU-23).
     Sel(super::contacts::Sel, bool),
     /// On the message selected under the page: stop sending it (APRS-13.1), or send it again (APRS-13.2).
@@ -103,13 +105,15 @@ const LOG: [Opt; 3] = [
     ("Clear the log", Act::Confirm(Simple::ClearLog), txt!("All events, unread ones too")),
     ("Decoder settings", Act::Open(Dest::Group(4)), txt!("Pagers, DTMF, popups, weather")),
 ];
-const MESSAGES: [Opt; 6] = [
+const MESSAGES: [Opt; 7] = [
     ("Write a message", Act::Open(Dest::Compose), txt!("Recipient, then the text")),
     ("Quick messages", Act::Open(Dest::QuickMessages), txt!("The nine shown on an empty message")),
     ("Contacts", Act::Open(Dest::Contacts), txt!("Saved stations and their names")),
     ("Mark all read", Act::Do(Simple::MessagesReadAll), txt!("Clears the unread count")), // APRS-46
     ("Delete all messages", Act::Confirm(Simple::ClearMessages), txt!("Inbox and sent, unread too")), // APRS-46
-    ("APRS settings", Act::Open(Dest::Group(5)), txt!("Ringer, path, retries")),
+    ("APRS settings", Act::Open(Dest::Group(5)), txt!("Ringer, path, beacons")),
+    // APRS-13.6: last, so the message pages' rows (MESSAGES[0..=5]) keep their digits
+    ("Message retries", Act::Retries, txt!("Tries after the first, until an ack")),
 ];
 /// APRS-46.1: deletes the message under the page.
 const MSG_DELETE: Opt = ("Delete message", Act::MsgDelete, txt!("This one only, either way"));
@@ -126,7 +130,7 @@ const MSG_SENDING: [Opt; 8] = [
     MESSAGES[5],
 ];
 const MSG_ENDED: [Opt; 8] = [
-    ("Send again", Act::MsgResend, txt!("As a new message, five new tries")),
+    ("Send again", Act::MsgResend, txt!("As a new message, tried afresh")),
     MSG_DELETE,
     MESSAGES[0],
     MESSAGES[1],
@@ -315,6 +319,13 @@ impl View for Options {
                     }
                     app.show_toast(b"Arrival alarm", v.as_bytes(), false);
                 }
+                Act::Retries => {
+                    let c = app.aprs_cfg();
+                    let n = (c.retries.min(crate::aprs::RETRIES_DEFAULT) + 1) % (crate::aprs::RETRIES_DEFAULT + 1);
+                    app.set_aprs(crate::aprs::AprsCfg { retries: n, ..c });
+                    app.back();
+                    app.show_toast(b"Message retries", retries_text(n).as_bytes(), false);
+                }
                 Act::ShowHidden => {
                     app.set.show_hidden = !app.set.show_hidden;
                     app.back();
@@ -338,7 +349,15 @@ impl View for Options {
     fn render(self, app: &mut App, lcd: &mut impl Panel, _: &Cx<impl ChannelStore>) {
         let all = rows(self.of);
         app.page(lcd, (self.of, self.confirm));
-        options_page(app, lcd, all.iter().map(|(l, a, _)| (l.as_bytes(), if matches!(a, Act::Open(_)) { b">".as_slice() } else { b"" })), self.row);
+        let retries = retries_text(app.aprs_cfg().retries); // APRS-13.6: the row shows its value
+        let right = |a: &Act| -> &[u8] {
+            match a {
+                Act::Open(_) => b">",
+                Act::Retries => retries.as_bytes(),
+                _ => b"",
+            }
+        };
+        options_page(app, lcd, all.iter().map(|(l, a, _)| (l.as_bytes(), right(a))), self.row);
         let (label, _, help) = all[self.row as usize % all.len()];
         if self.confirm {
             let mut q = Buf::<32>::new();
@@ -362,6 +381,17 @@ impl View for Options {
             Hints::new(&[("OK", "Do it"), ("0", "Full menu"), ("BACK", "Back")])
         }
     }
+}
+
+/// APRS-13.6: message retries as shown: "off", or the count.
+fn retries_text(n: u8) -> Buf<4> {
+    let mut b = Buf::<4>::new();
+    if n == 0 {
+        b.set(b"off");
+    } else {
+        let _ = ufmt::uwrite!(b, "{}", n.min(crate::aprs::RETRIES_DEFAULT));
+    }
+    b
 }
 
 /// Where an options page's help box goes (under five rows and "0 Full menu"; lower under more).

@@ -32,7 +32,8 @@ pub struct Msgs {
 
 const ALL: fn(u16) -> bool = |_| true;
 
-fn state_text(m: &Message, b: &mut Buf<16>) -> u16 {
+/// `tries`: how often a message is tried in all now (APRS-13.6), for "try 2/5".
+fn state_text(m: &Message, tries: u8, b: &mut Buf<16>) -> u16 {
     b.clear();
     match m.state {
         MsgState::Unread => {
@@ -49,8 +50,8 @@ fn state_text(m: &Message, b: &mut Buf<16>) -> u16 {
             GREEN
         }
         MsgState::Retrying(n) => {
-            // APRS-13: the try it's on of the five ("retry 2" read as a second retry on the first)
-            let _ = uwrite!(b, "try {}/{}", n, crate::aprs::TRIES);
+            // APRS-13: the try it's on of its tries (APRS-13.6; "retry 2" read as a second retry on the first)
+            let _ = uwrite!(b, "try {}/{}", n, tries.max(n));
             AMBER
         }
         MsgState::Failed => {
@@ -205,9 +206,10 @@ impl View for Msgs {
         if !app.gate((self, data.version(), cx.dev.clock_min)) {
             return;
         }
+        let tries = app.aprs_cfg().tries();
         let row = |m: &Message, time: &mut Buf<12>, st: &mut Buf<16>| -> u16 {
             clock_text(cx.dev.clock_min, m.ago_s, time);
-            state_text(m, st)
+            state_text(m, tries, st)
         };
         if self.open {
             if data.message(self.cur.sel).is_none() {
@@ -287,14 +289,14 @@ impl View for Msgs {
 // ---- compose (A16) ----
 
 /// Multi-tap letters per digit (KEY-12); 1 has the punctuation, the same marks as predictive's (TEXT-2.1).
-const TAPS: [&[u8]; 10] = [b" 0", b".,?!'/-@:1", b"abc2", b"def3", b"ghi4", b"jkl5", b"mno6", b"pqrs7", b"tuv8", b"wxyz9"];
+const TAPS: [&[u8]; 10] = [b" 0", b".,?!'/-@:+1", b"abc2", b"def3", b"ghi4", b"jkl5", b"mno6", b"pqrs7", b"tuv8", b"wxyz9"];
 /// The same key again within this many ms changes the last letter instead of adding one.
 pub const TAP_MS: u32 = 1000;
 /// APRS limits: an addressee of 9, a message of 67 characters.
 const TO_MAX: usize = 9;
 const TEXT_MAX: usize = 67;
 /// Predictive: what 1 cycles through (TEXT-2.1). Printable ASCII, none of APRS's | ~ { (TEXT-13).
-const PUNCT: &[u8] = b".,?!'/-@:";
+const PUNCT: &[u8] = b".,?!'/-@:+";
 /// Compose's text is the draft's, unless a quick message is being edited (TEXT-7) or the comment (APRS-50).
 const DRAFT: u8 = 255;
 const COMMENT: u8 = 254;
@@ -1084,7 +1086,7 @@ impl View for Compose {
                 } else if pred && self.field == 1 {
                     b"* space   hold a digit: digit"
                 } else {
-                    b"1 . , ? ! ' / - @ :   * space"
+                    b"1 . , ? ! ' / - @ : +   * space"
                 };
                 lcd.text4(8, y + 55, help, &UI_12, DIM, BG);
             });
@@ -1234,7 +1236,7 @@ pub(crate) fn taps() -> [&'static [u8]; 10] {
 
 /// While 1 cycles the marks (TEXT-2.1): every mark, the one in the text highlighted.
 fn mark_strip(lcd: &mut impl Panel, y: i32, punct: u8) {
-    let mut items: [&[u8]; 9] = [b""; 9];
+    let mut items: [&[u8]; PUNCT.len()] = [b""; PUNCT.len()];
     for (i, it) in items.iter_mut().enumerate() {
         *it = &PUNCT[i..i + 1];
     }

@@ -415,3 +415,74 @@ fn fuzz_link_noise() {
         },
     );
 }
+
+/// LINK-51's compressed requests (the PC-to-radio window): requests coded as a PC codes them, sometimes damaged
+/// (a coded byte changed, a count skipped, a frame cut), through the shared block into plain frames. Until the
+/// first damage every frame comes out as it went in; after it, nothing panics.
+#[test]
+fn fuzz_link_compressed() {
+    use crate::link::z::{Zip, Z};
+    use ferrite_core::linkz::{LzEnc, UP};
+    Fuzz::new("link_compressed", 0x11E3, 30_000).run(
+        |r| {
+            let mut v = Vec::new();
+            for _ in 0..r.range(1, 10) {
+                let (ty, p) = request(r);
+                let p = &p[..p.len().min(200)];
+                v.push(ty);
+                v.push(p.len() as u8);
+                v.extend_from_slice(p);
+                v.push(if r.one_in(8) { r.range(1, 255) as u8 } else { 0 });
+            }
+            v
+        },
+        |d| {
+            let mut zip = std::boxed::Box::new(Zip::new());
+            let mut enc = std::boxed::Box::new(LzEnc::<UP>::new());
+            let (mut up_n, mut seq, mut in_step) = (0u8, 0u8, true);
+            let mut rest = d;
+            while rest.len() >= 2 {
+                let (ty, n) = (rest[0], rest[1] as usize);
+                let Some(p) = rest.get(2..2 + n) else { break };
+                let damage = rest.get(2 + n).copied().unwrap_or(0);
+                rest = rest.get(3 + n..).unwrap_or_default();
+                seq = seq.wrapping_add(1);
+                let mut c = [0u8; 300];
+                let k = enc.encode(p, &mut c[2..]);
+                (c[0], c[1]) = (ty, up_n);
+                up_n = up_n.wrapping_add(1);
+                let mut w = [0u8; MAX_WIRE];
+                let Some(len) = (match k.filter(|&k| k + 2 < p.len()) {
+                    Some(k) => wire::build(Z, seq, &c[..k + 2], &mut w),
+                    None => wire::build(ty, seq, p, &mut w),
+                }) else {
+                    continue;
+                };
+                let mut bytes = w[..len].to_vec();
+                if damage != 0 {
+                    in_step = false;
+                    match damage % 3 {
+                        0 => up_n = up_n.wrapping_add(1), // a count skipped: the next frames are out of step
+                        1 => {
+                            let i = damage as usize % (bytes.len() - 1);
+                            bytes[i] = bytes[i].wrapping_add(damage) | 1;
+                        }
+                        _ => {
+                            bytes.truncate(bytes.len() / 2);
+                            bytes.push(0);
+                        }
+                    }
+                }
+                let mut out = Vec::new();
+                for &b in &bytes {
+                    zip.take(b, &mut |c| out.push(c));
+                }
+                if in_step && ty & 0x80 == 0 {
+                    let f = out.split_mut(|&b| b == 0).find(|f| !f.is_empty()).expect("a frame out");
+                    let f = wire::parse(f).expect("a plain frame");
+                    assert_eq!((f.ty, f.seq, f.payload), (ty, seq, p), "a coded request came out changed");
+                }
+            }
+        },
+    );
+}

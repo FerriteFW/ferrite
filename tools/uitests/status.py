@@ -3,7 +3,7 @@ import re
 
 from .core import test
 
-BAR_KEYS = {"lock", "scan", "watch", "inbox", "alert", "gps", "bt_on", "bt", "battery", "low", "cutoff", "dry", "lpm", "clock", "utc", "call", "mcu", "switches", "held_us", "why", "vox"}  # dry: SBAR-22; bt_on: SBAR-8; lpm: SBAR-24; vox: SBAR-25; mcu ... why: PWR-26.6
+BAR_KEYS = {"lock", "scan", "watch", "inbox", "alert", "gps", "bt_on", "bt", "battery", "low", "cutoff", "dry", "lpm", "clock", "utc", "call", "mcu", "switches", "held_us", "why", "vox", "spk"}  # dry: SBAR-22; bt_on: SBAR-8; lpm: SBAR-24; vox: SBAR-25; spk: SBAR-26; mcu ... why: PWR-26.6
 CPU_KEYS = {"cpu", "cpu24", "cpu120", "at24"}  # SELF-9.1, SELF-9.3: once measured, and each speed only if it stayed there
 
 

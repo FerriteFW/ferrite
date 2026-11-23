@@ -334,7 +334,7 @@ impl App {
             scan: !hf && live.slots[self.active as usize].scanning,
             watch: if self.watch == 0 || n < 2 { 0 } else { n },
             vox: self.set.vox, // SBAR-25
-            mic: dev.spkmic, // SBAR-26
+            spk: dev.spkmic, // SBAR-26
             inbox: self.inbox,
             alert: self.alert & crate::ALERT_UNREAD != 0,
             clock: dev.clock_min,

@@ -481,7 +481,7 @@ fn describe<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
         kn(l, "dry", b.dry as u32); // TX-48, SBAR-22
         kn(l, "lpm", b.lpm as u32); // PWR-24, SBAR-24
         kn(l, "vox", b.vox as u32); // SBAR-25
-        kn(l, "mic", b.mic as u32); // SBAR-26
+        kn(l, "spk", b.spk as u32); // SBAR-26
         if b.sat != 0 {
             // SAT-20: the pass alarm's mark: minutes to the rise, or up
             let m = b.sat & ferrite_ui::widgets::SAT_UP;

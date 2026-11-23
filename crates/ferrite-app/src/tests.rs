@@ -836,7 +836,7 @@ fn status_value_change_redraws_its_row_only() {
             continue;
         }
         if row == 13 {
-            // a speaker mic plugged in: its row and the status bar's MIC mark (SBAR-26), nothing else
+            // a speaker mic plugged in: its row and the status bar's SPK mark (SBAR-26), nothing else
             assert!(wins.iter().all(|w| w.3 < 20 || (w.1 >= y0 && w.3 <= y1)), "row 13 and the status bar only: {wins:?}");
             assert!(px > 0 && px <= 2 * ROW_PX, "{px} px");
             continue;

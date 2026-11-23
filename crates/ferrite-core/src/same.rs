@@ -36,7 +36,8 @@ fn digits(b: &[u8]) -> Option<u32> {
         if !c.is_ascii_digit() {
             return None;
         }
-        n = n * 10 + (c - b'0') as u32;
+        // a run of digits too long for any field (a damaged header) is refused, not wrapped
+        n = n.checked_mul(10)?.checked_add((c - b'0') as u32)?;
     }
     Some(n)
 }
@@ -186,6 +187,15 @@ mod tests {
         ] {
             assert_eq!(parse(bad), None, "{:?}", core::str::from_utf8(bad));
         }
+    }
+
+    /// A location code of more digits than a u32 holds is refused (it overflowed: found by fuzzing).
+    #[test]
+    fn refuses_a_long_run_of_digits() {
+        assert_eq!(parse(b"ZCZC-CIV-CEM-0240310024033-024511-024005+0100-3651430-WBAL/TV -"), None);
+        assert_eq!(parse(b"WXR-TOR-99999999999999999999+0030-1591829-X"), None);
+        assert_eq!(digits(b"4294967295"), Some(u32::MAX));
+        assert_eq!(digits(b"4294967296"), None);
     }
 
     /// WX-5: more areas than are kept still count; a sender longer than 8 is cut; no trailing dash is fine.

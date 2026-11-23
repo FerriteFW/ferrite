@@ -9,7 +9,7 @@
 //!
 //! Frames are the AX.25 bytes without the FCS, as `uafsk`'s demodulator gives them and its modulator takes them.
 
-use crate::aprs::{REPLY_HOLD_S, beacon_due, retry_wait, AprsCfg, LastBeacon, HEARD_MAX, INFO_MAX, TRIES};
+use crate::aprs::{REPLY_HOLD_S, beacon_due, retry_wait_of, AprsCfg, LastBeacon, HEARD_MAX, INFO_MAX};
 use crate::data::{Beacon, Fix, MsgState, Pos, Station, Sym, AGO_UNKNOWN};
 use core::cell::Cell;
 use ferrite_core::freq::Freq10;
@@ -1125,7 +1125,7 @@ impl AprsLive {
         }
         // Ours that ran out of tries.
         for c in &self.out {
-            if let Some(o) = c.get().filter(|o| o.tries >= TRIES && now_s >= o.next_s) {
+            if let Some(o) = c.get().filter(|o| o.tries >= cfg.tries() && now_s >= o.next_s) {
                 c.set(None);
                 push_state(&mut t, (o.peer, o.text, MsgState::Failed));
                 t.changed = true;
@@ -1175,7 +1175,7 @@ impl AprsLive {
             }
         }
         for c in self.out.iter().filter(|_| all) {
-            let Some(mut o) = c.get().filter(|o| o.tries < TRIES && now_s >= o.next_s && o.from == me_call) else { continue };
+            let Some(mut o) = c.get().filter(|o| o.tries < cfg.tries() && now_s >= o.next_s && o.from == me_call) else { continue };
             if o.tries > 0 && !auto_ok {
                 continue;
             }
@@ -1188,7 +1188,7 @@ impl AprsLive {
                 continue;
             };
             o.tries += 1;
-            o.next_s = now_s + retry_wait(o.tries) as u32;
+            o.next_s = now_s + retry_wait_of(o.tries, cfg.tries()) as u32; // APRS-13.6
             c.set(Some(o));
             if o.tries > 1 {
                 self.last_auto.set(Some(now_s));
@@ -2023,6 +2023,32 @@ mod tests {
         }
         assert_eq!(tries, 5);
         assert!(failed);
+    }
+
+    /// APRS-13.6: message retries off sends once, then waits the last try's 240 s for an ack before failing;
+    /// two retries are three tries in all (a Discord request, ferrite#110: a receive-only iGate never acks).
+    #[test]
+    fn retries_setting_limits_the_tries() {
+        for (retries, want) in [(0u8, 1u32), (2, 3), (4, 5)] {
+            let a = AprsLive::new();
+            let mut out = [0u8; FRAME_MAX];
+            let cfg = AprsCfg { retries, ..AprsCfg::DEFAULT };
+            assert_eq!(cfg.tries() as u32, want);
+            a.send(b"VA3ABC", b"Anyone?");
+            let (mut tries, mut failed_at) = (0, None);
+            for s in 0..1_200 {
+                let t = a.tick(s, Sending::All, true, b"VE3XYZ", None, &cfg, &mut out);
+                tries += (t.what == "Message") as u32;
+                if failed_at.is_none() && t.states.iter().flatten().any(|s| s.2 == MsgState::Failed) {
+                    failed_at = Some(s);
+                }
+            }
+            assert_eq!(tries, want, "{retries} retries");
+            if retries == 0 {
+                assert_eq!(failed_at, Some(crate::aprs::LAST_WAIT_S as u32), "sent once, failed after the last wait");
+            }
+            assert!(failed_at.is_some());
+        }
     }
 
     #[test]

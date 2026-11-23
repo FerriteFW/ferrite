@@ -1848,7 +1848,7 @@ pub mod state;
 mod sub;
 pub mod z;
 /// LINK-43: the APRS record's length, for Ferrite Console (which reads its layout from this crate).
-pub use sub::{APRS_REC, APRS_REPLY_AT, APRS_TEXT_AT};
+pub use sub::{APRS_REC, APRS_REPLY_AT, APRS_RETRIES_AT, APRS_TEXT_AT};
 
 #[cfg(test)]
 pub(crate) mod tests;

@@ -32,7 +32,8 @@ pub struct Msgs {
 
 const ALL: fn(u16) -> bool = |_| true;
 
-fn state_text(m: &Message, b: &mut Buf<16>) -> u16 {
+/// `tries`: how often a message is tried in all now (APRS-13.6), for "try 2/5".
+fn state_text(m: &Message, tries: u8, b: &mut Buf<16>) -> u16 {
     b.clear();
     match m.state {
         MsgState::Unread => {
@@ -49,8 +50,8 @@ fn state_text(m: &Message, b: &mut Buf<16>) -> u16 {
             GREEN
         }
         MsgState::Retrying(n) => {
-            // APRS-13: the try it's on of the five ("retry 2" read as a second retry on the first)
-            let _ = uwrite!(b, "try {}/{}", n, crate::aprs::TRIES);
+            // APRS-13: the try it's on of its tries (APRS-13.6; "retry 2" read as a second retry on the first)
+            let _ = uwrite!(b, "try {}/{}", n, tries.max(n));
             AMBER
         }
         MsgState::Failed => {
@@ -205,9 +206,10 @@ impl View for Msgs {
         if !app.gate((self, data.version(), cx.dev.clock_min)) {
             return;
         }
+        let tries = app.aprs_cfg().tries();
         let row = |m: &Message, time: &mut Buf<12>, st: &mut Buf<16>| -> u16 {
             clock_text(cx.dev.clock_min, m.ago_s, time);
-            state_text(m, st)
+            state_text(m, tries, st)
         };
         if self.open {
             if data.message(self.cur.sel).is_none() {

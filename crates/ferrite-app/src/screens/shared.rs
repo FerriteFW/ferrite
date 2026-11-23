@@ -446,6 +446,12 @@ impl App {
     /// "VFO · VHF", "012 · Repeaters", "SCAN · Airband" (HOME-4.3): a channel names its zone where a VFO names its
     /// band (decision 178); a channel in no zone keeps the band.
     pub(crate) fn head_text(&self, s: u8, live: &LiveAll, store: &impl ChannelStore, b: &mut Buf<32>) {
+        // TX-39.1 (decision 438): a key-up's slot needn't be A-C (satellite mode keys SAT_SLOT, HF mode 3): named,
+        // not looked up (a refused satellite key-up drew the TX refused screen here and faulted, Nov 22, 2026)
+        if s as usize >= ferrite_core::msg::SLOTS {
+            b.set(if s == crate::sat::SAT_SLOT { b"Satellite".as_slice() } else { b"HF mode" });
+            return;
+        }
         let sl = &self.slots[s as usize];
         let lv = &live.slots[s as usize];
         b.clear();
@@ -482,8 +488,11 @@ impl App {
     /// A channel slot's name, the cards' main line in channel mode (HOME-4); empty for a VFO, a scan or a
     /// channel without a name, which show their frequency large instead.
     pub(crate) fn chan_name(&self, s: u8, live: &LiveAll) -> Buf<16> {
-        let sl = &self.slots[s as usize];
         let mut n = Buf::<16>::new();
+        if s as usize >= ferrite_core::msg::SLOTS {
+            return n; // TX-39.1: no channel outside A-C
+        }
+        let sl = &self.slots[s as usize];
         if !live.slots[s as usize].scanning && !self.aprs_slot(s) {
             if let Some(c) = sl.ch.filter(|_| sl.on_channel()) {
                 n.set(c.name());

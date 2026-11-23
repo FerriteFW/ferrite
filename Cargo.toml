@@ -1,8 +1,8 @@
 [workspace]
 resolver = "2"
-members = ["crates/ferrite-core", "crates/ferrite-ui", "crates/ferrite-app", "crates/ferrite-store", "crates/ferrite-checks", "crates/ferrite-radio", "firmware", "reader", "restorer", "sim", "sim-web", "drivers/bus", "drivers/bk4829", "drivers/si4732", "drivers/st7789", "drivers/w25q", "drivers/keypad", "drivers/nmea", "digimodes/udsp", "digimodes/ufx25", "digimodes/uafsk", "digimodes/upocsag", "digimodes/udsc", "digimodes/uaprs", "digimodes/usstv"]
+members = ["crates/ferrite-core", "crates/ferrite-ui", "crates/ferrite-app", "crates/ferrite-store", "crates/ferrite-checks", "crates/ferrite-fuzzkit", "crates/ferrite-radio", "firmware", "reader", "restorer", "sim", "sim-web", "drivers/bus", "drivers/bk4829", "drivers/si4732", "drivers/st7789", "drivers/w25q", "drivers/keypad", "drivers/nmea", "digimodes/udsp", "digimodes/ufx25", "digimodes/uafsk", "digimodes/upocsag", "digimodes/udsc", "digimodes/uaprs", "digimodes/usstv"]
 # Plain `cargo test` / `cargo clippy` cover what runs on the PC; the firmware builds with `cargo fw` (radio only).
-default-members = ["crates/ferrite-core", "crates/ferrite-ui", "crates/ferrite-app", "crates/ferrite-store", "crates/ferrite-checks", "crates/ferrite-radio", "sim", "drivers/bus", "drivers/bk4829", "drivers/si4732", "drivers/st7789", "drivers/w25q", "drivers/keypad", "drivers/nmea", "digimodes/udsp", "digimodes/ufx25", "digimodes/uafsk", "digimodes/upocsag", "digimodes/udsc", "digimodes/uaprs", "digimodes/usstv"]
+default-members = ["crates/ferrite-core", "crates/ferrite-ui", "crates/ferrite-app", "crates/ferrite-store", "crates/ferrite-checks", "crates/ferrite-fuzzkit", "crates/ferrite-radio", "sim", "drivers/bus", "drivers/bk4829", "drivers/si4732", "drivers/st7789", "drivers/w25q", "drivers/keypad", "drivers/nmea", "digimodes/udsp", "digimodes/ufx25", "digimodes/uafsk", "digimodes/upocsag", "digimodes/udsc", "digimodes/uaprs", "digimodes/usstv"]
 
 [workspace.package]
 version = "0.9.5"
@@ -17,6 +17,7 @@ ferrite-ui = { path = "crates/ferrite-ui" }
 ferrite-app = { path = "crates/ferrite-app", default-features = false } # the vt100 pages: each user says
 ferrite-store = { path = "crates/ferrite-store", default-features = false }
 ferrite-radio = { path = "crates/ferrite-radio" }
+ferrite-fuzzkit = { path = "crates/ferrite-fuzzkit" } # dev-dependency only: the deterministic fuzz tests
 ufmt = "0.2"
 embassy-sync = "0.8"
 
@@ -29,6 +30,7 @@ st7789 = { path = "drivers/st7789" }
 w25q = { path = "drivers/w25q", default-features = false } # read only unless a crate asks for "write"
 keypad = { path = "drivers/keypad" }
 uafsk = { path = "digimodes/uafsk" }
+ufx25 = { path = "digimodes/ufx25" }
 upocsag = { path = "digimodes/upocsag" }
 udsp = { path = "digimodes/udsp" }
 udsc = { path = "digimodes/udsc" }

@@ -28,7 +28,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "ferrite-app"
-version = "0.1.0"
+version = "0.9.5"
 dependencies = [
  "ferrite-core",
  "ferrite-ui",
@@ -38,12 +38,13 @@ dependencies = [
 
 [[package]]
 name = "ferrite-core"
-version = "0.1.0"
+version = "0.9.5"
 dependencies = [
  "uafsk",
  "udsc",
  "udsp",
  "upocsag",
+ "usstv",
 ]
 
 [[package]]
@@ -60,7 +61,7 @@ dependencies = [
 
 [[package]]
 name = "ferrite-ui"
-version = "0.1.0"
+version = "0.9.5"
 dependencies = [
  "ferrite-core",
  "ufmt",
@@ -218,4 +219,8 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 
 [[package]]
 name = "upocsag"
+version = "0.1.0"
+
+[[package]]
+name = "usstv"
 version = "0.1.0"

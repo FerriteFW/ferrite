@@ -1,0 +1,13 @@
+[package]
+name = "ferrite-fuzzkit"
+description = "Deterministic fuzzing for the host tests: a seeded PRNG, mutations of real inputs, failures reported with their seed and input and kept as regression cases"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish = false
+
+[dependencies]
+
+[lints]
+workspace = true

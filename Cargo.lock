@@ -410,9 +410,12 @@ name = "ferrite-app"
 version = "0.9.5"
 dependencies = [
  "ferrite-core",
+ "ferrite-fuzzkit",
  "ferrite-ui",
+ "uafsk",
  "uaprs",
  "ufmt",
+ "ufx25",
 ]
 
 [[package]]
@@ -432,6 +435,10 @@ dependencies = [
  "upocsag",
  "usstv",
 ]
+
+[[package]]
+name = "ferrite-fuzzkit"
+version = "0.9.5"
 
 [[package]]
 name = "ferrite-radio"

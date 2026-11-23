@@ -444,6 +444,7 @@ impl Radio {
             radio_chip::tx_test_restore(&mut self.chip(n), &r);
         }
         self.tuned = [None; 2];
+        self.hf_resume = self.hf.is_some(); // HF-23.1: HF's receive back on the next tick
         self.sq_key = [None; 2]; // SQL-18.6: receive after the unkey starts closed, not as before the key-up
         self.tx.chip = None;
         self.tx.dial = None;

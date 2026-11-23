@@ -441,7 +441,8 @@ impl View for Home {
             (Key::VfoMem, Short) => toggle_vfo(app, store),
             (Key::VfoMem, Long) => app.open(Dest::Zones), // KEY-26: the zone list, in VFO and channel mode alike
             (Key::Hash, Short) => {
-                if app.strip_pausable() {
+                // ferrite#134: with the strip paused and a watched slot receiving, # is the watch's pause (WATCH-6)
+                if app.strip_pausable() && !(app.strip_paused && app.watched_rx()) {
                     // MODE-5.1 (ferrite#120): single + scope: # pauses the strip, so the watch and APRS have the
                     // receiver; # again sweeps (this view's # is the pause, not the quick help)
                     app.strip_paused = !app.strip_paused;
@@ -509,7 +510,7 @@ impl View for Home {
         }
         let group = if app.slots[app.active as usize].on_channel() { "Zone" } else { "Band" };
         // MODE-5.1: in single + scope # is the strip's pause and says which way it goes
-        let mid = if app.strip_pausable() {
+        let mid = if app.strip_pausable() && !(app.strip_paused && app.watched_rx()) {
             ("#", if app.strip_paused { "Scope" } else { "Pause" })
         } else if app.watched_rx() {
             ("#", "Pause")

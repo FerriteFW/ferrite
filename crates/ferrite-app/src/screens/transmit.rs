@@ -227,6 +227,7 @@ pub fn sstv_key(app: &mut App, slot: u8, power: u8) -> bool {
     if app.remote_tx_refused() || !auto_tx(app, slot, b"SSTV") {
         return false;
     }
+    data_begin(app); // TX-24.1: the broadcast stops first
     let region = txplan::Region::ALL.iter().position(|&r| r == app.set.tx_region()).unwrap_or(0) as u8;
     app.out.push(RadioCmd::TxPlan { tx: tx_freq(app, slot), region, extend: app.set.extend_tx, confirmed: false });
     app.out.push(RadioCmd::TransmitData { slot, power, on: true });

@@ -1084,7 +1084,7 @@ impl View for Compose {
                 } else if pred && self.field == 1 {
                     b"* space   hold a digit: digit"
                 } else {
-                    b"1 . , ? ! ' / - @ :   * space"
+                    b"1 . , ? ! ' / - @ : +   * space"
                 };
                 lcd.text4(8, y + 55, help, &UI_12, DIM, BG);
             });

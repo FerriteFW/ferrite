@@ -138,6 +138,8 @@ pub struct FakeRadio {
     power: [u8; 4],
     /// Slots at squelch 0: the noise floor holds them open, as on the radio.
     sq0: u8,
+    /// Slots a test puts a carrier on, scanning or not (the crash hunts' squelch events, a scan stopped on a hit).
+    pub carrier_on: u8,
     #[cfg(feature = "bench")]
     /// The two BK4829s' registers, for the terminal's `bk` (TERM-21).
     bk: [[u16; 128]; 2],
@@ -148,7 +150,7 @@ pub struct FakeRadio {
     #[cfg(feature = "bench")]
     txtest: Option<ferrite_core::txtest::Arm>,
     /// Slots with monitor latched: squelch held open.
-    monitor: u8,
+    pub monitor: u8,
     /// Slots with receive priority (APRS-21.1, [`RadioCmd::Awake`]).
     prio: u8,
     /// The APRS slot ([`RadioCmd::AprsSlot`]): other slots on its frequency defer to it (APRS-21.2).
@@ -156,7 +158,7 @@ pub struct FakeRadio {
     /// Quick mute (HOME-15): slots still received, never heard.
     mute: u8,
     /// Slots turned off (HOME-15.1): no chip, never heard.
-    slot_off: u8,
+    pub slot_off: u8,
     fm: u16,
     /// The broadcast plays, tuned (or a seek landed) at this time (s): as [`Fake::Fm`], or beside home's strip
     /// (MODE-5), which then has the mode report.
@@ -222,6 +224,7 @@ impl FakeRadio {
             scope_cfg: (60, 10),
             power: [2; 4],
             sq0: 0,
+            carrier_on: 0,
             #[cfg(feature = "bench")]
             bk: fake_bk(),
             #[cfg(feature = "bench")]
@@ -434,7 +437,15 @@ impl FakeRadio {
                     Fake::Hf { t0, .. } => t0,
                     _ => self.now,
                 };
-                self.set(if on { Fake::Hf { t0, freq, mode } } else { Fake::Off })
+                self.set(if on { Fake::Hf { t0, freq, mode } } else { Fake::Off });
+                // HF-11: the receiver HF mode uses, the relay with it (a BK4829 at 18 MHz and up, where HF mode
+                // transmits); off, the active slot's again (WATCH-10)
+                if on && freq >= mhz(18) {
+                    let now = self.ms();
+                    self.path.rx(Rx::Bk(Sel::rx(freq)), Cause::HfReceiver, now, &mut Steps::default()).ok();
+                } else if !on {
+                    self.rx_path();
+                }
             }
             RadioCmd::HfSeek { up } => {
                 if let Fake::Hf { freq, .. } = &mut self.mode {
@@ -684,7 +695,11 @@ impl FakeRadio {
         // Carriers where each slot is tuned now.
         let quiet = self.quiet;
         let sq0 = self.sq0;
+        let forced = self.carrier_on;
         let carrier = |i: usize, s: &SlotLive| -> (bool, f32) {
+            if forced & 1 << i != 0 {
+                return (true, -70.0);
+            }
             if quiet {
                 return (false, 0.0);
             }

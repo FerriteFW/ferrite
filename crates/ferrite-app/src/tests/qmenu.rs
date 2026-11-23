@@ -83,6 +83,25 @@ fn ptt_a_is_reverse() {
     assert!(t.app.qmenu.is_some(), "the box stays up");
 }
 
+/// VFO-7: reverse listens on the input: the receiver is retuned to the TX side as reverse goes on, and back
+/// as it goes off (a Discord report, ferrite#102: only the TX side swapped).
+#[test]
+fn reverse_retunes_the_receiver_to_the_input() {
+    let mut t = ready();
+    t.app.slots[0].cfg.offset = 60_000; // +600 kHz
+    let rx = t.app.slot(0).freq();
+    open(&mut t);
+    t.cmds();
+    down(&mut t, Key::Ptt(PTT_A));
+    up(&mut t, Key::Ptt(PTT_A));
+    let tunes = |c: &[RadioCmd]| c.iter().filter_map(|c| match c { RadioCmd::TuneSlot { slot: 0, freq } => Some(*freq), _ => None }).collect::<Vec<_>>();
+    let c = t.cmds();
+    assert_eq!(tunes(&c), [rx + 60_000], "reversed: listens on the input {c:?}");
+    down(&mut t, Key::Ptt(PTT_A));
+    up(&mut t, Key::Ptt(PTT_A));
+    assert_eq!(tunes(&t.cmds()), [rx], "back on the output");
+}
+
 /// HOME-17, DISP-18: PTT B toggles night red, and back to the theme in use before it (daylight here); the
 /// brightness row follows night red's own level (DISP-23).
 #[test]

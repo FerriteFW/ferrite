@@ -906,7 +906,7 @@ fn quick_list_put_away() {
     assert!(hint_keys(&t).contains(&("1", "Mark")), "{:?}", hint_keys(&t));
 }
 
-/// TEXT-2.1: 1 cycles . , ? ! ' / - @ : (and round again), the same marks as multi-tap's 1 (KEY-12); on an
+/// TEXT-2.1: 1 cycles . , ? ! ' / - @ : + (and round again), the same marks as multi-tap's 1 (KEY-12); on an
 /// empty message too.
 #[test]
 fn marks_cycle() {
@@ -915,12 +915,12 @@ fn marks_cycle() {
     t.tap(Key::Digit(1));
     assert_eq!(text(&t), ".");
     let mut seen = std::string::String::new();
-    for _ in 0..9 {
+    for _ in 0..10 {
         seen.push(text(&t).chars().last().unwrap());
         t.tap(Key::Digit(1));
         t.draw();
     }
-    assert_eq!(seen, ".,?!'/-@:");
+    assert_eq!(seen, ".,?!'/-@:+");
     assert_eq!(text(&t), ".", "round again");
     t.tap(Key::Exit);
     t.tap(Key::Digit(1));
@@ -929,11 +929,11 @@ fn marks_cycle() {
     t.hold(Key::Star);
     t.tap(Key::Hash);
     let mut seen = std::string::String::new();
-    for _ in 0..10 {
+    for _ in 0..11 {
         t.tap(Key::Digit(1));
         seen.push(text(&t).chars().last().unwrap());
     }
-    assert_eq!(seen, ".,?!'/-@:1");
+    assert_eq!(seen, ".,?!'/-@:+1");
 }
 
 /// TEXT-13: compose types printable ASCII only, never APRS's | ~ {.

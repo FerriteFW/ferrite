@@ -701,10 +701,15 @@ impl AprsLive {
         Beacon { waiting: self.waiting.get(), next_s: next_s.filter(|_| self.on_since.get().is_some()), digi: self.echo_by.get() }
     }
 
-    /// APRS-53: the beacon framed last went out (the APRS task calls this as it plays it): a Sent entry.
+    /// APRS-53: the beacon framed last went out (the APRS task calls this as it plays it): a Sent entry. APRS-9.2
+    /// (decision 443): the beacon timer counts from here, not from when it was framed: a beacon held back by a long
+    /// transmission (an SSTV picture, TX-24.2) left the next one due at once, and two went out 2 s apart.
     pub fn beacon_sent(&self, now_s: u32) {
         self.now_s.set(now_s);
         self.sent.push(now_s);
+        if let Some(b) = self.beacon_last.get() {
+            self.beacon_last.set(Some(LastBeacon { at_s: now_s, ..b }));
+        }
     }
 
     /// APRS-53: the Sent page's entries, newest first.
@@ -2128,6 +2133,20 @@ mod tests {
     /// GPS-33: a timed beacon with a fix older than its interval waits up to 2 minutes for a fresh one and goes on
     /// it; with none it is skipped (once, for the caller to log) and the next comes by the schedule. Beacon now
     /// with an old fix is refused at once.
+    /// APRS-9.2 (decision 443): a timed beacon held back (framed at 100, sent at 200: an SSTV picture under way,
+    /// TX-24.2) puts the next one a whole interval after it went out, not straight after it.
+    #[test]
+    fn the_beacon_timer_counts_from_the_send() {
+        let a = AprsLive::new();
+        let mut out = [0u8; FRAME_MAX];
+        let cfg = AprsCfg { beacon: 2, ..AprsCfg::DEFAULT }; // every minute
+        assert_eq!(a.tick(100, Sending::All, true, b"VE3XYZ", Some(fix()), &cfg, &mut out).what, "Beacon");
+        a.beacon_sent(200);
+        let early = (201..260).filter(|&s| a.tick(s, Sending::All, true, b"VE3XYZ", Some(fix()), &cfg, &mut out).what == "Beacon").count();
+        assert_eq!(early, 0, "not again until a minute after it went out");
+        assert_eq!(a.tick(260, Sending::All, true, b"VE3XYZ", Some(fix()), &cfg, &mut out).what, "Beacon");
+    }
+
     #[test]
     fn beacon_waits_for_a_fresh_fix() {
         let a = AprsLive::new();

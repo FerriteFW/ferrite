@@ -188,61 +188,37 @@ fn kiss_on_makes_c_the_aprs_slot() {
     assert!(a.app.aprs_slot(APRS_SLOT), "APRS mode still has C");
 }
 
-/// APRS-29, APRS-21.1, APRS-19, KISS-9 (decision 181): automatic beacons with APRS mode off hold C as the APRS slot
-/// (tuned to the APRS frequency, watched, locked; the lock names what holds C, nothing more) but give it no receive
-/// priority (not kept awake); manual beacons don't hold it. APRS mode and KISS give priority. The holder's
-/// precedence is APRS mode, KISS, beacons.
+/// APRS-29.1 (decision 439, ferrite#101): APRS mode is the master switch. Automatic beacons with APRS mode off
+/// hold nothing and send nothing: C stays the user's slot and nothing goes out. With APRS mode on they beacon as
+/// part of it (C held by APRS mode, with priority); APRS mode off gives C back whatever 0 5 6 1 says. KISS still
+/// holds C by itself (KISS-9: the app sends).
 #[test]
-fn beacons_alone_hold_c_without_priority() {
+fn beacons_need_aprs_mode() {
     use crate::aprs::Holder;
+    use crate::aprs_live::Sending;
     let mut a = A::new();
     let own = a.app.slot(APRS_SLOT).freq();
     a.app.set_watch(0);
     a.cmds();
-    a.app.set_aprs(AprsCfg { beacon: 1, ..a.app.aprs_cfg() }); // manual: only "Beacon now"
-    a.tick();
-    assert_eq!(a.app.aprs_holder(), None, "manual beacons don't hold C");
     a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() }); // every 10 min
     a.tick();
-    assert_eq!(a.app.aprs_holder(), Some(Holder::Beacon));
-    assert!(a.app.aprs_slot(APRS_SLOT) && !a.app.aprs_prio() && !a.app.aprs_on());
-    let c = a.cmds();
-    assert!(c.contains(&RadioCmd::TuneSlot { slot: 2, freq: 14_439_000 }), "tuned to APRS: {c:?}");
-    assert!(c.contains(&RadioCmd::Watch(0b100)), "an ordinary watched slot: {c:?}");
-    assert!(c.contains(&RadioCmd::Awake(0)) && c.contains(&RadioCmd::AprsSlot(0b100)), "no priority, but the APRS slot: {c:?}");
-    assert!(a.app.toast_up());
-    a.tap(Key::Slot);
-    a.tap(Key::Slot);
-    assert_eq!(a.app.active(), 2);
-    assert_eq!(a.app.greyed(Item::Mode), Some("Slot C held by beacons"));
-    a.cmds();
-    a.tap(Key::Up);
-    assert!(a.app.toast_up());
-    assert!(!a.cmds().iter().any(|c| matches!(c, RadioCmd::TuneSlot { .. })), "C stays put");
-    // APRS mode on: it holds C (first in precedence) with priority; off again, beacons still hold it, no priority.
+    assert_eq!(a.app.aprs_holder(), None, "APRS mode off: timed beacons hold nothing");
+    assert!(!a.app.aprs_slot(APRS_SLOT) && !a.app.beacons_on());
+    assert_eq!(a.app.aprs_sending(), Sending::Nothing, "and nothing goes out");
+    assert!(!a.cmds().iter().any(|c| matches!(c, RadioCmd::TuneSlot { slot: 2, .. })), "C stays on its own frequency");
     a.mode(true);
     assert_eq!(a.app.aprs_holder(), Some(Holder::Mode));
-    assert!(a.cmds().contains(&RadioCmd::Awake(0b100)));
-    assert_eq!(a.app.greyed(Item::Mode), Some("Slot C held by APRS mode"));
+    assert!(a.app.beacons_on());
+    assert!(a.cmds().contains(&RadioCmd::Awake(0b100)), "APRS mode: priority");
     a.mode(false);
-    assert_eq!(a.app.aprs_holder(), Some(Holder::Beacon));
-    assert!(a.cmds().contains(&RadioCmd::Awake(0)));
-    // KISS on beside the beacons: KISS holds C, with priority; off, the beacons again.
+    assert_eq!(a.app.aprs_holder(), None, "APRS mode off gives C back, beacons set or not");
+    let c = a.cmds();
+    assert!(c.contains(&RadioCmd::TuneSlot { slot: 2, freq: own }) && c.contains(&RadioCmd::AprsSlot(0)), "{c:?}");
+    // KISS still holds C by itself.
     a.app.set.bt = true;
     a.app.set.kiss_port = 2;
     a.tick();
     assert_eq!(a.app.aprs_holder(), Some(Holder::Kiss));
-    assert!(a.cmds().contains(&RadioCmd::Awake(0b100)), "KISS: priority");
-    a.app.set.kiss_port = 0;
-    a.tick();
-    assert_eq!(a.app.aprs_holder(), Some(Holder::Beacon));
-    assert!(a.cmds().contains(&RadioCmd::Awake(0)));
-    // Beacons off: C comes back.
-    a.app.set_aprs(AprsCfg { beacon: 0, ..a.app.aprs_cfg() });
-    a.tick();
-    assert_eq!(a.app.aprs_holder(), None);
-    let c = a.cmds();
-    assert!(c.contains(&RadioCmd::TuneSlot { slot: 2, freq: own }) && c.contains(&RadioCmd::AprsSlot(0)), "{c:?}");
 }
 
 /// APRS-18: with the APRS slot (C) active, PTT A opens compose from any screen without keying; in compose PTT
@@ -807,4 +783,113 @@ fn message_retries_row_steps_through_its_values() {
     }
     assert_eq!(seen, [0, 1, 2, 3, 4]);
     assert_eq!(a.app.aprs_cfg().tries(), 5);
+}
+
+/// MODE-5.1, APRS-15.3 (ferrite#120, ferrite#59): C on airband in AM, then APRS mode on the single + scope
+/// layout. C goes to the Radio task as FM on the APRS frequency, the card's settings are the APRS slot's (it read
+/// AM), and with C active home's strip doesn't sweep (a sweep is all the Radio task does while it runs: no turn
+/// for C, nothing decoded; it swept around 118.950). With A active the strip sweeps and APRS waits (decision 441);
+/// # pauses the strip and APRS listens, # again sweeps. APRS mode off: C is back in AM on airband.
+#[test]
+fn aprs_from_an_am_slot_is_fm_and_the_strip_waits() {
+    use crate::screens::activity::Mode;
+    let air = ferrite_core::freq::mhz(118) + 95_000;
+    let mut a = A::new();
+    a.app.active = APRS_SLOT;
+    let s = &mut a.app.slots[APRS_SLOT as usize];
+    (s.vfo_mode, s.vfo) = (true, air);
+    s.cfg_mut().mode = 2;
+    a.app.send_slot(APRS_SLOT);
+    a.app.set_layout(1);
+    a.wait(700);
+    let c = a.cmds();
+    assert!(c.contains(&RadioCmd::SlotParam { slot: 2, param: Param::Mode, value: 2 }), "AM on airband: {c:?}");
+    assert!(c.iter().any(|c| matches!(c, RadioCmd::Sweep { centre, on: true, .. } if *centre == air)), "the strip around it: {c:?}");
+    assert_eq!(a.app.radio.mode, Mode::Strip);
+    a.mode(true);
+    a.wait(700);
+    let c = a.cmds();
+    let at = |want: RadioCmd| c.iter().rposition(|x| *x == want);
+    let tuned = at(RadioCmd::TuneSlot { slot: 2, freq: 14_439_000 }).expect("on the APRS frequency");
+    assert!(at(RadioCmd::SlotParam { slot: 2, param: Param::Mode, value: 0 }) > Some(tuned), "FM, after the retune: {c:?}");
+    assert!(!c.contains(&RadioCmd::SlotParam { slot: 2, param: Param::Mode, value: 2 }), "never AM again: {c:?}");
+    assert!(c.iter().any(|c| matches!(c, RadioCmd::Sweep { on: false, .. })), "the strip stopped: {c:?}");
+    assert!(!c.iter().any(|c| matches!(c, RadioCmd::Sweep { on: true, .. })), "and not started again: {c:?}");
+    assert!(a.app.strip_blocked() && a.app.radio.mode != Mode::Strip);
+    assert_eq!((a.app.tuned_cfg(APRS_SLOT).mode, a.app.slot(APRS_SLOT).cfg().mode), (0, 2), "the card's FM; C's own AM kept aside");
+    // A active, on 2 m beside APRS: the strip sweeps (APRS waits); # pauses it, # again sweeps (MODE-5.1)
+    a.app.active = 0;
+    a.wait(700);
+    assert!(!a.app.strip_blocked() && a.app.strip_pausable());
+    assert_eq!(a.app.radio.mode, Mode::Strip);
+    a.cmds();
+    a.tap(Key::Hash);
+    a.wait(700);
+    assert!(a.app.strip_paused && a.app.radio.mode != Mode::Strip, "paused: the receiver is APRS's and the watch's");
+    assert!(a.cmds().iter().any(|c| matches!(c, RadioCmd::Sweep { on: false, .. })));
+    assert_eq!(a.app.screen(), Screen::Home, "this layout's # is the pause, not the quick help");
+    a.tap(Key::Hash);
+    a.wait(700);
+    assert!(!a.app.strip_paused);
+    assert_eq!(a.app.radio.mode, Mode::Strip);
+    // off: C as it was, and the strip again
+    a.app.active = APRS_SLOT;
+    a.mode(false);
+    a.wait(700);
+    let c = a.cmds();
+    assert!(c.contains(&RadioCmd::TuneSlot { slot: 2, freq: air }) && c.contains(&RadioCmd::SlotParam { slot: 2, param: Param::Mode, value: 2 }), "{c:?}");
+    assert!(c.iter().any(|c| matches!(c, RadioCmd::Sweep { centre, on: true, .. } if *centre == air)), "{c:?}");
+}
+
+/// APRS-29.2, KISS-6.1 (decision 440): 0 5 3 is one selector, Off, Tracker, On, KISS. Tracker holds C for beacons only (no
+/// priority, nothing decoded or answered), starting every 10 min when 0 5 6 1 was off; stepping on to On puts 0 5 6
+/// 1 back as it was, so passing Tracker leaves no beacons behind; KISS uses 0 5 8's port; Off holds nothing.
+#[test]
+fn aprs_mode_selector_off_tracker_on_kiss() {
+    use crate::aprs::Holder;
+    use crate::aprs_live::Sending;
+    use crate::screens::groups::{change, wired};
+    let mut a = A::new();
+    a.app.set.bt = true;
+    let dev = ferrite_core::msg::Device::default();
+    let mut b = ferrite_ui::text::Buf::<24>::new();
+    let shown = |a: &A, b: &mut ferrite_ui::text::Buf<24>| {
+        wired(&a.app, &dev, &[5, 3], b);
+        std::string::String::from_utf8_lossy(b.as_bytes()).into_owned()
+    };
+    assert_eq!((shown(&a, &mut b), a.app.aprs_holder()), ("Off".into(), None));
+    assert_eq!(a.app.aprs_cfg().beacon, 0);
+    change(&mut a.app, &[5, 3], 1);
+    a.tick();
+    assert_eq!(shown(&a, &mut b), "Tracker");
+    assert_eq!(a.app.aprs_cfg().beacon, crate::aprs::TRACKER_BEACON, "a tracker beacons: every 10 min");
+    assert_eq!((a.app.aprs_holder(), a.app.aprs_sending()), (Some(Holder::Beacon), Sending::Beacons));
+    assert!(!a.app.aprs_prio() && !a.app.aprs_on(), "no priority, nothing decoded");
+    // 0 5 6 1 in Tracker skips off and manual
+    a.app.step_beacon(-1);
+    assert!(a.app.aprs_cfg().beacons_on(), "{}", a.app.aprs_cfg().beacon);
+    a.app.step_beacon(1);
+    assert_eq!(a.app.aprs_cfg().beacon, crate::aprs::TRACKER_BEACON);
+    change(&mut a.app, &[5, 3], 1);
+    a.tick();
+    assert_eq!(shown(&a, &mut b), "On");
+    assert_eq!(a.app.aprs_cfg().beacon, 0, "Tracker's own beacons don't carry on into On");
+    assert_eq!((a.app.aprs_holder(), a.app.aprs_sending()), (Some(Holder::Mode), Sending::All));
+    change(&mut a.app, &[5, 3], 1);
+    a.tick();
+    assert_eq!(shown(&a, &mut b), "KISS");
+    assert_eq!((a.app.set.kiss_port, a.app.aprs_holder()), (2, Some(Holder::Kiss)), "Bluetooth, 0 5 8's default");
+    assert!(!a.app.set.aprs_mode && !a.app.set.tracker);
+    change(&mut a.app, &[5, 8], 1);
+    assert_eq!((a.app.set.kiss_port, a.app.set.kiss_via), (1, 1), "0 5 8 moves KISS to the cable");
+    change(&mut a.app, &[5, 3], 1);
+    a.tick();
+    assert_eq!((shown(&a, &mut b), a.app.aprs_holder(), a.app.set.kiss_port), ("Off".into(), None, 0));
+    assert_eq!(a.app.set.kiss_via, 1, "the port is kept");
+    // A beacon mode of the user's own stays when leaving Tracker.
+    a.app.set_aprs(AprsCfg { beacon: 3, ..a.app.aprs_cfg() }); // every 2 min
+    change(&mut a.app, &[5, 3], 1);
+    assert_eq!(a.app.aprs_cfg().beacon, 3, "already automatic: kept");
+    change(&mut a.app, &[5, 3], 1);
+    assert_eq!(a.app.aprs_cfg().beacon, 3);
 }

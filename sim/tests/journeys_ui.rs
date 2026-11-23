@@ -253,7 +253,8 @@ fn idle_screen_is_still() {
 }
 
 /// A key's meaning doesn't depend on a setting, the theme or the layout: hold 1 opens the band scope and #
-/// the quick help whatever the look (DISP-14, NAV-6, KEY-1).
+/// the quick help whatever the look (DISP-14, NAV-6, KEY-1), but for single + scope, where # pauses and resumes
+/// the strip, as its hint says (MODE-5.1, decision 441).
 #[test]
 fn keys_mean_the_same_whatever_the_look() {
     let mut r = Radio::new();
@@ -262,7 +263,11 @@ fn keys_mean_the_same_whatever_the_look() {
         for theme in 0..3 {
             r.sim.app_mut().settings_mut().theme = theme;
             r.wait(200);
-            r.run("hold 1; expect screen \"Scope\"; home; press HASH; expect screen \"Holds\"; home");
+            if layout == 1 {
+                r.run("hold 1; expect screen \"Scope\"; home; press HASH; expect screen \"Home\"; expect text \"Scope paused\"; press HASH; home");
+            } else {
+                r.run("hold 1; expect screen \"Scope\"; home; press HASH; expect screen \"Holds\"; home");
+            }
         }
         let _ = layout;
         r.event(Event::Layout);

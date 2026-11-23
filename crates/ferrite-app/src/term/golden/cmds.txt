@@ -682,7 +682,7 @@
   | set 0 5 7 1 Off                   # Digipeat
   | set 0 5 7 2 WIDE1-1               # Aliases
   | set 0 5 7 3 0 s                   # Wait
-  | set 0 5 8 Off                     # KISS TNC
+  | set 0 5 8 Bluetooth               # KISS port
   | set 0 5 9 1 WIDE1-1,WIDE2-1       # Path
   | set 0 5 9 2 None                  # Custom path
   | set 0 5 9 3 300 ms                # TX delay
@@ -943,7 +943,7 @@
   | set 0 5 7 1 Off                   # Digipeat
   | set 0 5 7 2 WIDE1-1               # Aliases
   | set 0 5 7 3 0 s                   # Wait
-  | set 0 5 8 Off                     # KISS TNC
+  | set 0 5 8 Bluetooth               # KISS port
   | set 0 5 9 1 WIDE1-1,WIDE2-1       # Path
   | set 0 5 9 2 None                  # Custom path
   | set 0 5 9 3 300 ms                # TX delay

@@ -461,7 +461,7 @@ impl App {
             b.push(match h {
                 crate::aprs::Holder::Mode => b"APRS Mode".as_slice(),
                 crate::aprs::Holder::Kiss => b"APRS KISS",
-                crate::aprs::Holder::Beacon => b"APRS Beacon",
+                crate::aprs::Holder::Beacon => b"APRS Tracker",
             });
         } else if lv.scanning {
             b.push(b"SCAN");

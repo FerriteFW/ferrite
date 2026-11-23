@@ -180,7 +180,7 @@ def reset_then_setup(t):
         u = t.wait(lambda u: u.id == "Setup", timeout=15, what="setup after the reset")
         t.eq(setup_line(u)["page"], 1, "setup's first page (BOOT-14.5)")
         t.check(t.get("0 9 4") in ("None", "Not set", "-", ""), "no region until setup picks one", t.get("0 9 4"))
-        for p, name in (("0 8 2 1", "VOX"), ("0 5 8", "KISS"), ("0 5 7 1", "digipeater")):
+        for p, name in (("0 8 2 1", "VOX"), ("0 5 3", "APRS mode and KISS"), ("0 5 7 1", "digipeater")):
             t.eq(t.get(p), "Off", f"{name} off after the reset (SAFE-14.5)")
         u = t.keys("MENU MENU")
         t.eq(setup_line(u)["head"], "Region", "the region page")

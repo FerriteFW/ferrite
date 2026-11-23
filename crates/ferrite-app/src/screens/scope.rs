@@ -541,8 +541,9 @@ pub fn strip(app: &mut App, lcd: &mut impl Panel, region: usize, y: i32, h: i32,
 /// HOME-14: the strip while it can't run (FM broadcast has the receiver: BCR-29): its area blanked once, then only a
 /// dim frame, with no grid, bars or labels, so it doesn't look like a scope that is just quiet. Shares the strip's
 /// region, so either drawing replaces the other whole.
-pub fn strip_off(app: &mut App, lcd: &mut impl Panel, region: usize, y: i32, h: i32) {
-    if app.dirty_shape(region, Mix::new().h(&y).h(&h).get(), false).is_none() {
+/// The strip drawn off: its frame, empty, with `note` centred in it when there is one (MODE-5.1: why it's off).
+pub fn strip_off(app: &mut App, lcd: &mut impl Panel, region: usize, y: i32, h: i32, note: &[u8]) {
+    if app.dirty_shape(region, Mix::new().h(&y).h(&h).h(&note).get(), false).is_none() {
         return;
     }
     lcd.fill(0, y, 240, h + 18, BG);
@@ -550,6 +551,9 @@ pub fn strip_off(app: &mut App, lcd: &mut impl Panel, region: usize, y: i32, h: 
     lcd.fill(X0, y + h, 224, 1, LINE);
     lcd.fill(X0, y + 1, 1, h - 1, LINE);
     lcd.fill(X0 + 223, y + 1, 1, h - 1, LINE);
+    if !note.is_empty() {
+        w::field(lcd, X0 + 1, 222, y + 1, y + h, y + h / 2 + 6, note, const { &w::st(&UI_12, SUB, BG, Align::Center) });
+    }
 }
 
 #[cfg(test)]

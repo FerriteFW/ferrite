@@ -16,7 +16,7 @@ title: APRS that isn't missed
 layout: left
 left: With APRS mode on slot C, C gets the receive path every other turn.
 right: A and B keep watching; C is never deaf for more than 70 ms.
-setup: press BACK; home; menu 0 5 3; wait 900ms; knob 1; wait 900ms; home
+setup: press BACK; home; menu 0 5 3; wait 900ms; knob 2; wait 900ms; home
 script:
   wait 6s
 ---

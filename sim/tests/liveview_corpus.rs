@@ -70,10 +70,13 @@ const SCRIPTS: &[(&str, &str)] = &[
     ("home, C active", "press SLOT; press SLOT; wait 1s"),
     ("home, layout 1", "event layout; home; wait 1s"),
     ("home, layout 2", "event layout; event layout; home; wait 1s"),
-    ("APRS mode, A active", "menu 0 5 3; press OK; home; wait 2s"),
-    ("APRS mode, C active", "menu 0 5 3; press OK; home; press SLOT; press SLOT; wait 2s"),
-    ("APRS mode, C active, layout 1", "menu 0 5 3; press OK; event layout; home; press SLOT; press SLOT; wait 2s"),
-    ("APRS mode, APRS list", "menu 0 5 3; press OK; home; press SLOT; press SLOT; press OK; wait 1s"),
+    ("APRS mode, A active", "menu 0 5 3; press OK; press OK; home; wait 2s"),
+    ("APRS Tracker, C active", "menu 0 5 3; press OK; home; press SLOT; press SLOT; wait 2s"), // APRS-29.2
+    ("APRS mode, C active", "menu 0 5 3; press OK; press OK; home; press SLOT; press SLOT; wait 2s"),
+    ("APRS mode, C active, layout 1", "menu 0 5 3; press OK; press OK; event layout; home; press SLOT; press SLOT; wait 2s"),
+    ("APRS mode, A active, layout 1", "menu 0 5 3; press OK; press OK; event layout; home; wait 2s"), // MODE-5.1: APRS waits
+    ("APRS mode, layout 1, strip paused", "menu 0 5 3; press OK; press OK; event layout; home; wait 1s; press HASH; wait 3s"),
+    ("APRS mode, APRS list", "menu 0 5 3; press OK; press OK; home; press SLOT; press SLOT; press OK; wait 1s"),
     ("broadcast FM on A", "event fm; wait 3s"),
     ("broadcast FM, quick settings", "event fm; wait 3s; press MENU; wait 1s"),
     ("scan on A", "press SIDE2; wait 2s"),

@@ -110,6 +110,11 @@ pub const BOOT_SCREENS: [&str; 2] = ["Logo", "Owner card"];
 pub const CABLE_PORTS: [&str; 3] = ["Auto", "Link", "Terminal"]; // KISS on the cable is 0 5 8 alone (decision 386)
 /// 0 5 8's values (KISS-6): which port is the KISS TNC.
 pub const KISS_PORTS: [&str; 3] = ["Off", "Cable", "Bluetooth"];
+/// 0 5 3's values (APRS-29.2): what slot C does for APRS. Off, Tracker (beacons only), On (APRS mode), KISS (a TNC
+/// for an app, on 0 5 8's port).
+pub const APRS_MODES: [&str; 4] = ["Off", "Tracker", "On", "KISS"];
+/// 0 5 8's values (KISS-6.1): the KISS port, by `kiss_port`'s numbers (1 cable, 2 Bluetooth).
+pub const KISS_VIA: [&str; 2] = ["Cable", "Bluetooth"];
 /// 0 5 9 7 (WATCH-17.3, decision 295): who wins a chip shared with the APRS slot. 0, the default, APRS first.
 pub const APRS_SHARE: [&str; 2] = ["APRS first", "A\u{b7}B first"];
 
@@ -341,6 +346,10 @@ pub struct Settings {
     pub sat_min_el: u8,
     /// 0 5 9 8 Decode log (APRS-56): each packet heard but not decoded goes to the event log. Off by default.
     pub decode_log: bool,
+    /// 0 5 3 (APRS-29.2): Tracker, timed or smart beacons only on slot C, with APRS mode and KISS off.
+    pub tracker: bool,
+    /// 0 5 8 (KISS-6.1): the KISS port 0 5 3's KISS uses, 1 cable or 2 Bluetooth ([`KISS_VIA`]); kept while KISS is off.
+    pub kiss_via: u8,
 }
 
 /// 0 7 9's choices, seconds (0 never; MENU-28) and names. 30 s by default.
@@ -447,6 +456,29 @@ impl Settings {
     /// slot C the APRS slot (KISS-9).
     pub fn kiss_on(&self) -> bool {
         self.kiss_on_cable() || self.kiss_on_bt() && self.bt
+    }
+
+    /// KISS-6.1: the port 0 5 3's KISS uses: the one in use, else the one kept (Bluetooth by default).
+    pub fn kiss_port_kept(&self) -> u8 {
+        match (self.kiss_port, self.kiss_via) {
+            (1 | 2, _) => self.kiss_port,
+            (_, 1 | 2) => self.kiss_via,
+            _ => 2,
+        }
+    }
+
+    /// 0 5 3 (APRS-29.2): an index into [`APRS_MODES`]: KISS, then APRS mode, then Tracker (a record from before the
+    /// selector with both KISS and APRS mode on shows KISS, which was the one running).
+    pub fn aprs_select(&self) -> u8 {
+        if self.kiss_port != 0 {
+            3
+        } else if self.aprs_mode {
+            2
+        } else if self.tracker {
+            1
+        } else {
+            0
+        }
     }
 
     pub const DEFAULT: Settings = Settings {
@@ -560,6 +592,8 @@ impl Settings {
         local: crate::local::DEFAULT_RANGE,
         sat_min_el: SAT_MIN_EL_START,
         decode_log: false,
+        tracker: false,
+        kiss_via: 2,
     };
 
     /// Values a stored or linked record may hold out of range, brought back in (load_settings, the link's

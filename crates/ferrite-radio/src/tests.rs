@@ -1244,7 +1244,7 @@ fn suite_steps_and_restore() {
             assert_eq!(r(&mut b, reg::POWER), want30, "step {i}");
             let low = r(&mut b, reg::AF_FILTERS);
             match st.filters {
-                Filters::Voice => assert_eq!((low, r(&mut b, 0x19), r(&mut b, reg::MIC), r(&mut b, 0x50)), (0x0700, 0x1041, 0xE934, 0xBB18), "step {i}"),
+                Filters::Voice => assert_eq!((low, r(&mut b, 0x19), r(&mut b, reg::MIC), r(&mut b, 0x50)), (0x0700, 0x1041, 0xE934, chip::REG50_TX), "step {i}"), // TX-46.1: the key-up's REG_50
                 f => {
                     assert_eq!(low, if f == Filters::Flat { 0x0707 } else { 0x0704 }, "step {i}");
                     assert_eq!((r(&mut b, 0x19), r(&mut b, reg::MIC), r(&mut b, 0x50)), (0x9041, 0xE974, 0x3B18), "step {i}");

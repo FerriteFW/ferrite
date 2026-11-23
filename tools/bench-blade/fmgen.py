@@ -9,6 +9,7 @@
   fmgen.py OUT.sc16 fsk4 SYM DEV_HZ SECONDS    # 4FSK, PRBS9 dibits (M17's map: 01 +3, 00 +1, 10 -1, 11 -3), RRC 0.5;
                                                # DEV_HZ the outer deviation (M17 2400 at 4800 sym)
   fmgen.py OUT.sc16 afsk BAUD MARK SPACE SECONDS   # continuous-phase AFSK, PRBS9 (Bell 202 at 1200 1200 2200)
+  fmgen.py OUT.sc16 wav IN.wav                 # any 48 kHz mono audio (an SSTV picture from usstv's encode example)
 Deviation for sweep/tone/afsk: DEV (env, default 2500 Hz peak).
 """
 import os, sys, wave
@@ -95,6 +96,11 @@ def main():
         idx = (np.arange(int(len(bits) * spb)) / spb).astype(int)
         f = np.where(bits[idx] > 0, mark, space)
         freq_dev = np.sin(2 * np.pi * np.cumsum(f) / AF) * DEV
+    elif kind == "wav":
+        with wave.open(a[0], "rb") as w:
+            assert w.getframerate() == AF and w.getnchannels() == 1 and w.getsampwidth() == 2, "48 kHz mono 16-bit"
+            x = np.frombuffer(w.readframes(w.getnframes()), np.int16).astype(np.float64)
+        freq_dev = x / max(np.abs(x).max(), 1) * DEV
     else:
         sys.exit(__doc__)
     lead = np.zeros(int(LEAD * AF))

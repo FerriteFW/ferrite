@@ -304,6 +304,10 @@ pub enum DspCmd {
     /// PWR-26.9: the APRS slot's squelch (SQL-19) opened or closed: the AFSK decoder captures only while it is
     /// open and for [`SQ_TAIL_MS`] after, so the core rests at 24 MHz between packets.
     Squelch(bool),
+    /// SSTV-1: the SSTV screen is open: the decoder slot is SSTV's, the capture runs (the other decoders wait).
+    Sstv(bool),
+    /// SSTV-2.5: start a mode by hand (its VIS code), or stop the picture being received (0).
+    SstvForce(u8),
 }
 
 /// PWR-26.9: how long the AFSK capture runs on after the APRS slot's squelch closes (the frame's last flags).

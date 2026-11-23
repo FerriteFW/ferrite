@@ -671,6 +671,23 @@ pub trait Data {
         false
     }
 
+    /// SSTV-4: an erase or program inside the picture slots, queued as the store's own write (no update, unlike
+    /// [`Data::data_write`]; false: no room, or no flash here).
+    fn picture_write(&self, _w: DataWrite) -> bool {
+        false
+    }
+
+    /// SSTV-4: a received row (`ferrite_core::sstv::ROW_LEN` bytes) to be written at `addr` (false: the rows
+    /// waiting are full, or no flash here).
+    fn picture_row(&self, _addr: u32, _row: &[u8]) -> bool {
+        false
+    }
+
+    /// SSTV-4: a picture slot erased for the next picture (41 sectors, about 2 s).
+    fn picture_erase(&self, _slot: u8) -> bool {
+        false
+    }
+
     /// UPD-16 (decision 333): the layout the chip's data is in when it isn't this firmware's, or the radio is
     /// being written raw (LINK-61): then nothing is read or written by the store until a restart; 0 otherwise.
     fn layout_found(&self) -> u16 {

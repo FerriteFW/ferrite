@@ -64,13 +64,13 @@ pub const DICTIONARY: Range<u32> = 0x0B_0000..0x0C_0000;
 pub const FREE: Range<u32> = 0x0C_0000..0x0E_0000;
 /// The stock bootloader's fonts (decision 404): its update screen draws "UPDATE" and its messages with the GB2312
 /// glyphs from 0x0E0000 (75 bytes each, to 0x15BED0) and the ASCII ones at 0x15C000 (39 bytes each), read from here
-/// at every update (rt950pro_bootloader.bin 0x08002212, 0x08002232). Never written: not in [`WRITABLE`]. An SSTV
-/// test build put pictures here and black's update screen lost its text (Nov 16, 2026).
+/// at every update (rt950pro_bootloader.bin 0x08002212, 0x08002232). Never written: not in [`WRITABLE`]. SSTV's
+/// first layout put pictures here and black's update screen lost its text (Nov 16, 2026).
 pub const BOOT_FONTS: Range<u32> = 0x0E_0000..0x15_D000;
-/// Free, past the bootloader's fonts.
-pub const FREE_HIGH: Range<u32> = 0x15_D000..0x1C_0000;
+/// SSTV pictures (SSTV-4, decisions 403 and 404): four slots of 41 sectors ([`crate::sstv`]), and room to spare.
+pub const SSTV: Range<u32> = 0x15_D000..0x21_0000;
 /// Language packs: English plus one other at a time (planned).
-pub const LANGUAGES: Range<u32> = 0x1C_0000..0x24_0000;
+pub const LANGUAGES: Range<u32> = 0x21_0000..0x24_0000;
 /// The boot animation and custom screens (planned).
 pub const SCREENS: Range<u32> = 0x24_0000..0x28_0000;
 /// Fonts at the bigger sizes (planned).
@@ -127,7 +127,7 @@ pub const REGIONS: [(&str, Range<u32>); 29] = [
     ("Dictionary", DICTIONARY),
     ("Free", FREE),
     ("Stock bootloader's fonts (kept)", BOOT_FONTS),
-    ("Free", FREE_HIGH),
+    ("SSTV pictures", SSTV),
     ("Language packs", LANGUAGES),
     ("Boot animation and screens", SCREENS),
     ("Fonts", FONTS),
@@ -135,6 +135,13 @@ pub const REGIONS: [(&str, Range<u32>); 29] = [
     ("Scratch ring", SCRATCH_RING),
     ("Update area", UPDATE_AREA),
 ];
+
+/// SSTV-4.5: `len` bytes at `addr` lie wholly inside the picture slots: a link write there is a picture's, not an
+/// update's (it doesn't stop the store, LINK-61).
+pub fn in_pictures(addr: u32, len: u32) -> bool {
+    let end = addr as u64 + len as u64;
+    addr >= SSTV.start && end <= SSTV.end as u64
+}
 
 /// Whether `len` bytes at `addr` lie wholly inside one of the writable ranges (the link's raw writes, LINK-60).
 pub fn writable(addr: u32, len: u32) -> bool {
@@ -178,7 +185,7 @@ mod tests {
         for (n, r) in &REGIONS {
             assert!(r.start % 4096 == 0 && r.end % 4096 == 0, "{n}: sector aligned");
         }
-        for r in [CHANNELS, HEARD, MESSAGES, WAYPOINTS, TEXT_PACK, MAILBOX, DICTIONARY, FREE, BOOT_FONTS, LANGUAGES, SCREENS, FONTS, EVENT_LOG, SCRATCH_RING, UPDATE_AREA] {
+        for r in [CHANNELS, HEARD, MESSAGES, WAYPOINTS, TEXT_PACK, MAILBOX, DICTIONARY, LANGUAGES, SCREENS, FONTS, EVENT_LOG, SCRATCH_RING, UPDATE_AREA] {
             assert_eq!(r.start % 0x1_0000, 0, "{r:x?}: on a 64 KB boundary");
         }
         assert_eq!(CALIBRATION, 0xF000..0x1_0000, "calibration stays at stock's address");
@@ -189,7 +196,8 @@ mod tests {
         assert_eq!((sectors(&CONTACTS) * 127, sectors(&WAYPOINTS) * 127), (1016, 2032));
         assert_eq!((sectors(&HEARD) * 31, sectors(&MESSAGES) * 31, sectors(&EVENT_LOG) * 31), (496, 496, 992));
         assert_eq!(sectors(&SCRATCH_RING), 32);
-        assert_eq!((SSB_PATCH.len(), LANGUAGES.len(), FREE.len() + FREE_HIGH.len()), (16 << 10, 512 << 10, (1024 << 10) - BOOT_FONTS.len()));
+        assert_eq!((SSB_PATCH.len(), LANGUAGES.len(), FREE.len()), (16 << 10, 192 << 10, 128 << 10));
+        assert!(sectors(&SSTV) >= 4 * 41, "SSTV-4: four pictures of 41 sectors");
         assert!(!overlaps(&V2_HEADER, &LAYOUT_HEADER) && CHANNELS.contains(&V2_HEADER.start), "layout 2's header sits where channels go now");
         assert_eq!(DATA.end, UPDATE_AREA.start);
     }

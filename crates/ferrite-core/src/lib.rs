@@ -58,6 +58,9 @@ pub mod sat;
 pub mod scan;
 pub mod settle;
 pub mod softsq;
+pub mod sstv;
+/// The SSTV codec, for the App and the firmware.
+pub use usstv;
 pub mod aprssq;
 pub mod sqcal;
 pub mod sweephold;

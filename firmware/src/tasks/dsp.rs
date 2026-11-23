@@ -17,8 +17,9 @@
 
 use crate::chan::DSP;
 use crate::hal::{adc, audio, clock};
-use core::sync::atomic::{AtomicU32, Ordering::Relaxed};
-use embassy_futures::select::{select4, Either4};
+use core::cell::RefCell;
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering::Relaxed};
+use embassy_futures::select::{select, select4, Either, Either4};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex as M;
 use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
@@ -67,6 +68,17 @@ pub static AFSK_DONE: Signal<M, bool> = Signal::new();
 pub static TXTEST: Signal<M, Option<(ferrite_core::txtest::Gen, ferrite_core::txeq::Eq)>> = Signal::new();
 /// One capture half, ms (the blocks [`audio::ADC_HALF`] marks: 8 ms, decision 358).
 const HALF_MS: u32 = BLOCK_IN as u32 * 1_000 / ferrite_core::audio::ADC_HZ;
+/// SSTV-2: received rows for the UI task, a ring of four (it takes each within a few ms; rows come 75 ms apart at
+/// the soonest), and the events naming them (`ferrite_core::sstv::Event`).
+pub static SSTV_ROWS: embassy_sync::blocking_mutex::Mutex<M, RefCell<[[u16; ferrite_core::sstv::WIDTH]; 4]>> =
+    embassy_sync::blocking_mutex::Mutex::new(RefCell::new([[0; ferrite_core::sstv::WIDTH]; 4]));
+pub static SSTV_EV: Channel<M, ferrite_core::sstv::Event, 8> = Channel::new();
+/// SSTV-5: a picture to send on the transmission the UI task just keyed; stop it (SSTV-5.4); its end (true: all of
+/// it); and the frame being sent.
+pub static SSTV_TX: Signal<M, ferrite_core::sstv::Send> = Signal::new();
+pub static SSTV_STOP: AtomicBool = AtomicBool::new(false);
+pub static SSTV_DONE: Signal<M, bool> = Signal::new();
+pub static SSTV_FRAME: AtomicU32 = AtomicU32::new(0);
 /// Pages heard, to the UI task (DEC-7): two deep, 144 B.
 pub static PAGES: Channel<M, Page, 2> = Channel::new();
 /// LINK-13.4: blocks made; dropped (the queue below full: the cable's ring had no room for 128 ms); and the times
@@ -344,6 +356,7 @@ fn feed(slot: &mut Decoder, x: &[i16], level: u16, heard: &mut bool, since_cap: 
             }
         }
         Found::Call(_) => {} // DSC: roadmap 6c
+        Found::SstvStart(_) | Found::SstvLine(..) | Found::SstvEnd(_) => sstv_found(f),
     });
     let at = since_cap.map(|s| s * 1_000 / ferrite_core::decoders::RATE_HZ);
     if let Some(s) = since_cap {
@@ -359,6 +372,26 @@ fn feed(slot: &mut Decoder, x: &[i16], level: u16, heard: &mut bool, since_cap: 
     }
     *heard = busy;
 }
+/// SSTV-2: the decoder's news to the UI task; a row into the ring first. A full queue drops it (the picture keeps
+/// a gap).
+fn sstv_found(f: Found) {
+    use ferrite_core::sstv::Event;
+    static NEXT: AtomicU32 = AtomicU32::new(0);
+    let ev = match f {
+        Found::SstvStart(vis) => Event::Start(vis),
+        Found::SstvEnd(whole) => Event::End(whole),
+        Found::SstvLine(y, px) => {
+            let i = NEXT.fetch_add(1, Relaxed) % 4;
+            SSTV_ROWS.lock(|r| r.borrow_mut()[i as usize] = *px);
+            Event::Line(y, i as u8)
+        }
+        _ => return,
+    };
+    if SSTV_EV.try_send(ev).is_err() {
+        DROPPED.fetch_add(1, Relaxed);
+    }
+}
+
 #[cfg(feature = "bench")]
 pub static WORK_MAX_US: AtomicU32 = AtomicU32::new(0);
 
@@ -371,6 +404,8 @@ pub async fn task() {
     let mut capturing = false;
     // What each side asks for, and what runs (DEC-18).
     let (mut aprs, mut pager, mut running) = (DecoderKind::Off, false, DecoderKind::Off);
+    // SSTV-1: the SSTV screen has the slot while it's open
+    let mut sstv = false;
     // LINK-13.4: receive audio for the PC, coded from the same samples the decoder gets (the `AUDIO` mode: 0 none, 1
     // µ-law, 2 or 3 the bench's raw stream, LINK-13.9). LINK-13.8: the listening stream's gain is its own, ahead of its
     // coder only (the decoders take the samples as they are).
@@ -395,9 +430,11 @@ pub async fn task() {
         let test = TXTEST.wait();
         #[cfg(not(all(feature = "tx", feature = "bench")))]
         let test = core::future::pending::<Option<core::convert::Infallible>>();
-        match select4(DSP.receive(), audio::ADC_HALF.wait(), AFSK_TX.wait(), test).await {
-            Either4::First(cmd @ (DspCmd::Decoder(_) | DspCmd::Pager(_) | DspCmd::Audio(_) | DspCmd::Meter(_) | DspCmd::Squelch(_))) => {
+        match select4(DSP.receive(), audio::ADC_HALF.wait(), select(AFSK_TX.wait(), SSTV_TX.wait()), test).await {
+            Either4::First(DspCmd::SstvForce(vis)) => slot.sstv_force(vis, sstv_found),
+            Either4::First(cmd @ (DspCmd::Decoder(_) | DspCmd::Pager(_) | DspCmd::Audio(_) | DspCmd::Meter(_) | DspCmd::Squelch(_) | DspCmd::Sstv(_))) => {
                 match cmd {
+                    DspCmd::Sstv(on) => sstv = on,
                     DspCmd::Decoder(k) => aprs = k,
                     DspCmd::Pager(on) => pager = on,
                     DspCmd::Audio(mode) => {
@@ -429,17 +466,19 @@ pub async fn task() {
                     (DecoderKind::Off, true) => DecoderKind::Pocsag,
                     (k, _) => k,
                 };
-                if kind != running {
+                // SSTV-1: SSTV's decoder in the slot while its screen is open; the others back after
+                // (`running` says Off meanwhile, so the decoder wanted is made again when SSTV lets go)
+                // (`Decoder::set`: never built here, or this poll's frame holds a whole decoder)
+                if sstv != matches!(slot, Decoder::Sstv(_)) {
+                    slot.set(sstv, DecoderKind::Off);
+                    running = DecoderKind::Off;
+                }
+                if !sstv && kind != running {
                     running = kind;
-                    slot = match kind {
-                        DecoderKind::Off => Decoder::Off,
-                        DecoderKind::Afsk => Decoder::afsk(),
-                        DecoderKind::Pocsag => Decoder::pocsag(),
-                        DecoderKind::Dsc => Decoder::dsc(),
-                    };
+                    slot.set(false, kind);
                 }
                 // PWR-26.9: AFSK only while the APRS slot's squelch is open, and its tail; the pager decoder always
-                let want = kind != DecoderKind::Off && (kind != DecoderKind::Afsk || sq || tail != 0) || listen != 0 || meter_on;
+                let want = sstv || kind != DecoderKind::Off && (kind != DecoderKind::Afsk || sq || tail != 0) || listen != 0 || meter_on;
                 if want && !capturing {
                     clock::for_audio().await; // PWR-26.4: the speed first, never under a running capture
                     adc::init();
@@ -568,7 +607,22 @@ pub async fn task() {
                     audio::capture_start();
                 }
             }
-            Either4::Third(frame) => {
+            Either4::Third(Either::Second(send)) => {
+                // SSTV-5: the picture out of DAC1; the capture (SSTV's own, on its screen) back after
+                if capturing {
+                    audio::capture_stop();
+                }
+                let whole = play_sstv(send).await;
+                if capturing {
+                    clock::for_audio().await;
+                    adc::init();
+                    dec = decim(listen);
+                    audio::capture_start();
+                }
+                SSTV_DONE.signal(whole);
+                crate::chan::TERM_WAKE.signal(());
+            }
+            Either4::Third(Either::First(frame)) => {
                 if capturing {
                     audio::capture_stop();
                 }
@@ -627,6 +681,118 @@ async fn play(f: &Frame) {
         }
     }
     audio::play_stop();
+}
+
+/// SSTV-5: a picture to send, read from its slot a few rows ahead (the SPI flash, `part_read`: never inside the
+/// sample loop) or drawn (the test card).
+struct FlashPic {
+    src: u8,
+    call: [u8; 10],
+    /// The stored picture's lines (SSTV-5.3: a shorter one repeats its last), and the rows skipped at the top
+    /// (Robot 36's 240 from the middle of 256).
+    lines: u16,
+    skip: u16,
+    rows: [[u8; ferrite_core::sstv::ROW_LEN]; 4],
+    tag: [u16; 4],
+}
+
+impl FlashPic {
+    fn new(s: &ferrite_core::sstv::Send, mode: &usstv::Mode) -> FlashPic {
+        use ferrite_core::sstv::{slot_addr, Header, HEADER_LEN, LINES, TEST_CARD};
+        let mut lines = LINES as u16;
+        if s.src != TEST_CARD {
+            let mut h = [0xFFu8; HEADER_LEN];
+            lines = (crate::store::part_read(slot_addr(s.src), &mut h)).then(|| Header::decode(&h)).flatten().and_then(|h| h.lines).unwrap_or(LINES as u16).max(1);
+        }
+        // SSTV-5.3: the picture's own middle (a 256-line one sent in Robot 36 loses 8 at each end; a 240-line one none).
+        let skip = lines.saturating_sub(mode.lines) / 2;
+        FlashPic { src: s.src, call: s.call, lines, skip, rows: [[0x80; ferrite_core::sstv::ROW_LEN]; 4], tag: [u16::MAX; 4] }
+    }
+
+    fn row_of(&self, y: usize) -> u16 {
+        ((y as u16).saturating_add(self.skip)).min(self.lines - 1)
+    }
+
+    /// The rows frame `f` and the next use, read now if they aren't here.
+    fn prefetch(&mut self, mode: &usstv::Mode, f: u16) {
+        if self.src == ferrite_core::sstv::TEST_CARD {
+            return;
+        }
+        let used = |f: u16| -> core::ops::Range<u16> {
+            let l = mode.lines_of(f);
+            match mode.layout {
+                usstv::mode::Layout::Robot if f.is_multiple_of(2) => f..(f + 2).min(mode.lines),
+                usstv::mode::Layout::Robot => f - 1..f + 1,
+                _ => l,
+            }
+        };
+        let (a, b) = (used(f), used((f + 1).min(mode.frames - 1)));
+        let want = a.start.min(b.start)..a.end.max(b.end);
+        for y in want.clone() {
+            let r = self.row_of(y as usize);
+            if self.tag.contains(&r) {
+                continue;
+            }
+            let Some(k) = (0..4).find(|&k| !want.clone().any(|w| self.row_of(w as usize) == self.tag[k])) else { return };
+            if crate::store::part_read(ferrite_core::sstv::row_addr(self.src, r), &mut self.rows[k]) {
+                self.tag[k] = r;
+            }
+        }
+    }
+}
+
+impl usstv::Picture for FlashPic {
+    fn rgb(&mut self, x: usize, y: usize) -> (u8, u8, u8) {
+        if self.src == ferrite_core::sstv::TEST_CARD {
+            return ferrite_core::sstv::test_card(x, self.row_of(y) as usize, &self.call);
+        }
+        let r = self.row_of(y);
+        match self.tag.iter().position(|&t| t == r) {
+            Some(k) => usstv::color::from565(u16::from_le_bytes([self.rows[k][2 * x], self.rows[k][2 * x + 1]])),
+            None => (128, 128, 128), // not read in time: grey
+        }
+    }
+}
+
+/// SSTV-5: a picture out of DAC1, VIS first, until it ends or [`SSTV_STOP`]; true when all of it went.
+async fn play_sstv(s: ferrite_core::sstv::Send) -> bool {
+    let Some(mode) = usstv::Mode::by_vis(s.vis) else { return false };
+    let mut pic = FlashPic::new(&s, mode);
+    let mut e = usstv::Encoder::new(mode, ferrite_core::audio::DAC_HZ, s.amp);
+    SSTV_STOP.store(false, Relaxed);
+    SSTV_FRAME.store(0, Relaxed);
+    pic.prefetch(mode, 0);
+    let fill = |half: usize, e: &mut usstv::Encoder, pic: &mut FlashPic, more: bool| -> bool {
+        let mut more = more;
+        for d in &audio::DAC_BUF[half * BLOCK_DAC..(half + 1) * BLOCK_DAC] {
+            let x = if more { e.next(pic) } else { None };
+            more &= x.is_some();
+            d.store(to_dac(x.unwrap_or(0)), Relaxed);
+        }
+        more
+    };
+    let mut more = fill(0, &mut e, &mut pic, true);
+    more = fill(1, &mut e, &mut pic, more);
+    clock::for_audio().await; // PWR-26.4
+    audio::DAC_HALF.reset();
+    audio::play_start();
+    let mut stopped = false;
+    let mut tail = 2;
+    while tail > 0 {
+        let half = audio::DAC_HALF.wait().await as usize;
+        if more && SSTV_STOP.load(Relaxed) {
+            (more, stopped) = (false, true);
+        }
+        if more {
+            pic.prefetch(mode, e.frame());
+            SSTV_FRAME.store(e.frame() as u32, Relaxed);
+        } else {
+            tail -= 1;
+        }
+        more = fill(half, &mut e, &mut pic, more);
+    }
+    audio::play_stop();
+    !stopped
 }
 
 /// TERM-33, TERM-34: the test signal out of DAC1 until [`TXTEST`] says stop (None); a new generator (Some) takes

@@ -182,9 +182,9 @@ pub fn auto_tx(app: &mut App, slot: u8, what: &[u8]) -> bool {
         b"emergency frequency"
     } else if app.set.callsign.as_bytes().is_empty() {
         b"no callsign set"
-    } else if app.set.callsign.as_bytes().split(|&c| c == b'-').next().map_or(0, <[u8]>::len) > AX25_CALL && what != b"KISS" {
-        // SETUP-13: AX.25 carries 6; KISS frames carry the client's own addresses. An SSID typed into the callsign
-        // isn't counted: 0 5 5 1's replaces it (APRS-30).
+    } else if app.set.callsign.as_bytes().split(|&c| c == b'-').next().map_or(0, <[u8]>::len) > AX25_CALL && what != b"KISS" && what != b"SSTV" {
+        // SETUP-13: AX.25 carries 6; KISS frames carry the client's own addresses; SSTV draws it, any length. An
+        // SSID typed into the callsign isn't counted: 0 5 5 1's replaces it (APRS-30).
         b"callsign over 6"
     } else if let Some(r) = refusal(app, slot) {
         short(r).as_bytes()
@@ -215,6 +215,19 @@ pub fn data_key(app: &mut App, slot: u8, power: u8, what: &[u8]) -> bool {
         return false;
     }
     data_begin(app);
+    let region = txplan::Region::ALL.iter().position(|&r| r == app.set.tx_region()).unwrap_or(0) as u8;
+    app.out.push(RadioCmd::TxPlan { tx: tx_freq(app, slot), region, extend: app.set.extend_tx, confirmed: false });
+    app.out.push(RadioCmd::TransmitData { slot, power, on: true });
+    true
+}
+
+/// SSTV-5.2: a picture's data transmission on `slot`, any slot (no APRS gate): the automatic transmission's checks
+/// (TX-35), then the plan and the data key-up at `power`. Unkey with [`data_unkey`].
+pub fn sstv_key(app: &mut App, slot: u8, power: u8) -> bool {
+    if app.remote_tx_refused() || !auto_tx(app, slot, b"SSTV") {
+        return false;
+    }
+    data_begin(app); // TX-24.1: the broadcast stops first
     let region = txplan::Region::ALL.iter().position(|&r| r == app.set.tx_region()).unwrap_or(0) as u8;
     app.out.push(RadioCmd::TxPlan { tx: tx_freq(app, slot), region, extend: app.set.extend_tx, confirmed: false });
     app.out.push(RadioCmd::TransmitData { slot, power, on: true });

@@ -43,6 +43,7 @@ pub mod radio_data;
 pub mod remote;
 pub mod sample;
 pub mod sat;
+pub mod sstv;
 pub mod screens;
 pub mod slotctl;
 pub mod settings;
@@ -457,6 +458,8 @@ pub struct App {
     /// Satellite mode (chapter 28a): the platform's satellites and passes, and the App's own few bytes.
     satd: Option<&'static mut dyn ferrite_core::sat::data::SatData>,
     pub(crate) sat: sat::SatUi,
+    /// SSTV (chapter 27a): the screen's state and a picture coming in or going out.
+    pub sstv: sstv::SstvState,
 }
 
 /// Screens remembered for BACK: menu, group, item and one more.
@@ -563,6 +566,7 @@ impl App {
             link_answer: None,
             satd: None,
             sat: sat::SatUi::new(),
+            sstv: sstv::SstvState::default(),
         };
         app.region_steps(); // VFO-18: the region's step on 2 m and 1.25 m (saved slots bring their own)
         for s in 0..SLOTS as u8 {
@@ -1684,6 +1688,9 @@ impl App {
 
     /// The watched slots: Watch's, and C while it is the APRS slot (APRS-16, KISS-9).
     pub(crate) fn watch_mask(&self) -> u8 {
+        if self.sstv.open {
+            return 1 << self.active; // SSTV-1: paused while the screen is open, whoever asks for the watch
+        }
         if self.low_power() {
             return 0; // PWR-24.4: the active slot alone
         }

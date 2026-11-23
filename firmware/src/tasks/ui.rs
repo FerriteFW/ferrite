@@ -639,6 +639,7 @@ pub async fn task() {
     let mut aprs = super::aprs::Aprs::new();
     // SAME and the pager decoder (roadmap 6b).
     let mut decode = super::decode::Decode::new();
+    let mut sstv = super::sstv::Sstv::new();
     // MODE-6: the command taken from the App that the Radio task's channel had no room for; it goes first.
     let mut held: Option<RadioCmd> = None;
     // LINK-38: when the screen was last drawn, and whether input since wants it drawn now.
@@ -997,6 +998,10 @@ pub async fn task() {
             }
             if house || !super::dsp::PAGES.is_empty() {
                 decode.poll(&mut app, store, &live);
+            }
+            // SSTV (chapter 27a): every turn while its screen is open or a picture goes out
+            if house || sstv.due(&app) {
+                sstv.poll(&mut app, store, &live, now_ms());
             }
         }
         sec!(2); // aprs, decode

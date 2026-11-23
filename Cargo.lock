@@ -401,6 +401,7 @@ dependencies = [
  "st7789",
  "ufmt",
  "uradio-bus",
+ "usstv",
  "w25q",
 ]
 
@@ -429,6 +430,7 @@ dependencies = [
  "udsc",
  "udsp",
  "upocsag",
+ "usstv",
 ]
 
 [[package]]
@@ -1390,6 +1392,10 @@ version = "0.1.0"
 
 [[package]]
 name = "uradio-bus"
+version = "0.1.0"
+
+[[package]]
+name = "usstv"
 version = "0.1.0"
 
 [[package]]

@@ -250,6 +250,8 @@ const BUDGET: &[(&str, u64)] = &[
     ("B12 HF mode", 603000),
     ("B14 Tone search", 65000),
     ("B22 Satellites", 60000),
+    // the picture area (240 x 192) drawn whole on opening, then the rows as they come
+    ("B25 SSTV", 130000),
     ("B15 Frequency counter", 142000),
     ("B17 Alert", 2541000),
     ("B18 Crossband repeater", 135000),

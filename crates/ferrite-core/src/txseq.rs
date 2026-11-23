@@ -120,6 +120,8 @@ pub struct TxSeq {
     held: bool,
     /// The last CW ID (ms).
     last_id: Option<u32>,
+    /// The bucket, in quarter milliseconds: a keyed ms adds its weight, an idle ms drains one, so no tick's
+    /// rounding changes the rates (in ms, at the 10 ms keyed tick Low filled 2 a tick for 2.5: 10 min to full, not 8).
     duty: u32,
     duty_at: u32,
     hot: bool,
@@ -295,14 +297,15 @@ impl TxSeq {
     fn heat(&mut self, now: u32) {
         let dt = now.wrapping_sub(self.duty_at);
         self.duty_at = now;
+        // Quarter ms: High's weight 4 is a ms a ms, and the drain a quarter of that (DUTY_DRAIN_DIV) is one.
         self.duty = if self.since.is_some() {
-            self.duty.saturating_add(dt * self.weight as u32 / 4)
+            self.duty.saturating_add(dt.saturating_mul(self.weight as u32))
         } else {
-            self.duty.saturating_sub(dt / DUTY_DRAIN_DIV)
+            self.duty.saturating_sub(dt.saturating_mul(4 / DUTY_DRAIN_DIV))
         };
-        if self.duty >= DUTY_FULL_MS {
+        if self.duty >= DUTY_FULL_MS * 4 {
             self.hot = true;
-        } else if self.duty <= DUTY_FULL_MS / 2 {
+        } else if self.duty <= DUTY_FULL_MS * 4 / 2 {
             self.hot = false;
         }
     }
@@ -560,6 +563,29 @@ mod tests {
             t.key(&r, &mut p, 0, &mut Steps::default()).unwrap();
             assert_eq!(t.tick(&cfg, true, &mut p, full - 4, &mut Steps::default()), None, "power {power}");
             assert_eq!(t.tick(&cfg, true, &mut p, full, &mut Steps::default()), Some(Event::Hot), "power {power}");
+        }
+    }
+
+    /// TX-38 at the Radio task's keyed tick (10 ms, or any odd interval): the weights hold whatever the tick, so Low
+    /// still lasts 8 min from cold (it filled 2 ms a 10 ms tick for 2.5, and took 10 min), and the bucket drains
+    /// at a quarter rate over any number of short calls.
+    #[test]
+    fn duty_rates_hold_at_any_tick() {
+        let cfg = Cfg { timeout_s: 600, prealert_s: 0, ..Cfg::default() };
+        for (power, full, tick) in [(0u8, DUTY_FULL_MS * 4, 10u32), (0, DUTY_FULL_MS * 4, 13), (1, DUTY_FULL_MS * 2, 13), (2, DUTY_FULL_MS, 7)] {
+            let mut t = TxSeq::new();
+            let mut p = rx_on(mhz(446));
+            let r = Req { power, ..req(mhz(446)) };
+            t.key(&r, &mut p, 0, &mut Steps::default()).unwrap();
+            let mut now = 0;
+            let hot = loop {
+                now += tick;
+                if let Some(e) = t.tick(&cfg, true, &mut p, now, &mut Steps::default()) {
+                    break (e, now);
+                }
+            };
+            assert_eq!(hot.0, Event::Hot, "power {power}, every {tick} ms");
+            assert!(hot.1 >= full && hot.1 < full + tick, "power {power}, every {tick} ms: hot at {} ms, want {full}", hot.1);
         }
     }
 

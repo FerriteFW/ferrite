@@ -7,8 +7,8 @@
 //! - Every write goes to the store's queue; the Storage task carries it out. Programs and erases are started
 //!   and then waited for on a timer, so the UI runs meanwhile and never waits for an erase.
 //! - A UI read while the chip is busy suspends the program or erase (W25Q Erase/Program Suspend, 0x75), reads,
-//!   and resumes it (0x7A), on a Winbond chip only (SAFE-1.3: makers put the suspend flag in different places, and
-//!   stock never suspends); on any other chip the read waits for the program or erase to end, as stock does. The
+//!   and resumes it (0x7A), on a Winbond or Zbit chip only (SAFE-1.3: makers put the suspend flag in different
+//!   places, and stock never suspends); on any other chip the read waits for the program or erase to end, as stock does. The
 //!   store keeps reads away from the bytes being changed ([`ferrite_store::io`]).
 //!
 //! The driver here writes only inside ferrite_core::layout::WRITABLE, so calibration, stock's data and the
@@ -39,8 +39,9 @@ const RESUME: u8 = 0x7A;
 const SUS: u8 = 0x80;
 /// tSUS: the longest a suspend takes, and the least time between a resume and the next suspend.
 const T_SUS_US: u32 = 20;
-/// SAFE-1.3: the JEDEC maker byte of the chips whose suspend we know (Winbond: SUS is status 2's bit 7).
-const SUSPEND_MAKER: u8 = 0xEF;
+/// SAFE-1.3: the JEDEC maker bytes of the chips whose suspend we know: Winbond, and Zbit (both keep SUS in status 2's
+/// bit 7; Zbit is every one of Alex's radios, suspended from the first builds to 0.9.4, Nov 22, 2026).
+const SUSPEND_MAKERS: [u8; 2] = [0xEF, 0x5E];
 /// The longest a read waits for a program or erase it can't suspend (several times a slow sector erase).
 const WAIT_READ_US: u32 = 2_000_000;
 
@@ -56,7 +57,7 @@ pub struct Chip {
     size: u32,
     /// A program or erase was started and hasn't been seen to finish.
     active: bool,
-    /// SAFE-1.3: a Winbond chip, whose program or erase a read may suspend.
+    /// SAFE-1.3: a Winbond or Zbit chip, whose program or erase a read may suspend.
     suspend: bool,
 }
 
@@ -126,7 +127,7 @@ impl Nor for Chip {
             Self::wait_idle(spi)?;
             self.active = false;
         }
-        // A program or erase running on a Winbond chip: suspend it for the read (its own bytes are never read
+        // A program or erase running on a Winbond or Zbit chip: suspend it for the read (its own bytes are never read
         // meanwhile).
         let suspended = busy && self.suspend && {
             Self::command(spi, SUSPEND);
@@ -203,12 +204,16 @@ pub fn make() -> (Option<(u32, u32)>, &'static Store) {
     let (spi, id) = match W25q::new(Flash::new(), &mut BusyDelay, WRITE_OK) {
         Ok(mut f) => {
             let id = (f.jedec_id(), f.size());
-            (Some(f.release()), Some(id))
+            let mut spi = f.release();
+            // SAFE-1.5: a restart (a fault, a hang, the updater) doesn't reset the chip: a program or erase started
+            // before it may still be running. Wait for it (busy-polled, as stock waits) before anything is read.
+            let _ = Chip::wait_idle(&mut spi);
+            (Some(spi), Some(id))
         }
         Err(_) => (None, None),
     };
     let size = id.map_or(0, |i| i.1);
-    let suspend = id.is_some_and(|i| (i.0 >> 16) as u8 == SUSPEND_MAKER); // SAFE-1.3
+    let suspend = id.is_some_and(|i| SUSPEND_MAKERS.contains(&((i.0 >> 16) as u8))); // SAFE-1.3
     let store: &'static Store = cortex_m::singleton!(: Store = FlashStore::new(Chip { spi, size, active: false, suspend }, RadioData::new())).unwrap();
     store.set_deferred(true);
     let _ = STORE.init(Shared(store));

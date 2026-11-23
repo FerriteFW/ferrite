@@ -875,8 +875,8 @@ pub struct StatusBar {
     pub watch: u8,
     /// VOX on (0 8 2, SBAR-25): `VOX` in amber after TW/DW, as speech can key the radio.
     pub vox: bool,
-    /// A speaker mic plugged in (SND-12, SBAR-26): `MIC` after VOX, so it's clear which mic is live.
-    pub mic: bool,
+    /// A speaker mic plugged in (SND-12, SBAR-26): `SPK` after VOX, so it's clear which mic is live.
+    pub spk: bool,
     pub inbox: u8,
     pub alert: bool,
     pub clock: Option<u16>,
@@ -915,8 +915,8 @@ pub const SAT_TEXT: u16 = 0x8000;
 
 impl StatusBar {
     fn left_eq(&self, o: &Self) -> bool {
-        (self.name, self.locked, self.lock_ptt, self.scan, self.watch, self.vox, self.mic, self.inbox, self.alert, self.alerts_paused)
-            == (o.name, o.locked, o.lock_ptt, o.scan, o.watch, o.vox, o.mic, o.inbox, o.alert, o.alerts_paused)
+        (self.name, self.locked, self.lock_ptt, self.scan, self.watch, self.vox, self.spk, self.inbox, self.alert, self.alerts_paused)
+            == (o.name, o.locked, o.lock_ptt, o.scan, o.watch, o.vox, o.spk, o.inbox, o.alert, o.alerts_paused)
     }
 
     fn right_eq(&self, o: &Self) -> bool {
@@ -963,7 +963,7 @@ impl StatusBar {
             + if self.scan { 21 + gap } else { 0 }
             + if self.watch >= 2 { 14 + gap } else { 0 }
             + if self.vox { text4_width(b"VOX", &UI_12) + gap } else { 0 }
-            + if self.mic { text4_width(b"MIC", &UI_12) + gap } else { 0 }
+            + if self.spk { text4_width(b"SPK", &UI_12) + gap } else { 0 }
             + if self.inbox > 0 { 14 + text4_width(count.as_bytes(), &UI_12B) + gap } else { 0 }
             + if self.alerts_paused { 11 + gap } else { 0 };
         let mut x = 8;
@@ -994,9 +994,9 @@ impl StatusBar {
             x += w + gap;
         }
         // SBAR-26: a speaker mic plugged in, in grey (a state, not a warning).
-        if self.mic {
-            let w = text4_width(b"MIC", &UI_12);
-            field(lcd, x, w + gap, y0, y1, base, b"MIC", const { &st(&UI_12, SUB, BG, Align::Left) });
+        if self.spk {
+            let w = text4_width(b"SPK", &UI_12);
+            field(lcd, x, w + gap, y0, y1, base, b"SPK", const { &st(&UI_12, SUB, BG, Align::Left) });
             x += w + gap;
         }
         if self.inbox > 0 {
@@ -1209,18 +1209,18 @@ mod tests {
         crate::theme::set(crate::theme::DARK);
     }
 
-    /// SBAR-26: a speaker mic plugged in draws "MIC" in the left half beside VOX, and nothing else; the screen
+    /// SBAR-26: a speaker mic plugged in draws "SPK" in the left half beside VOX, and nothing else; the screen
     /// name gives way for it (SBAR-5).
     #[test]
-    fn status_bar_mic_mark() {
+    fn status_bar_spk_mark() {
         let off = StatusBar { scan: true, watch: 3, vox: true, inbox: 12, battery: 4, ..Default::default() };
-        let on = StatusBar { mic: true, ..off };
+        let on = StatusBar { spk: true, ..off };
         let (mut a, mut b) = (FrameBuffer::new(), FrameBuffer::new());
         off.draw(&mut a, None);
         on.draw(&mut b, None);
         let diff: std::vec::Vec<(i32, i32)> =
             (0..SBAR_H).flat_map(|y| (0..240).map(move |x| (x, y))).filter(|&(x, y)| a.at(x, y) != b.at(x, y)).collect();
-        assert!(!diff.is_empty(), "MIC drawn");
+        assert!(!diff.is_empty(), "SPK drawn");
         assert!(diff.iter().all(|&(x, _)| x < 98), "inside the left half");
         off.draw(&mut b, Some(&on));
         assert!(b.px == a.px, "off again as before");

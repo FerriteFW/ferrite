@@ -637,7 +637,7 @@
   list Ui
   | screen Home "Home" title=""
   | state frame=0 ago=16300 dark=0 locked=0 active=B keyed=- remote=0 mode=off fm=0 leave=0
-  | bar lock=0 scan=0 watch=0 inbox=0 alert=0 gps=off bt_on=0 bt=0 battery=0 low=0 cutoff=0 dry=0 lpm=0 vox=0 mcu=0 switches=0 held_us=0 why=0 clock=14:32 utc=0 call=""
+  | bar lock=0 scan=0 watch=0 inbox=0 alert=0 gps=off bt_on=0 bt=0 battery=0 low=0 cutoff=0 dry=0 lpm=0 vox=0 spk=0 mcu=0 switches=0 held_us=0 why=0 clock=14:32 utc=0 call=""
   | card A active=0 head="VFO · VHF" state="off" freq=146.52000 name="" mode="AM" tone="D023I*" shift="SPLIT" power="No TX" s="+60" meter=20 rx=0 scan=0 kind=slot
   | card B active=1 head="VFO · UHF" state="idle" freq=443.47500 name="" mode="FM" tone="" shift="" power="No TX" s="+60" meter=20 rx=0 scan=0 kind=slot
   | card C active=0 head="VFO · Airband" state="off" freq=118.95000 name="" mode="AM" tone="" shift="" power="No TX" s="+60" meter=20 rx=0 scan=0 kind=slot
@@ -775,7 +775,7 @@
   | set 0 5 7 1 Off                   # Digipeat
   | set 0 5 7 2 WIDE1-1               # Aliases
   | set 0 5 7 3 0 s                   # Wait
-  | set 0 5 8 Off                     # KISS TNC
+  | set 0 5 8 Bluetooth               # KISS port
   | set 0 5 9 1 WIDE1-1,WIDE2-1       # Path
   | set 0 5 9 2 None                  # Custom path
   | set 0 5 9 3 300 ms                # TX delay
@@ -817,7 +817,7 @@
   | set 0 8 2 1 Off                   # VOX
   | set 0 8 2 2 5                     # Level
   | set 0 8 2 3 2 s                   # Tail
-  | set 0 8 3 9                       # Mic gain
+  | set 0 8 3 8                       # Mic gain
   | set 0 8 4 Off                     # End tone
   | set 0 8 5 3 100 ms                # Speed
   | set 0 8 5 4 On                    # Sidetone
@@ -1037,7 +1037,7 @@
   | set 0 5 7 1 Off                   # Digipeat
   | set 0 5 7 2 WIDE1-1               # Aliases
   | set 0 5 7 3 0 s                   # Wait
-  | set 0 5 8 Off                     # KISS TNC
+  | set 0 5 8 Bluetooth               # KISS port
   | set 0 5 9 1 WIDE1-1,WIDE2-1       # Path
   | set 0 5 9 2 None                  # Custom path
   | set 0 5 9 3 300 ms                # TX delay
@@ -1079,7 +1079,7 @@
   | set 0 8 2 1 Off                   # VOX
   | set 0 8 2 2 5                     # Level
   | set 0 8 2 3 2 s                   # Tail
-  | set 0 8 3 9                       # Mic gain
+  | set 0 8 3 8                       # Mic gain
   | set 0 8 4 Off                     # End tone
   | set 0 8 5 3 100 ms                # Speed
   | set 0 8 5 4 On                    # Sidetone

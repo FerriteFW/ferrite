@@ -188,7 +188,7 @@ fn kiss_on_makes_c_the_aprs_slot() {
     assert!(a.app.aprs_slot(APRS_SLOT), "APRS mode still has C");
 }
 
-/// APRS-29.1 (decision 436, ferrite#101): APRS mode is the master switch. Automatic beacons with APRS mode off
+/// APRS-29.1 (decision 439, ferrite#101): APRS mode is the master switch. Automatic beacons with APRS mode off
 /// hold nothing and send nothing: C stays the user's slot and nothing goes out. With APRS mode on they beacon as
 /// part of it (C held by APRS mode, with priority); APRS mode off gives C back whatever 0 5 6 1 says. KISS still
 /// holds C by itself (KISS-9: the app sends).
@@ -788,7 +788,7 @@ fn message_retries_row_steps_through_its_values() {
 /// MODE-5.1, APRS-15.3 (ferrite#120, ferrite#59): C on airband in AM, then APRS mode on the single + scope
 /// layout. C goes to the Radio task as FM on the APRS frequency, the card's settings are the APRS slot's (it read
 /// AM), and with C active home's strip doesn't sweep (a sweep is all the Radio task does while it runs: no turn
-/// for C, nothing decoded; it swept around 118.950). With A active the strip sweeps and APRS waits (decision 438);
+/// for C, nothing decoded; it swept around 118.950). With A active the strip sweeps and APRS waits (decision 441);
 /// # pauses the strip and APRS listens, # again sweeps. APRS mode off: C is back in AM on airband.
 #[test]
 fn aprs_from_an_am_slot_is_fm_and_the_strip_waits() {
@@ -841,7 +841,7 @@ fn aprs_from_an_am_slot_is_fm_and_the_strip_waits() {
     assert!(c.iter().any(|c| matches!(c, RadioCmd::Sweep { centre, on: true, .. } if *centre == air)), "{c:?}");
 }
 
-/// APRS-29.2, KISS-6.1 (decision 437): 0 5 3 is one selector, Off, Tracker, On, KISS. Tracker holds C for beacons only (no
+/// APRS-29.2, KISS-6.1 (decision 440): 0 5 3 is one selector, Off, Tracker, On, KISS. Tracker holds C for beacons only (no
 /// priority, nothing decoded or answered), starting every 10 min when 0 5 6 1 was off; stepping on to On puts 0 5 6
 /// 1 back as it was, so passing Tracker leaves no beacons behind; KISS uses 0 5 8's port; Off holds nothing.
 #[test]

@@ -184,7 +184,8 @@ pub struct Settings {
     pub vox: bool,
     pub vox_level: u8,
     pub vox_tail: u8,
-    /// 0 8 3 (VOX-15): Mic gain 1-9, 9 (the field's top, 0x3F) the default.
+    /// 0 8 3 (VOX-15): Mic gain 1-9, 8 (0x3A) the default: 9 (the field's top) left loud talkers on a hot mic
+    /// within 2 dB of NFM's limit (clear, Nov 22, 2026; decision 436).
     pub mic_gain: u8,
     /// 0 8 1 (TX-30): the transmit timeout in 30 s steps, 1-20 (30-600 s; stock's TOT counts 30 s too).
     pub tx_timeout: u8,
@@ -326,6 +327,9 @@ pub struct Settings {
     /// true the software squelch (SQL-18, decision 269). Stored at the record's end (SQL-18.3): every radio coming
     /// from 0.9.4, whatever it had, reads the default, Chip.
     pub sq_soft: bool,
+    /// VOX-15.1 (decision 436): the record was written by 0.9.6 or later. False after loading an older one, whose
+    /// Mic gain at the old default (5) then goes to the new one (8): those radios were the quiet ones.
+    pub mic_v2: bool,
     /// 0.9.4's 0 9 5 (`sq_chip`, true = the chip), kept in its stored place so the fields after it stay put; read
     /// and ignored.
     pub sq_chip_old: bool,
@@ -511,7 +515,7 @@ impl Settings {
         vox: false,
         vox_level: 5,
         vox_tail: 3,
-        mic_gain: 9,
+        mic_gain: 8,
         tx_timeout: 4,
         fm_sleep: 0,
         brightness: 7,
@@ -580,6 +584,7 @@ impl Settings {
         msg_vol: 3,
         mcu_fixed: false,
         sq_soft: false,
+        mic_v2: true,
         sq_chip_old: false,
         aprs_mute: true,
         dtmf_rx: true,
@@ -595,6 +600,17 @@ impl Settings {
     /// settings write). FM AGC (0 2 6 2) is 0-10 and the clock (0 6 6) 0-1; the menu multiplies both in a u8,
     /// which overflowed on a bad record (found in the settings table refactor). Most other list
     /// settings are read modulo their list and need nothing here.
+    /// VOX-15.1 (decision 436): after loading a record from before 0.9.6 (`mic_v2` still false, as the loader set it),
+    /// a Mic gain left at the old default 5 becomes the new default 8; any other choice stays.
+    pub fn mic_upgrade(&mut self) {
+        if !self.mic_v2 {
+            if self.mic_gain == 5 {
+                self.mic_gain = Self::DEFAULT.mic_gain;
+            }
+            self.mic_v2 = true;
+        }
+    }
+
     pub fn sanitize(&mut self) {
         // Decision 386: 0 9 2 3's KISS (3) did what 0 5 8 on Cable does: a radio saved with it keeps KISS on the cable
         if self.cable_port == 3 {

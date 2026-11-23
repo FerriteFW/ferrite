@@ -521,7 +521,7 @@ impl App {
     }
 
     /// Automatic beacons are on (0 5 6 1 timed or smart; APRS-24), and only with 0 5 3 on On or Tracker: 0 5 3 is
-    /// the master switch, so beacons never hold C or go out with it Off (APRS-29.1, decision 436; Alex: "if aprs is
+    /// the master switch, so beacons never hold C or go out with it Off (APRS-29.1, decision 439; Alex: "if aprs is
     /// off dont beacon", ferrite#101). Manual ("Beacon now" only) doesn't count.
     pub fn beacons_on(&self) -> bool {
         (self.set.aprs_mode || self.set.tracker) && self.aprs.beacons_on() && !self.low_power() && !self.set.kiss_on() // KISS-10

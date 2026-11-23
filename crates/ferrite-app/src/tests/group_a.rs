@@ -51,7 +51,7 @@ fn start_up_sends_every_slot_whole() {
         assert!(v.contains(&RadioCmd::SlotParam { slot: s, param: Param::EndTone, value: 0 }), "slot {s} end tone");
         assert!(v.contains(&RadioCmd::SlotParam { slot: s, param: Param::Tail, value: 0 }), "slot {s} tail");
     }
-    assert!(v.contains(&RadioCmd::MicGain(9)), "VOX-15: the default mic gain");
+    assert!(v.contains(&RadioCmd::MicGain(8)), "VOX-15: the default mic gain");
     assert!(v.contains(&RadioCmd::TxTimeout(120)), "TX-30: the default timeout");
     // Ten radio-wide (the SI4732's settings, BCR-32, twice: the region's start-up and the settings'; with the beep volume, the mic gain, the timeout and VOX: SND-3, VOX-15, TX-30.1, VOX-13), the
     // tones' four (TxTones, the callsign's two chunks, DTMF timing); per slot: tune, ten parameters (split

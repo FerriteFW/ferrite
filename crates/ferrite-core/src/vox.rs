@@ -17,12 +17,19 @@ pub const MIC_STOCK: u8 = 0x24;
 /// writes the mic gain again.
 pub const MIC_DATA: u8 = 0x34;
 
-/// VOX-15: REG_7D[5:0] (0.5 dB a step) for Mic gain 1-9 (0 8 3), 2.5 dB a step: 9 (the default) is the field's
-/// top, 0x3F; 5 is 0x2B; 1 is 0x17. With the same 1 kHz tone, black on stock V0.29 (Mic Gain High) gave 75 Hz
-/// deviation, Ferrite on black 77-80 Hz at 0x2B and 259 Hz at 0x3F, another stock radio on High 340 Hz: the
-/// radios differ, so Ferrite starts at the top (decision 431, Nov 22, 2026).
+/// VOX-15: REG_7D[5:0] (0.5 dB a step) for Mic gain 1-9 (0 8 3), 2.5 dB a step: 9 is the field's top, 0x3F; 8, the
+/// default, 0x3A; 5 is 0x2B; 1 is 0x17. With the same 1 kHz tone, black on stock V0.29 (Mic Gain High) gave 75 Hz
+/// deviation, Ferrite on black 77-80 Hz at 0x2B and 259 Hz at 0x3F, another stock radio on High 340 Hz: the radios
+/// differ by about 13 dB (decision 431). Clear at 9, loud speech on NFM, peaked at 2.05 kHz of the 2.5 allowed, so
+/// the default is 8 (decision 436, Nov 22, 2026).
 pub fn mic_reg(gain: u8) -> u8 {
     0x3F - (9 - gain.clamp(1, 9)) * 5
+}
+
+/// VOX-15.2 (decision 436): a key-up on the speaker mic goes one step above Mic gain (capped at 9): speaker mics are
+/// quieter than the radio's own (Alex's, at the old default, "terrible"), so the default 8 gives the speaker mic 9.
+pub fn mic_reg_for(gain: u8, speaker_mic: bool) -> u8 {
+    mic_reg(if speaker_mic { gain.clamp(1, 9).saturating_add(1).min(9) } else { gain })
 }
 
 /// Stock's hysteresis: speech goes on above the threshold and stays on down to this many counts below it.
@@ -211,6 +218,15 @@ mod tests {
 
     /// VOX-15: 9 writes stock's loudest and a step (0x39), 2.5 dB a step down; 5 (the default) half a dB over stock's
     /// default.
+    /// VOX-15.2: the speaker mic one step up, to 9 at most; the radio's own mic as set.
+    #[test]
+    fn speaker_mic_one_step_up() {
+        assert_eq!(mic_reg_for(8, true), 0x3F);
+        assert_eq!(mic_reg_for(9, true), 0x3F, "capped");
+        assert_eq!(mic_reg_for(5, true), mic_reg(6));
+        assert_eq!(mic_reg_for(8, false), 0x3A);
+    }
+
     #[test]
     fn mic_gain_to_reg_7d() {
         assert_eq!((mic_reg(1), mic_reg(5), mic_reg(9)), (0x17, 0x2B, 0x3F));

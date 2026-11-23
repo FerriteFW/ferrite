@@ -158,7 +158,7 @@ fn aprs_card_kiss() {
     assert_eq!(a.hints()[1], ("OK", "Heard"));
 }
 
-/// APRS-29.1 (decision 436): timed beacons with APRS mode off give no APRS card (C is the user's slot); with APRS
+/// APRS-29.1 (decision 439): timed beacons with APRS mode off give no APRS card (C is the user's slot); with APRS
 /// mode on the card is APRS Mode's and the countdown is read back (`next=`), or why there is none.
 #[test]
 fn aprs_card_beacon() {

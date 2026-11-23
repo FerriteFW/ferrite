@@ -233,6 +233,7 @@ impl Radio {
         let narrow = self.slots[to as usize].narrow;
         let setup = self.tx_chip_setup(f, narrow, tone, false); // the user's mic gain, as stock's repeater
         radio_chip::tx_setup(&mut self.chip(n), &setup);
+        self.rx_set[n as usize] = None; // SQL-18.10: the next receive tune is the full one
         self.tuned[n as usize] = Some((to, f));
         self.maybe_awake |= 1 << n;
         self.tx.pa = pa;
@@ -255,7 +256,7 @@ impl Radio {
             return log(b"xb read-back failed", 0);
         }
         self.tx.chip = Some(n);
-        self.live.tx = TxLive { keyed: true, slot: to, mic: 0, refused: None, refusals: self.live.tx.refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
+        self.live.tx = TxLive { keyed: true, slot: to, mic: 0, refused: None, refusals: self.live.tx.refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck, mic_src: 0 };
         log(b"xb pass to khz ", f / 100);
     }
 

@@ -389,7 +389,7 @@ mod tests {
         assert_eq!(b.gps, GPS_AUTO, "out of range: Auto");
     }
 
-    /// VOX-15: a record from before 0 8 3 existed (it ends at the spare) loads with Mic gain at its default, 5.
+    /// VOX-15: a record from before 0 8 3 existed (it ends at the spare) loads with Mic gain at its default, 9.
     #[test]
     fn record_without_mic_gain_loads_the_default() {
         let mut a = Settings::DEFAULT;
@@ -398,7 +398,7 @@ mod tests {
         a.save(&mut v);
         let mut b = Settings::DEFAULT;
         b.load(&mut SliceSource(&v.0[..v.0.len() - AFTER_SPARE]));
-        assert_eq!((b.mic_gain, b.tx_timeout_s()), (5, 120), "TX-30: an older record's timeout is the default");
+        assert_eq!((b.mic_gain, b.tx_timeout_s()), (9, 120), "TX-30: an older record's timeout is the default");
         b.load(&mut SliceSource(&v.0));
         assert_eq!(b.mic_gain, 8);
     }

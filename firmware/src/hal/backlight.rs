@@ -1,4 +1,4 @@
-//! The screen's backlight (PC6) and the keypad light (PB3), each dimmed by PWM at the same 25 kHz (manual DISP-16,
+//! The screen's backlight (PC6) and the keypad light (PB3), each dimmed by PWM at the same 2 kHz (manual DISP-16,
 //! DISP-22, DISP-23). The UI task gives both the same duty, 0 7 4 2's level, so one brightness level dims both.
 //!
 //! PC6's timer functions are TMR8 channel 1 and, on TMR3's full remap, TMR3 channel 1. Ferrite's TMR3 is the Embassy
@@ -13,11 +13,11 @@
 //! the radio with `mem32`:
 //!
 //! - TMR8 at 0x4001_3400: CTRL1 +0x00 = 0x81 (counting, period buffered), CM1 +0x18 = 0x68 (PWM mode A, C1DT
-//!   buffered), CCTRL +0x20 = 0x01 (channel 1 out, active high), DIV +0x28 = 0, PR +0x2C = 4799 (25 kHz from the
-//!   120 MHz timer clock: above flicker and hearing; 959 at Low Power Mode's 24 MHz, PWR-24.9), C1DT +0x34 = the duty in counts (0 dark, 4800 full on),
+//!   buffered), CCTRL +0x20 = 0x01 (channel 1 out, active high), DIV +0x28 = 0, PR +0x2C = 59999 (2 kHz from the
+//!   120 MHz timer clock: above flicker, not heard; 11999 at Low Power Mode's 24 MHz, PWR-24.9), C1DT +0x34 = the duty in counts (0 dark, 60000 full on),
 //!   BRK +0x44 bit 15 (outputs on: an advanced timer's).
 //! - TMR2 at 0x4000_0000: CTRL1 = 0x81, CM1 +0x18 = 0x6800 (channel 2 PWM mode A, C2DT buffered), CCTRL +0x20 =
-//!   0x10 (channel 2 only), DIV = 0, PR = 4799, C2DT +0x38 = the keypad's duty in counts (0 off).
+//!   0x10 (channel 2 only), DIV = 0, PR = 59999 (11999 at 24 MHz), C2DT +0x38 = the keypad's duty in counts (0 off).
 //! - IOMUX_REMAP 0x4001_0004: bits 9-8 = 01, bits 26-24 = 010.
 //! - PC6 and PB3 as peripheral outputs: GPIOC CFGLR (0x4001_1000) bits 24-27 = 0xB, GPIOB CFGLR (0x4001_0C00)
 //!   bits 12-15 = 0xB.
@@ -27,9 +27,14 @@ use super::{clock, modify, rd, wr};
 use core::sync::atomic::{AtomicU16, Ordering::Relaxed};
 use ferrite_core::clocktree::Tree;
 
-/// The PWM frequency.
-pub const PWM_HZ: u32 = 25_000;
-/// Counts per period (PR + 1) at a speed: 4800 at 120 MHz, 960 at Low Power Mode's 24 (PWR-24.9).
+/// The PWM frequency, both lights (DISP-23.1, ferrite#74). At 25 kHz the keypad light's edges were heard as noise
+/// on 2 m (146.075 MHz, a multiple of 25 kHz), gone with the key light off. A twelfth of the edges: about 11 dB
+/// less noise in any channel, the strong lines on 25 kHz multiples spread thin across every channel. Above the
+/// flicker guidance (IEEE 1789: 1.25 kHz at full modulation), and not heard in the audio from 25 kHz down to 500 Hz
+/// (black, Nov 22, 2026). The pins are already at the AT32's weakest drive (IOMC 11, normal; no slower edge to pick).
+pub const PWM_HZ: u32 = 2_000;
+/// Counts per period (PR + 1) at a speed: 60000 at 120 MHz (under the timers' 16-bit 65536), 12000 at Low Power
+/// Mode's 24 (PWR-24.9).
 fn period(t: Tree) -> u32 {
     t.tmr_hz() / PWM_HZ
 }
@@ -75,9 +80,8 @@ pub fn init() {
     pin(GPIOB, 3).config(Mode::AfPp);
 }
 
-/// Thousandths to counts: 0 is dark (the output held low), 1000 full on (always high).
-fn counts(t: Tree, permille: u16) -> u32 {
-    let p = period(t);
+/// Thousandths to counts of a period `p`: 0 is dark (the output held low), 1000 full on (always high).
+fn counts(p: u32, permille: u16) -> u32 {
     if permille >= 1000 {
         p
     } else {
@@ -88,16 +92,16 @@ fn counts(t: Tree, permille: u16) -> u32 {
 /// The screen's duty in thousandths.
 pub fn set(permille: u16) {
     SCREEN.store(permille, Relaxed);
-    wr(TMR8 + TMR_C1DT, counts(clock::tree(), permille));
+    wr(TMR8 + TMR_C1DT, counts(period(clock::tree()), permille));
 }
 
 /// The keypad light's duty in thousandths (0 off).
 pub fn keypad(permille: u16) {
     KEYS.store(permille, Relaxed);
-    wr(TMR2 + TMR_C2DT, counts(clock::tree(), permille));
+    wr(TMR2 + TMR_C2DT, counts(period(clock::tree()), permille));
 }
 
-/// PWR-24.9: both PWMs at 25 kHz from the new tree, at the same duties (interrupts are off). Before `init`
+/// PWR-24.9: both PWMs at 2 kHz from the new tree, at the same duties (interrupts are off). Before `init`
 /// (TMR8 unclocked) nothing to do. Period and duty are loaded together by a software event (the counters restart:
 /// one short period, unseen).
 pub(super) fn retime(t: Tree) {
@@ -106,9 +110,9 @@ pub(super) fn retime(t: Tree) {
     }
     let p = period(t);
     wr(TMR8 + TMR_PR, p - 1);
-    wr(TMR8 + TMR_C1DT, counts(t, SCREEN.load(Relaxed)));
+    wr(TMR8 + TMR_C1DT, counts(p, SCREEN.load(Relaxed)));
     wr(TMR8 + TMR_SWEVT, 1);
     wr(TMR2 + TMR_PR, p - 1);
-    wr(TMR2 + TMR_C2DT, counts(t, KEYS.load(Relaxed)));
+    wr(TMR2 + TMR_C2DT, counts(p, KEYS.load(Relaxed)));
     wr(TMR2 + TMR_SWEVT, 1);
 }

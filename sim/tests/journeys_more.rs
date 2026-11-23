@@ -262,3 +262,39 @@ fn cb_zone_on_a_home_slot() {
     r.expect_no_text("No channels");
     assert!(r.has("26.965") || r.has("27.005"), "the zones page put A on CB:\n{}", r.text());
 }
+
+/// SCAN-27, SCAN-10 (ferrite#83): a range preset scanned from MENU 0 1 4 with SIDE2: the slot walks only the
+/// preset's range at its step, never a skipped frequency, and BACK leaves the scan running on home.
+#[test]
+fn a_range_preset_scans_its_range() {
+    use ferrite_app::chan::ChannelStore;
+    use ferrite_app::data::{Op, RangePreset, SKIP_CHUNK};
+    let mut r = Radio::new();
+    let d = r.sim.store().data();
+    while d.presets() > 0 {
+        assert!(d.request(Op::DeletePreset(0)));
+    }
+    let step = ferrite_app::slot::STEPS.iter().position(|s| s.0 == 2_500).unwrap() as u8;
+    let p = RangePreset { name: ferrite_ui::text::Buf::from(b"TEST AIR"), start: 11_800_000, end: 12_100_000, step, mode: 2, narrow: false, skips: 0, resume: 1 };
+    assert!(d.request(Op::PutPreset(0, p)));
+    let mut f = [0u32; SKIP_CHUNK];
+    (f[0], f[1], f[2]) = (11_802_500, 11_805_000, 11_807_500);
+    assert!(d.request(Op::PresetSkips { preset: 0, at: 0, count: 3, f }));
+    r.run("menu 0 1 4; press SIDE2");
+    // the sample's active slot is A (slot C already scans the airband band, the sample's own)
+    r.wait(1000);
+    let a = 0;
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..200 {
+        r.wait(100);
+        let s = &r.sim.radio().live.slots[a];
+        assert!(s.scanning, "still scanning");
+        seen.insert(s.freq);
+    }
+    assert!(seen.len() > 10, "it moves: {} frequencies", seen.len());
+    for &f in &seen {
+        assert!((11_800_000..=12_100_000).contains(&f), "inside the preset: {f}");
+        assert_eq!((f - 11_800_000) % 2_500, 0, "on its 25 kHz step: {f}");
+        assert!(![11_802_500, 11_805_000, 11_807_500].contains(&f), "a skipped frequency: {f}");
+    }
+}

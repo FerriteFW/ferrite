@@ -398,6 +398,9 @@ pub struct App {
     update_told: bool,
     /// SCAN-6: each slot's scan's last hit (0 none), for Return to "Last hit".
     pub(crate) last_hit: [Freq10; SLOTS],
+    /// SCAN-27: a range preset scan waiting for its skips to reach the Radio task, a few each tick (the command queue
+    /// holds 32): the slot, the preset, the next skip to send, the resume code.
+    pub(crate) range_feed: Option<(u8, u8, u8, u8)>,
     relay_mask: u8,
     /// The tone hint per slot (TSRCH-13, TSRCH-16): the tone word the Radio task heard, kept from the last tick
     /// for the quick settings' Tones row.
@@ -536,6 +539,7 @@ impl App {
             scan_mask: 0,
             update_told: false,
             last_hit: [0; SLOTS],
+            range_feed: None,
             relay_mask: 0,
             scan_hit: [0; SLOTS],
             heard: [0; SLOTS],
@@ -643,7 +647,19 @@ impl App {
             (self.out.cur, self.out.step) = (self.out.sync.trailing_zeros() as u8, 0);
         }
         let slot = self.out.cur;
-        let c = match self.out.step {
+        let c = self.slot_step(slot, self.out.step);
+        self.out.step += 1;
+        if self.out.step as usize > slot::params(&DEFAULT_CFG).len() + 3 {
+            self.out.sync &= !(1 << slot);
+            self.out.cur = NO_SLOT;
+        }
+        Some(c)
+    }
+
+    /// Step `step` of slot `slot`'s whole sync ([`App::pop_cmd`]): its retune, then its settings, then its end tone,
+    /// tail and receive-only flag.
+    fn slot_step(&self, slot: u8, step: u8) -> RadioCmd {
+        match step {
             0 => RadioCmd::TuneSlot { slot, freq: self.tuned_freq(slot) },
             // After the slot's settings: its end tone and tail (the channel's over the radio's), and whether its
             // channel is receive-only (CHAN-4, for the Radio task's own refusal: TX audit F11).
@@ -660,13 +676,23 @@ impl App {
                 let value = if param == Param::Squelch { self.sq_level(slot) as i32 } else { value };
                 RadioCmd::SlotParam { slot, param, value }
             }
-        };
-        self.out.step += 1;
-        if self.out.step as usize > slot::params(&DEFAULT_CFG).len() + 3 {
-            self.out.sync &= !(1 << slot);
+        }
+    }
+
+    /// SCAN-27: slot `slot`'s whole sync queued now, ahead of the commands that follow, instead of after them: its
+    /// retune stops a scan in the Radio task, so a scan started after this runs.
+    pub(crate) fn sync_now(&mut self, slot: u8) {
+        if self.out.sync & 1 << slot == 0 {
+            return;
+        }
+        for step in 0..=slot::params(&DEFAULT_CFG).len() as u8 + 3 {
+            let c = self.slot_step(slot, step);
+            self.out.push(c);
+        }
+        self.out.sync &= !(1 << slot);
+        if self.out.cur == slot {
             self.out.cur = NO_SLOT;
         }
-        Some(c)
     }
 
     /// The next channel write for the store's owner (the Storage task; the simulator's store). Drained, like
@@ -838,6 +864,7 @@ impl App {
     /// as a PTT on a hit does (SCAN-19); else it stays where the scan started.
     pub(crate) fn stop_scan(&mut self, slot: u8, store: &impl ChannelStore) {
         self.out.push(RadioCmd::Scan { slot, on: false });
+        self.range_feed = self.range_feed.filter(|f| f.0 != slot); // SCAN-27: a preset scan not started yet
         let f = core::mem::take(&mut self.last_hit[slot as usize % SLOTS]);
         if self.set.scan_return_hit {
             self.scan_move(slot, f, store);
@@ -1275,6 +1302,7 @@ impl App {
     pub fn tick(&mut self, now: u32, live: &LiveAll, store: &impl ChannelStore) {
         self.radio.refusals_seen = live.tx.refusals; // TX-50
         self.tick_keys(now, store);
+        crate::screens::scan::feed_range(self, store); // SCAN-27
         // Decision 333: the store keeps the member lists of the slots' zones (CHAN-36)
         store.slot_zones([self.slots[0].zone, self.slots[1].zone, self.slots[2].zone]);
         // UPD-16, LINK-61: the chip's data waits for Console: said once, over whatever is up

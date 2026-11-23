@@ -117,6 +117,8 @@ impl View for ScanLists {
                 return self.knob(app, if e.key == Key::Right { 1 } else { -1 } * if big { 10 } else { 1 }, store);
             }
             (Key::Menu, Short, Page::Presets) if n > 0 => s.page = Page::Edit(0),
+            // SCAN-27 (ferrite#83): SIDE2 scans the selected preset on the active slot
+            (Key::Side(2), Short, Page::Presets) if n > 0 => return super::scan::preset(app, self.cur.sel as u8, store),
             (Key::Hash, Short, Page::Presets) => {
                 if d.presets() < PRESETS_MAX && d.request(Op::NewPreset) {
                     let n = d.presets() as u16;
@@ -301,7 +303,7 @@ impl View for ScanLists {
 
     fn hints(self, _: &App) -> Hints {
         match self.page {
-            Page::Presets => Hints::new(&[("OK", "Edit"), ("#", "New"), ("*", "Delete")]),
+            Page::Presets => Hints::new(&[("OK", "Edit"), ("SIDE2", "Scan"), ("#", "New")]),
             Page::Edit(1 | 2) => Hints::new(&[("OK", "Type"), ("Knob", "Change"), ("BACK", "Done")]), // MENU-31
             Page::Edit(_) => Hints::new(&[(ARROWS_UD, "Move"), ("Knob", "Change"), ("BACK", "Done")]),
             Page::Skips => Hints::new(&[("OK", "Unskip"), ("#", "Clear all"), ("BACK", "Back")]),

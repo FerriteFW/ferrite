@@ -72,12 +72,14 @@ impl Radio {
             }
             RadioCmd::PauseWatch(secs) => self.watcher.pause(now, secs),
             RadioCmd::Scan { slot, on } => self.scan(slot, on),
+            RadioCmd::ScanRangeSet { slot, what, f } => self.scan_range_set(slot, what, f),
             RadioCmd::ScanSkip { slot } => {
                 let i = slot as usize % SLOTS;
                 let o = if self.chans.is_on(i) {
                     self.chans.skip_once(i, &mut self.scans[i], now)
                 } else {
-                    self.scans[i].skip_once(&self.ranges[i], now)
+                    let r = Range { skipped: if self.preset_slot as usize == i { &self.preset_skips[..self.preset_n as usize] } else { &[] }, ..self.ranges[i] };
+                    self.scans[i].skip_once(&r, now)
                 };
                 self.scan_out(i, o);
             }
@@ -86,7 +88,8 @@ impl Radio {
                 let o = if self.chans.is_on(i) {
                     self.chans.dir(i, &mut self.scans[i], up, now)
                 } else {
-                    self.scans[i].dir(up, &self.ranges[i], now)
+                    let r = Range { skipped: if self.preset_slot as usize == i { &self.preset_skips[..self.preset_n as usize] } else { &[] }, ..self.ranges[i] };
+                    self.scans[i].dir(up, &r, now)
                 };
                 self.scan_out(i, o);
             }

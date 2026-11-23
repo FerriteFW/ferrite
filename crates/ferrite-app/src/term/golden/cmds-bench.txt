@@ -742,7 +742,7 @@
   | set 0 1 6 1 1 min                 # Pause time
   | set 0 1 6 2 Up                    # Direction
   | set 0 1 6 3 Off                   # Scan inputs
-  | set 0 1 6 4 Start                 # Return to
+  | set 0 1 6 4 Last hit              # Return to
   | set 0 2 4 Name                    # Channel shows
   | set 0 2 5 50 km                   # Local zone
   | set 0 2 6 1 100 kHz               # Step
@@ -817,7 +817,7 @@
   | set 0 8 2 1 Off                   # VOX
   | set 0 8 2 2 5                     # Level
   | set 0 8 2 3 2 s                   # Tail
-  | set 0 8 3 5                       # Mic gain
+  | set 0 8 3 9                       # Mic gain
   | set 0 8 4 Off                     # End tone
   | set 0 8 5 3 100 ms                # Speed
   | set 0 8 5 4 On                    # Sidetone
@@ -1004,7 +1004,7 @@
   | set 0 1 6 1 1 min                 # Pause time
   | set 0 1 6 2 Up                    # Direction
   | set 0 1 6 3 Off                   # Scan inputs
-  | set 0 1 6 4 Start                 # Return to
+  | set 0 1 6 4 Last hit              # Return to
   | set 0 2 4 Name                    # Channel shows
   | set 0 2 5 50 km                   # Local zone
   | set 0 2 6 1 100 kHz               # Step
@@ -1079,7 +1079,7 @@
   | set 0 8 2 1 Off                   # VOX
   | set 0 8 2 2 5                     # Level
   | set 0 8 2 3 2 s                   # Tail
-  | set 0 8 3 5                       # Mic gain
+  | set 0 8 3 9                       # Mic gain
   | set 0 8 4 Off                     # End tone
   | set 0 8 5 3 100 ms                # Speed
   | set 0 8 5 4 On                    # Sidetone

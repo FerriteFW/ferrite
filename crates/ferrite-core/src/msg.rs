@@ -47,6 +47,10 @@ pub enum RadioCmd {
     AprsSlot(u8),
     /// Start or stop scanning in a slot.
     Scan { slot: u8, on: bool },
+    /// SCAN-27 (ferrite#83): a range preset for the slot's next scan, a part at a time (a command is 8 bytes):
+    /// `what` [`RANGE_LO`] (first: the range armed, its skips cleared), [`RANGE_HI`], [`RANGE_STEP`], then each
+    /// [`RANGE_SKIP`]. The next `Scan { on: true }` scans it instead of the band; a band scan after that is a band's.
+    ScanRangeSet { slot: u8, what: u8, f: Freq10 },
     /// Channel scans also listen on each channel's transmit frequency when it has a shift or split (SCAN-22,
     /// 0 1 6 3; sent at start-up and when it changes).
     ScanTx(bool),
@@ -442,7 +446,7 @@ pub struct TxLive {
     pub keyed: bool,
     /// Which slot (3 = HF mode).
     pub slot: u8,
-    /// Mic level, % of full deviation, from the TX chip's audio amplitude (TX-12).
+    /// Mic level, % of full scale, from the keyed chip's voice amplitude (REG_64, TX-12): the mic in use, either one.
     pub mic: u8,
     /// The Radio task refused the last key-up (its own checks: calibration, read-back, battery).
     pub refused: Option<crate::txplan::Refusal>,
@@ -458,7 +462,17 @@ pub struct TxLive {
     /// 2 PTT B, 4 the side connector's), and in the high nibble those stuck at some time since boot
     /// ([`crate::stuck::latch`]): the UI shows "PTT stuck" with the names while held and 2 s after.
     pub ptt_stuck: u8,
+    /// TX-12.4, SND-12.7: the mic this key-up uses when a speaker mic is plugged in: [`MIC_SRC_NONE`] (none plugged
+    /// in), [`MIC_SRC_SPK`] or [`MIC_SRC_RADIO`] (the radio's own PTT picked its own mic).
+    pub mic_src: u8,
 }
+
+/// [`TxLive::mic_src`]: no speaker mic plugged in.
+pub const MIC_SRC_NONE: u8 = 0;
+/// [`TxLive::mic_src`]: the speaker mic's.
+pub const MIC_SRC_SPK: u8 = 1;
+/// [`TxLive::mic_src`]: a speaker mic is plugged in, the radio's own mic is in use.
+pub const MIC_SRC_RADIO: u8 = 2;
 
 /// The terminal's debug commands (TERM-21 to TERM-24): what the firmware is asked. Memory is read where the
 /// terminal runs; BK4829 and SI4732 requests go to the Radio task, which owns the chips. Not queued with
@@ -628,6 +642,14 @@ impl LcdBench {
 /// TERM-40: the panel rows partial mode keeps (the mock-up's band, rows 80-239 of 320).
 #[cfg(feature = "bench")]
 pub const LCD_PARTIAL: (u16, u16) = (80, 239);
+
+/// [`RadioCmd::ScanRangeSet`]'s parts.
+pub const RANGE_LO: u8 = 0;
+pub const RANGE_HI: u8 = 1;
+pub const RANGE_STEP: u8 = 2;
+pub const RANGE_SKIP: u8 = 3;
+/// A range preset's skipped frequencies, at most (SCAN-10).
+pub const RANGE_SKIPS: usize = 48;
 
 /// The longest GGA sentence [`DebugAns::Gga`] carries: NMEA's 82 characters less CR LF.
 pub const GGA_MAX: usize = 80;

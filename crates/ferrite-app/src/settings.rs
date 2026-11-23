@@ -179,7 +179,7 @@ pub struct Settings {
     pub vox: bool,
     pub vox_level: u8,
     pub vox_tail: u8,
-    /// 0 8 3 (VOX-15): Mic gain 1-9, 5 stock's default REG_7D.
+    /// 0 8 3 (VOX-15): Mic gain 1-9, 9 (the field's top, 0x3F) the default.
     pub mic_gain: u8,
     /// 0 8 1 (TX-30): the transmit timeout in 30 s steps, 1-20 (30-600 s; stock's TOT counts 30 s too).
     pub tx_timeout: u8,
@@ -479,7 +479,7 @@ impl Settings {
         vox: false,
         vox_level: 5,
         vox_tail: 3,
-        mic_gain: 5,
+        mic_gain: 9,
         tx_timeout: 4,
         fm_sleep: 0,
         brightness: 7,
@@ -544,7 +544,7 @@ impl Settings {
         smeter_dbm: false,
         ch_display: 0,
         scan_down: false,
-        scan_return_hit: false,
+        scan_return_hit: true, // SCAN-6: stopping stays on what the scan found (decision 434)
         msg_vol: 3,
         mcu_fixed: false,
         sq_soft: false,

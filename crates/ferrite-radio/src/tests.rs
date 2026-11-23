@@ -749,7 +749,7 @@ fn tx_test_filters_and_restore() {
         let n = n0.writes.len();
         let mut b = Bk4829::new(n0);
         let was = chip::tx_test_filters(&mut b, f);
-        assert_eq!(was, chip::TestRegs { r2b, r19: 0x1041, r7d: 0xE934, r50: 0xBB18 });
+        assert_eq!(was, chip::TestRegs { r2b, r19: 0x1041, r7d: 0xE934, r50: chip::REG50_TX }, "tx_setup wrote V0.29's REG_50 (TX-46.1)");
         let bus = b.release();
         assert_eq!(bus.last(reg::AF_FILTERS), Some(want2b), "{f:?} from {r2b:#06x}");
         assert_eq!(bus.last(0x19), Some(0x9041));
@@ -760,7 +760,7 @@ fn tx_test_filters_and_restore() {
         let mut b = Bk4829::new(bus);
         chip::tx_test_restore(&mut b, &was);
         let bus = b.release();
-        assert_eq!([bus.last(reg::AF_FILTERS), bus.last(0x19), bus.last(reg::MIC), bus.last(0x50)], [Some(r2b), Some(0x1041), Some(0xE934), Some(0xBB18)]);
+        assert_eq!([bus.last(reg::AF_FILTERS), bus.last(0x19), bus.last(reg::MIC), bus.last(0x50)], [Some(r2b), Some(0x1041), Some(0xE934), Some(chip::REG50_TX)]);
     }
 }
 
@@ -1186,6 +1186,22 @@ fn retune_mutes_first() {
     let mut bk = Bk4829::new(log.clone());
     chip::tune_rest(&mut bk, &RX);
     assert_eq!(log.take()[0], (reg::AF_OUT, 0x6042));
+}
+
+/// SQL-18.10 (decision 433): the light retune moves the frequency and turns receive on again without REG_30 = 0 or
+/// REG_37 (the AF DAC stays on: no click), mutes only for a turn to another slot, and ends receiving (0xBFF1).
+#[test]
+fn light_retune_keeps_the_chip_on() {
+    let log = Log::default();
+    let mut bk = Bk4829::new(log.clone());
+    chip::retune_light(&mut bk, &RX, None, false);
+    let w = log.take();
+    assert!(w.iter().all(|&(r, v)| !(r == 0x30 && v == 0)), "REG_30 never 0: {w:x?}");
+    assert!(w.iter().all(|&(r, _)| r != 0x37), "REG_37 untouched");
+    assert!(w.iter().all(|&(r, _)| r != reg::AF_OUT), "same slot: its audio kept");
+    assert_eq!(w.last(), Some(&(0x30, 0xBFF1)), "receive on last");
+    chip::retune_light(&mut bk, &RX, None, true);
+    assert_eq!(log.take()[0], (reg::AF_OUT, 0x6042), "another slot: muted first");
 }
 
 #[cfg(feature = "bench")]

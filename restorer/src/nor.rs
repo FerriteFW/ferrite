@@ -6,7 +6,7 @@
 use crate::bus::{BusyDelay, Flash};
 use ferrite_core::layout::WRITABLE;
 use ferrite_store::{Nor, NorError, Result};
-use uradio_bus::Spi;
+use uradio_bus::{Delay, Spi};
 use w25q::W25q;
 
 const READ: u8 = 0x03;
@@ -26,10 +26,36 @@ pub struct Chip {
 impl Chip {
     /// Wakes the chip and reads its size (0, and nothing works, when it doesn't answer).
     pub fn new() -> Self {
-        match W25q::new(Flash::new(), &mut BusyDelay, WRITE_OK) {
-            Ok(f) => {
+        // SAFE-1.5: a chip still busy from before the restart ignores the ID read: woken, then waited for (3 s at most).
+        let mut flash = Flash::new();
+        Self::command(&mut flash, 0xAB);
+        BusyDelay.delay_us(50);
+        let mut t = 0;
+        while Self::status(&mut flash, READ_STATUS1) & 1 != 0 && t < 3_000_000 {
+            BusyDelay.delay_us(100);
+            t += 100;
+        }
+        match W25q::new(flash, &mut BusyDelay, WRITE_OK) {
+            Ok(mut f) => {
                 let size = f.size();
-                Chip { spi: Some(f.release()), size }
+                let maker = (f.jedec_id() >> 16) as u8;
+                let mut spi = f.release();
+                // SAFE-1.5: a Winbond or Zbit chip left suspended by Ferrite's restart refuses every write to the
+                // held sector: resumed first (status 2: Winbond's SUS bit 7, Zbit's SUS1 bit 7 and SUS2 bit 2). Other
+                // makers are never suspended, and never sent 0x35 (ferrite#76).
+                let mask = match maker {
+                    0xEF => 0x80,
+                    0x5E => 0x84,
+                    _ => 0,
+                };
+                if mask != 0 && Self::status(&mut spi, 0x35) & mask != 0 {
+                    Self::command(&mut spi, 0x7A);
+                    BusyDelay.delay_us(200);
+                    while Self::status(&mut spi, READ_STATUS1) & 1 != 0 {
+                        BusyDelay.delay_us(100);
+                    }
+                }
+                Chip { spi: Some(spi), size }
             }
             Err(_) => Chip { spi: None, size: 0 },
         }
@@ -37,6 +63,14 @@ impl Chip {
 
     pub fn size(&self) -> u32 {
         self.size
+    }
+
+    fn status(spi: &mut Flash, op: u8) -> u8 {
+        spi.select(true);
+        spi.transfer(op);
+        let s = spi.transfer(0);
+        spi.select(false);
+        s
     }
 
     fn command(spi: &mut Flash, op: u8) {

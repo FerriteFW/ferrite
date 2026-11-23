@@ -66,6 +66,73 @@ pub fn side2(app: &mut App, store: &impl ChannelStore) {
     app.screen = crate::Screen::Scan(Scan { slot: a, list: false, sel: 0 });
 }
 
+/// SCAN-27 (ferrite#83): SIDE2 on a range preset in MENU 0 1 4: the active slot's VFO on the preset (where it is,
+/// if that's inside the range; else its start), at the preset's mode and step, then a scan of the preset's range
+/// at its step, its skipped frequencies left out (SCAN-10) and its own resume rule (SCAN-24). A scan already
+/// running there stops first; refused as SIDE2 on home is (Low Power Mode, an off slot).
+pub fn preset(app: &mut App, i: u8, store: &impl ChannelStore) {
+    use ferrite_core::msg::{RANGE_HI, RANGE_LO, RANGE_STEP};
+    let d = store.data();
+    let Some(p) = d.preset(i) else { return };
+    let a = app.active;
+    if app.low_power() {
+        return app.lpm_refuse(); // PWR-24.4
+    }
+    if app.off_refuse(a) {
+        return; // HOME-15.4
+    }
+    if app.scan_mask & 1 << a != 0 {
+        app.stop_scan(a, store);
+    }
+    let cur = app.slot(a).freq();
+    let f = if !app.slot(a).on_channel() && (p.start..=p.end).contains(&cur) { cur } else { p.start };
+    app.set_vfo(a, f);
+    let mut c = app.slot(a).cfg;
+    (c.mode, c.narrow, c.step) = (p.mode, p.narrow, p.step);
+    app.set_vfo_cfg(a, c);
+    // the slot's retune and settings first: a retune stops a scan, so it goes before the scan starts
+    app.sync_now(a);
+    app.radio.clear_hits();
+    app.radio.hits_seen = 0;
+    app.radio.zones = 0;
+    app.last_hit[a as usize] = 0;
+    let step = crate::slot::STEPS[p.step as usize % crate::slot::STEPS.len()].0;
+    app.out.push(RadioCmd::ScanRangeSet { slot: a, what: RANGE_LO, f: p.start });
+    app.out.push(RadioCmd::ScanRangeSet { slot: a, what: RANGE_HI, f: p.end });
+    app.out.push(RadioCmd::ScanRangeSet { slot: a, what: RANGE_STEP, f: step });
+    // the skips (up to 48) and then the start, a few each tick ([`feed_range`]); the queue holds 32 commands
+    app.range_feed = Some((a, i, 0, crate::chanscan::preset_resume(app, p.resume)));
+    feed_range(app, store);
+    app.screen = crate::Screen::Scan(Scan { slot: a, list: false, sel: 0 });
+}
+
+/// SCAN-27: the waiting preset scan's next skips to the Radio task, [`FEED_SKIPS`] a tick, then its resume rule
+/// and its start (and SCAN-26's direction) once they are all there.
+pub(crate) fn feed_range(app: &mut App, store: &impl ChannelStore) {
+    use ferrite_core::msg::RANGE_SKIP;
+    let Some((a, i, next, resume)) = app.range_feed else { return };
+    let total = store.data().preset(i).map_or(0, |p| p.skips);
+    let to = (next + FEED_SKIPS).min(total);
+    for j in next..to {
+        if let Some(s) = store.data().preset_skip(i, j) {
+            app.out.push(RadioCmd::ScanRangeSet { slot: a, what: RANGE_SKIP, f: s });
+        }
+    }
+    if to < total {
+        app.range_feed = Some((a, i, to, resume));
+        return;
+    }
+    app.range_feed = None;
+    app.out.push(RadioCmd::ScanResume { slot: a, code: resume });
+    app.out.push(RadioCmd::Scan { slot: a, on: true });
+    if app.set.scan_down {
+        app.out.push(RadioCmd::ScanDir { slot: a, up: false, resume: false }); // SCAN-26
+    }
+}
+
+/// SCAN-27: skips sent each tick while a preset scan waits to start.
+const FEED_SKIPS: u8 = 8;
+
 /// The hits listed (SCAN-23): those kept, newest first.
 fn listed(app: &App) -> u8 {
     app.radio.hits.iter().take_while(|h| h.what != 0).count() as u8

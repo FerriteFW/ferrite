@@ -143,7 +143,7 @@ const G7: [Entry; 9] = [
 const G8: [Entry; 8] = [
     Entry(concat!("Timeout|120 s|", txtc!("Transmit stops after this; a beep says so."))),
     Entry(concat!("VOX|Off|", txtc!("Voice-operated transmit."))),
-    Entry(concat!("Mic gain|5|", txtc!("Higher is louder on air: 1-9. 8-9 for a quiet speaker mic."))),
+    Entry(concat!("Mic gain|9|", txtc!("Higher is louder on air: 1-9. Lower it if too loud."))),
     Entry(concat!("End tone|Off|", txtc!("A short tone as you let go of PTT."))),
     Entry(concat!("DTMF|100 ms|", txtc!("Dialer, memories, timing."))),
     Entry(concat!("Callsign and ID|Empty|", txtc!("Your callsign, and CW ID."))),
@@ -172,7 +172,7 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
         Entry(concat!("Pause time|1 min|", txtc!("# on home pauses watch this long."))),
         Entry(concat!("Direction|Up|", txtc!("Scan up or down."))),
         Entry(concat!("Scan inputs|Off|", txtc!("Also a channel's TX frequency."))),
-        Entry(concat!("Return to|Start|", txtc!("Where a stopped scan returns."))),
+        Entry(concat!("Return to|Last hit|", txtc!("Where a stopped scan returns."))),
     ]),
     ((2, 6), &[
         Entry(concat!("Step|100 kHz|", txtc!("Tuning step."))),
@@ -1398,6 +1398,14 @@ impl Group {
                     [2, 1] => {
                         let _ = uwrite!(v, "{} channels", store.count());
                     }
+                    // SCAN-27 (ferrite#83): the presets there are; the table's "4 presets" was a placeholder
+                    [1, 4] => match store.data().presets() {
+                        0 => v.set(b"None"),
+                        1 => v.set(b"1 preset"),
+                        n => {
+                            let _ = uwrite!(v, "{} presets", n);
+                        }
+                    },
                     [4, 1] if app.log_unread > 0 => {
                         let _ = uwrite!(v, "{} new", app.log_unread);
                     }

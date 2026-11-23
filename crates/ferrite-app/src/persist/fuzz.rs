@@ -129,7 +129,7 @@ fn fuzz_settings_knob() {
         },
         |steps| {
             let mut app = app_with(Settings::DEFAULT);
-            for s in steps.chunks_exact(2) {
+            for s in steps.as_chunks::<2>().0 {
                 let p = paths[s[0] as usize % paths.len()];
                 let _ = change(&mut app, path(&p), s[1] as i8 as i32);
                 while app.pop_cmd().is_some() {}

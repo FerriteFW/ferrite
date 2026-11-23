@@ -46,7 +46,7 @@ fn frame(line: &[u8]) -> Option<(Vec<u8>, Vec<u8>, Vec<u8>)> {
 fn pack_bits(bits: impl Iterator<Item = u8>) -> Vec<u8> {
     let mut out = Vec::new();
     for (i, b) in bits.enumerate() {
-        if i % 8 == 0 {
+        if i.is_multiple_of(8) {
             out.push(0);
         }
         *out.last_mut().unwrap() |= b << (i % 8);

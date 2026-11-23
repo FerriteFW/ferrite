@@ -181,7 +181,7 @@ pub fn hdlc_bits(data: &[u8]) {
 /// slicers, repair, FX.25), on any audio: input bytes are little-endian 16-bit samples, fed in blocks. FX.25 blocks
 /// it hands over are corrected as the APRS task does.
 pub fn afsk_audio(data: &[u8]) {
-    let samples: Vec<i16> = data.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect();
+    let samples: Vec<i16> = data.as_chunks::<2>().0.iter().map(|c| i16::from_le_bytes(*c)).collect();
     let mut d = ferrite_core::decoders::Decoder::afsk();
     for block in samples.chunks(96) {
         d.push(block, |f| match f {

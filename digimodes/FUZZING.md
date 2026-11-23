@@ -4,6 +4,13 @@ Everything the radio hears off the air goes through these decoders. A hostile or
 
 The fuzz targets live in `ferrite/fuzz/`, a workspace of its own. They are not part of `cargo test`, clippy or the firmware build.
 
+## In the normal tests
+
+- The targets' bodies are in `fuzz/src/harness.rs`; `crates/ferrite-app/tests/fuzz_packets.rs` runs the same functions in `cargo nextest run`, seeded and mutated (`crates/ferrite-fuzzkit`).
+- Every other untrusted input has its own `fuzz_*` test: the link, the terminal, the store, settings, updates, NMEA, the drivers, the other decoders, text entry.
+- `FERRITE_FUZZ_SCALE=N` runs N times the cases. `FERRITE_FUZZ_CASE=SEED` runs one failing case alone.
+- A failure prints its seed and input and saves it under `target/fuzz-found/`. Copy it into `fuzz/regress/TARGET/` to keep it: those run first, every time.
+
 ## Running
 
 - Needs the pinned nightly (`rust-toolchain.toml`) and cargo-fuzz: `cargo install cargo-fuzz --locked`.

@@ -84,7 +84,7 @@ fn fuzz_text_entry() {
                 open(&mut app, to, &st);
             }
             let mut t = 1000u32;
-            for k in d[2..].chunks_exact(2) {
+            for k in d[2..].as_chunks::<2>().0 {
                 let (key, hold) = (key(k[0]), k[1] as u32);
                 app.key_down(key, t, &st);
                 t += 40 + hold * 100;

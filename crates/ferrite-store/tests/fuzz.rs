@@ -92,8 +92,8 @@ fn populated() -> &'static SimFlash {
         while let Some(j) = s.next_job() {
             block(s.run(j));
         }
-        for n in 0..5 {
-            let e = Event { src: Src::Aprs, ago_s: 0, freq: 14_439_000, slot: 0, unread: n % 2 == 0, id: n, x: 0, y: 0, pos: None, name: Buf::from(b"VE3KPW-9"), text: Buf::from(b"QSL?") };
+        for n in 0..5u32 {
+            let e = Event { src: Src::Aprs, ago_s: 0, freq: 14_439_000, slot: 0, unread: n.is_multiple_of(2), id: n, x: 0, y: 0, pos: None, name: Buf::from(b"VE3KPW-9"), text: Buf::from(b"QSL?") };
             assert!(s.log(&e));
         }
         assert!(s.message_in(true, b"VE3KPW-9", b"QSL?", 0));
@@ -107,7 +107,7 @@ fn populated() -> &'static SimFlash {
         }
         assert!(s.save(&a));
         let mut f = s.into_parts().0;
-        (f.ops, f.erases.iter_mut().for_each(|e| *e = 0));
+        f.erases.iter_mut().for_each(|e| *e = 0);
         f
     })
 }
@@ -300,7 +300,7 @@ fn edit(f: &mut SimFlash, e: &[u8]) {
 fn run(input: &[u8]) {
     let Some((&flags, edits)) = input.split_first() else { return };
     let mut f = populated().clone();
-    for e in edits.chunks_exact(8) {
+    for e in edits.as_chunks::<8>().0 {
         edit(&mut f, e);
     }
     if flags & 1 != 0 {
@@ -364,7 +364,7 @@ fn fuzz_store_random_chip() {
     Fuzz::new("store_random_chip", 0x5705, 60).slow_ms(10_000).run(
         |r| {
             let mut v = vec![r.byte()];
-            v.extend(r.u64_bytes());
+            v.extend(r.u64().to_le_bytes());
             v
         },
         |input| {
@@ -381,14 +381,4 @@ fn fuzz_store_random_chip() {
             same(&first, &snap(&s), "a second mount read the chip differently");
         },
     );
-}
-
-trait U64Bytes {
-    fn u64_bytes(&mut self) -> [u8; 8];
-}
-
-impl U64Bytes for Rng {
-    fn u64_bytes(&mut self) -> [u8; 8] {
-        self.next().to_le_bytes()
-    }
 }

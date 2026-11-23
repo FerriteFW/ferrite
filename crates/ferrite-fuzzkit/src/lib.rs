@@ -5,6 +5,7 @@
 //!
 //! - `FERRITE_FUZZ_SCALE=N` (default 1) runs N times the cases, for a long CI run.
 //! - `FERRITE_FUZZ_CASE=SEED` runs one case alone (the seed a failure printed).
+//! - `FERRITE_FUZZ_NO_TESTDATA=1` leaves out the `../testdata` recordings, as CI runs.
 //! - A failure prints the target, the case's seed and the input as hex, and writes the input to
 //!   `target/fuzz-found/TARGET/SEED.hex`. Copy that file into `fuzz/regress/TARGET/` to keep it: every file there
 //!   runs first, every time.
@@ -22,7 +23,7 @@ impl Rng {
         Rng(seed)
     }
 
-    pub fn next(&mut self) -> u64 {
+    pub fn u64(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9E37_79B9_7F4A_7C15);
         let mut z = self.0;
         z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
@@ -32,7 +33,7 @@ impl Rng {
 
     /// 0 to n - 1 (0 when n is 0).
     pub fn below(&mut self, n: usize) -> usize {
-        if n == 0 { 0 } else { (self.next() % n as u64) as usize }
+        if n == 0 { 0 } else { (self.u64() % n as u64) as usize }
     }
 
     /// lo to hi, both included.
@@ -46,15 +47,15 @@ impl Rng {
     }
 
     pub fn byte(&mut self) -> u8 {
-        self.next() as u8
+        self.u64() as u8
     }
 
     pub fn u16(&mut self) -> u16 {
-        self.next() as u16
+        self.u64() as u16
     }
 
     pub fn u32(&mut self) -> u32 {
-        self.next() as u32
+        self.u64() as u32
     }
 
     pub fn bytes(&mut self, n: usize) -> Vec<u8> {
@@ -248,7 +249,7 @@ impl Fuzz {
         });
         let mut base = Rng::new(self.seed);
         for i in 0..self.cases {
-            let case = base.next();
+            let case = base.u64();
             if only.is_some_and(|o| o != case) {
                 continue;
             }
@@ -297,8 +298,11 @@ pub fn root() -> PathBuf {
 }
 
 /// The decoders' recordings (`../testdata`, the private testdata repo), when it is there: the seeds that need it
-/// are skipped without it (CI).
+/// are skipped without it (CI; `FERRITE_FUZZ_NO_TESTDATA=1` runs as CI does).
 pub fn testdata() -> Option<PathBuf> {
+    if std::env::var_os("FERRITE_FUZZ_NO_TESTDATA").is_some() {
+        return None;
+    }
     let p = root().join("../testdata");
     p.is_dir().then_some(p)
 }
@@ -334,7 +338,7 @@ pub fn hex(b: &[u8]) -> String {
 /// Hex digits to bytes (whitespace ignored); None if it isn't hex.
 pub fn unhex(s: &str) -> Option<Vec<u8>> {
     let s: Vec<u8> = s.bytes().filter(|c| !c.is_ascii_whitespace()).collect();
-    if s.len() % 2 != 0 {
+    if !s.len().is_multiple_of(2) {
         return None;
     }
     s.chunks(2).map(|c| u8::from_str_radix(std::str::from_utf8(c).ok()?, 16).ok()).collect()
@@ -372,7 +376,7 @@ pub fn samples_to_bytes(s: &[i16]) -> Vec<u8> {
 }
 
 pub fn bytes_to_samples(b: &[u8]) -> Vec<i16> {
-    b.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect()
+    b.as_chunks::<2>().0.iter().map(|c| i16::from_le_bytes(*c)).collect()
 }
 
 #[cfg(test)]
@@ -383,7 +387,7 @@ mod tests {
     fn same_numbers_every_time() {
         let mut a = Rng::new(7);
         let mut b = Rng::new(7);
-        assert!((0..100).all(|_| a.next() == b.next()));
+        assert!((0..100).all(|_| a.u64() == b.u64()));
         assert_eq!(unhex(&hex(&[0, 1, 0xAB, 0xFF])), Some(vec![0, 1, 0xAB, 0xFF]));
     }
 

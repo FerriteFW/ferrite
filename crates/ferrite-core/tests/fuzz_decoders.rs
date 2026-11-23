@@ -47,7 +47,7 @@ fn recordings(dir: &str, max: usize) -> Vec<Vec<u8>> {
 
 /// POCSAG codewords as FSK audio at 24 kHz: two levels, as the discriminator gives them.
 fn pocsag_audio(baud: u32, words: &[u32]) -> Vec<i16> {
-    let mut bits: Vec<bool> = (0..upocsag::encode::PREAMBLE_BITS).map(|i| i % 2 == 0).collect();
+    let mut bits: Vec<bool> = (0..upocsag::encode::PREAMBLE_BITS).map(|i| i.is_multiple_of(2)).collect();
     for w in words {
         bits.extend((0..32).rev().map(|k| w >> k & 1 != 0));
     }
@@ -80,7 +80,7 @@ fn dsc_bits(call: &[u8]) -> Vec<u8> {
         seq.push(call[i + 3]);
     }
     seq.push(call[call.len() - 3]);
-    let mut b: Vec<u8> = (0..40).map(|i| (i % 2 == 0) as u8).collect();
+    let mut b: Vec<u8> = (0..40u8).map(|i| i.is_multiple_of(2) as u8).collect();
     for v in seq {
         let w = udsc::framer::encode(v);
         b.extend((0..10).rev().map(|k| ((w >> k) & 1) as u8));
@@ -176,11 +176,11 @@ fn fuzz_pocsag_words() {
                 assert!(m.data().len() * 8 >= m.bits());
                 let _ = (m.numeric().count(), m.alpha().count());
             };
-            for (i, w) in data.chunks_exact(4).enumerate() {
+            for (i, w) in data.as_chunks::<4>().0.iter().enumerate() {
                 if i % 17 == 16 {
                     d.sync();
                 }
-                d.word(u32::from_le_bytes(w.try_into().unwrap()), check);
+                d.word(u32::from_le_bytes(*w), check);
             }
             d.end(check);
         },
@@ -315,7 +315,7 @@ fn fuzz_same() {
             }
             let mut a = Assembler::new();
             a.start();
-            for w in rest.chunks_exact(2) {
+            for w in rest.as_chunks::<2>().0 {
                 match a.push(u16::from_le_bytes([w[0], w[1]])) {
                     Step::More => {}
                     Step::Done => {
@@ -342,7 +342,7 @@ fn fuzz_dtmf_track() {
         |d| {
             let mut t = Track::NEW;
             let mut now = 0u32;
-            for e in d.chunks_exact(3) {
+            for e in d.as_chunks::<3>().0 {
                 now = now.wrapping_add(u16::from_le_bytes([e[1], e[2]]) as u32 * if e[0] & 0x80 != 0 { 97 } else { 1 });
                 if e[0] & 0x40 != 0 {
                     let _ = t.tick(now, e[0] & 0x20 != 0);

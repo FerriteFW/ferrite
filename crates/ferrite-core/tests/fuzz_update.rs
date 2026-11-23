@@ -92,7 +92,7 @@ fn fuzz_ssb_headers() {
             let h: [u8; ssb::HEADER] = d[..ssb::HEADER].try_into().unwrap();
             let slot = ferrite_core::layout::SSB_PATCH.end - ferrite_core::layout::SSB_PATCH.start;
             for p in [ssb::bundle(&h), ssb::stored(&h)].into_iter().flatten() {
-                assert!(p.len % 8 == 0 && ssb::HEADER as u64 + p.len as u64 <= slot as u64, "a patch longer than its slot");
+                assert!(p.len.is_multiple_of(8) && ssb::HEADER as u64 + p.len as u64 <= slot as u64, "a patch longer than its slot");
             }
             let _ = ssb::records_ok(&d[ssb::HEADER..]);
         },
@@ -139,8 +139,8 @@ fn fuzz_restore_requests() {
         },
         |d| {
             let Some((&all, p)) = d.split_first() else { return };
-            let everything = [0..u32::MAX];
-            let ranges: &[core::ops::Range<u32>] = if all & 1 != 0 { &everything } else { &WRITABLE };
+            let everything = core::slice::from_ref(&(0..u32::MAX));
+            let ranges: &[core::ops::Range<u32>] = if all & 1 != 0 { everything } else { &WRITABLE };
             let chip = 4 << 20;
             if let Some(op) = restore::parse(p) {
                 let ok = restore::check(&op, ranges, chip).is_ok();

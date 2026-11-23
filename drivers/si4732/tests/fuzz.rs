@@ -27,13 +27,13 @@ fn fuzz_rds_groups() {
         },
         |data| {
             let mut rds = Rds::init();
-            for g in data.chunks_exact(9) {
+            for g in data.as_chunks::<9>().0 {
                 let w = |i: usize| u16::from_be_bytes([g[2 * i], g[2 * i + 1]]);
                 rds.feed(w(0), w(1), w(2), w(3), g[8]);
                 assert!(rds.text().len() <= rds.rt.len());
                 assert!(rds.ps.iter().all(|&c| c == 0 || (0x20..0x7F).contains(&c)), "{:?}", rds.ps);
                 let _ = (rds.ps_complete(), rds.rt_complete());
-                if rds.groups % 97 == 0 {
+                if rds.groups.is_multiple_of(97) {
                     rds = Rds::init(); // a retune
                 }
             }

@@ -391,10 +391,10 @@ mod tests {
     }
 
     /// VOX-15.1 (decision 436): a record from before 0.9.6 (no `mic_v2`, its last byte) with Mic gain at the old
-    /// default 5 loads with the new default 9; another choice stays; a 0.9.6 record keeps a 5 chosen since.
+    /// default 5 loads with the new default 8; another choice stays; a 0.9.6 record keeps a 5 chosen since.
     #[test]
     fn an_old_records_default_mic_gain_goes_to_9() {
-        for (stored, want) in [(5, 9), (7, 7), (1, 1)] {
+        for (stored, want) in [(5, 8), (7, 7), (1, 1)] {
             let mut a = Settings::DEFAULT;
             a.mic_gain = stored;
             let mut v = Vec2(std::vec::Vec::new());
@@ -416,7 +416,7 @@ mod tests {
         assert_eq!(b.mic_gain, 5, "a 0.9.6 record's 5 is a choice");
     }
 
-    /// VOX-15: a record from before 0 8 3 existed (it ends at the spare) loads with Mic gain at its default, 9.
+    /// VOX-15: a record from before 0 8 3 existed (it ends at the spare) loads with Mic gain at its default, 8.
     #[test]
     fn record_without_mic_gain_loads_the_default() {
         let mut a = Settings::DEFAULT;
@@ -425,7 +425,7 @@ mod tests {
         a.save(&mut v);
         let mut b = Settings::DEFAULT;
         b.load(&mut SliceSource(&v.0[..v.0.len() - AFTER_SPARE]));
-        assert_eq!((b.mic_gain, b.tx_timeout_s()), (9, 120), "TX-30: an older record's timeout is the default");
+        assert_eq!((b.mic_gain, b.tx_timeout_s()), (8, 120), "TX-30: an older record's timeout is the default");
         b.load(&mut SliceSource(&v.0));
         assert_eq!(b.mic_gain, 8);
     }

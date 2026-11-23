@@ -426,6 +426,7 @@ version = "0.9.5"
 name = "ferrite-core"
 version = "0.9.5"
 dependencies = [
+ "ferrite-fuzzkit",
  "miniz_oxide 0.8.9",
  "serde_json",
  "sgp4",

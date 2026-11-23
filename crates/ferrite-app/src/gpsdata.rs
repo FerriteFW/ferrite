@@ -63,11 +63,13 @@ pub struct Needs {
     pub alarm: bool,
     /// (d) The clock from GPS (0 6 6): one fix after power-on ([`GpsAuto`] drops it once taken).
     pub clock: bool,
+    /// (e) The satellite screens open (or under their options) with no fixed position: passes need one.
+    pub sat: bool,
 }
 
 impl Needs {
     pub fn any(&self) -> bool {
-        self.aprs || self.screen || self.alarm || self.clock
+        self.aprs || self.screen || self.alarm || self.clock || self.sat
     }
 }
 
@@ -80,6 +82,7 @@ pub fn needs(app: &crate::App, alarm: bool) -> Needs {
         screen: matches!(app.screen(), crate::Screen::Gps(_)),
         alarm,
         clock: set.clock_gps,
+        sat: app.sat_open() && !set.fixed_on,
     }
 }
 
@@ -676,6 +679,24 @@ mod tests {
         assert!(!a.armed(100), "no waypoint being gone to: a stored waypoint alone is not a need");
         a.target(Some((0, Pos { lat: 0, lon: 0 })));
         assert!(a.armed(100));
+    }
+
+    /// GPS-1.5 (e): the satellite tracker open needs a position unless a fixed one stands in; Auto then powers
+    /// the module (a Discord report, ferrite#98: Auto never searched with the tracker open).
+    #[test]
+    fn auto_needs_the_satellite_tracker_without_a_fixed_position() {
+        use crate::screens::nav::Dest;
+        let mut app = auto_app();
+        app.open(Dest::Satellites);
+        assert!(app.sat_open());
+        assert!(needs(&app, false).sat, "the tracker, no fixed position");
+        auto_step(&mut app, &F(false), false, 0);
+        assert!(app.gps_cfg().on, "Auto powers the module for the tracker");
+        app.settings_mut().fixed_on = true;
+        assert!(!needs(&app, false).sat, "the fixed position stands in (GPS-3)");
+        app.settings_mut().fixed_on = false;
+        app.go_home();
+        assert!(!needs(&app, false).any(), "the tracker closed");
     }
 
     /// GPS-1.5: when the last need ends the module powers off a minute later, and a screen closed and opened

@@ -308,7 +308,14 @@ pub fn tx_setup<B: Bus>(bk: &mut Bk4829<B>, s: &TxSetup) {
     }
     bk.mic_gain(s.mic);
     bk.tx_deviation();
+    // TX-46.1 (decision 431): V0.29's REG_50 at every key-up (0x0801EC3C), the TX mute (bit 15) clear; only bit 15 is
+    // documented, and the register reads back 0.
+    bk.write(0x50, REG50_TX);
 }
+
+/// REG_50 as V0.29 writes it at a key-up (TX-46.1).
+#[cfg(feature = "tx")]
+pub const REG50_TX: u16 = 0x3B18;
 
 /// REG_30 read back after a key-up with the microphone (TX-7): stock's transmit value.
 #[cfg(feature = "tx")]

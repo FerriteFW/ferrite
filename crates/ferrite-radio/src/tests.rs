@@ -749,7 +749,7 @@ fn tx_test_filters_and_restore() {
         let n = n0.writes.len();
         let mut b = Bk4829::new(n0);
         let was = chip::tx_test_filters(&mut b, f);
-        assert_eq!(was, chip::TestRegs { r2b, r19: 0x1041, r7d: 0xE934, r50: 0xBB18 });
+        assert_eq!(was, chip::TestRegs { r2b, r19: 0x1041, r7d: 0xE934, r50: chip::REG50_TX }, "tx_setup wrote V0.29's REG_50 (TX-46.1)");
         let bus = b.release();
         assert_eq!(bus.last(reg::AF_FILTERS), Some(want2b), "{f:?} from {r2b:#06x}");
         assert_eq!(bus.last(0x19), Some(0x9041));
@@ -760,7 +760,7 @@ fn tx_test_filters_and_restore() {
         let mut b = Bk4829::new(bus);
         chip::tx_test_restore(&mut b, &was);
         let bus = b.release();
-        assert_eq!([bus.last(reg::AF_FILTERS), bus.last(0x19), bus.last(reg::MIC), bus.last(0x50)], [Some(r2b), Some(0x1041), Some(0xE934), Some(0xBB18)]);
+        assert_eq!([bus.last(reg::AF_FILTERS), bus.last(0x19), bus.last(reg::MIC), bus.last(0x50)], [Some(r2b), Some(0x1041), Some(0xE934), Some(chip::REG50_TX)]);
     }
 }
 

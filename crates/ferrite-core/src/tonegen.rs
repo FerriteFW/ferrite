@@ -288,14 +288,18 @@ impl CounterPair {
     }
 }
 
-/// The mic meter (TX-12) from PA0, the mic-level tap stock's VOX reads (decision 76): stock uses the reading's top
-/// 8 bits; this many counts is shown as full deviation (to confirm on the bench, with the VOX thresholds' scale:
-/// level 1 opens at 101).
-pub const MIC_FULL: u16 = 160;
+/// The BK4829's voice amplitude (REG_64<15:0>, read only): the TX audio's level after the mic stage, whichever mic
+/// feeds it (TX-12, decision 430).
+pub const REG_VOICE_AMP: u8 = 0x64;
+/// The mic meter's steps (TX-12): REG_64 at 1 dB to 20 dB over its floor with the mic quiet, 110 on black
+/// (Nov 22, 2026: Dry TX, gain 9, 110-114 silent; speech at a normal distance read a median of 263 and peaks of
+/// 700-1050). 110 x 10^(d/20), rounded.
+pub static MIC_AMP_STEPS: [u16; 20] =
+    [123, 138, 155, 174, 196, 219, 246, 276, 310, 348, 390, 438, 491, 551, 619, 694, 779, 874, 981, 1100];
 
-/// PA0's 12-bit reading as % of full deviation, 0-100.
-pub fn mic_percent(adc: u16) -> u8 {
-    ((adc >> 4).min(MIC_FULL) as u32 * 100 / MIC_FULL as u32) as u8
+/// REG_64's reading as the mic meter's 0-100: 5 a dB over the floor, full at 20 dB.
+pub fn mic_amp_percent(amp: u16) -> u8 {
+    MIC_AMP_STEPS.iter().take_while(|&&t| amp >= t).count() as u8 * 5
 }
 
 #[cfg(test)]
@@ -378,11 +382,14 @@ mod tests {
         assert_eq!(c.shown(t + 300 + COUNTER_SHOW_MS), None);
     }
 
+    /// TX-12.3: REG_64's voice amplitude as the meter's %.
     #[test]
     fn mic_meter() {
-        assert_eq!(mic_percent(0), 0);
-        assert_eq!(mic_percent(80 << 4), 50);
-        assert_eq!(mic_percent(0xFFF), 100);
+        assert_eq!(mic_amp_percent(0), 0);
+        assert_eq!(mic_amp_percent(112), 0, "the quiet floor: empty");
+        assert_eq!(mic_amp_percent(263), 35, "normal speech's median: 7 dB");
+        assert_eq!(mic_amp_percent(1100), 100);
+        assert_eq!(mic_amp_percent(0xFFFF), 100, "past full scale: full");
     }
 
     /// TONE-18: tail elimination as stock: 55 Hz with no sub-tone, the phase shift on CTCSS, the DCS turn-off

@@ -142,7 +142,7 @@ const G7: [Entry; 9] = [
 const G8: [Entry; 8] = [
     Entry(concat!("Timeout|120 s|", txtc!("Transmit stops after this; a beep says so."))),
     Entry(concat!("VOX|Off|", txtc!("Voice-operated transmit."))),
-    Entry(concat!("Mic gain|5|", txtc!("Higher is louder on air: 1-9. 8-9 for a quiet speaker mic."))),
+    Entry(concat!("Mic gain|9|", txtc!("Higher is louder on air: 1-9. Lower it if too loud."))),
     Entry(concat!("End tone|Off|", txtc!("A short tone as you let go of PTT."))),
     Entry(concat!("DTMF|100 ms|", txtc!("Dialer, memories, timing."))),
     Entry(concat!("Callsign and ID|Empty|", txtc!("Your callsign, and CW ID."))),

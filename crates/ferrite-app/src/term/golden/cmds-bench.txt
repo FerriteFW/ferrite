@@ -817,7 +817,7 @@
   | set 0 8 2 1 Off                   # VOX
   | set 0 8 2 2 5                     # Level
   | set 0 8 2 3 2 s                   # Tail
-  | set 0 8 3 5                       # Mic gain
+  | set 0 8 3 9                       # Mic gain
   | set 0 8 4 Off                     # End tone
   | set 0 8 5 3 100 ms                # Speed
   | set 0 8 5 4 On                    # Sidetone
@@ -1079,7 +1079,7 @@
   | set 0 8 2 1 Off                   # VOX
   | set 0 8 2 2 5                     # Level
   | set 0 8 2 3 2 s                   # Tail
-  | set 0 8 3 5                       # Mic gain
+  | set 0 8 3 9                       # Mic gain
   | set 0 8 4 Off                     # End tone
   | set 0 8 5 3 100 ms                # Speed
   | set 0 8 5 4 On                    # Sidetone

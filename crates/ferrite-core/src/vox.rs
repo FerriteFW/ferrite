@@ -17,12 +17,12 @@ pub const MIC_STOCK: u8 = 0x24;
 /// writes the mic gain again.
 pub const MIC_DATA: u8 = 0x34;
 
-/// VOX-15: REG_7D[5:0] (0.5 dB a step) for Mic gain 1-9 (0 8 3): 9 is 0x39, stock's loudest (its setting 2, the
-/// calibration's 0xF210 byte 0: 0x37 on both bench radios) and a step more, 10.5 dB over stock's default 0x24; 2.5 dB
-/// a step down to 0x11 at 1. 5 (the default) is 0x25, half a dB over stock's default. The field's top (0x3F) is
-/// left unused.
+/// VOX-15: REG_7D[5:0] (0.5 dB a step) for Mic gain 1-9 (0 8 3), 2.5 dB a step: 9 (the default) is the field's
+/// top, 0x3F; 5 is 0x2B; 1 is 0x17. With the same 1 kHz tone, black on stock V0.29 (Mic Gain High) gave 75 Hz
+/// deviation, Ferrite on black 77-80 Hz at 0x2B and 259 Hz at 0x3F, another stock radio on High 340 Hz: the
+/// radios differ, so Ferrite starts at the top (decision 431, Nov 22, 2026).
 pub fn mic_reg(gain: u8) -> u8 {
-    0x39 - (9 - gain.clamp(1, 9)) * 5
+    0x3F - (9 - gain.clamp(1, 9)) * 5
 }
 
 /// Stock's hysteresis: speech goes on above the threshold and stays on down to this many counts below it.
@@ -213,9 +213,9 @@ mod tests {
     /// default.
     #[test]
     fn mic_gain_to_reg_7d() {
-        assert_eq!((mic_reg(1), mic_reg(5), mic_reg(9)), (0x11, 0x25, 0x39));
-        assert_eq!((mic_reg(0), mic_reg(12)), (0x11, 0x39), "clamped to 1-9");
-        assert!(mic_reg(5).abs_diff(MIC_STOCK) <= 1, "5 within half a dB of stock's default");
-        assert!(mic_reg(8) < 0x37 && mic_reg(9) >= 0x37, "9 reaches stock's loudest, its setting 2 (0xF210 byte 0 on the bench radios)");
+        assert_eq!((mic_reg(1), mic_reg(5), mic_reg(9)), (0x17, 0x2B, 0x3F));
+        assert_eq!((mic_reg(0), mic_reg(12)), (0x17, 0x3F), "clamped to 1-9");
+        assert!(mic_reg(5).abs_diff(0x2D) <= 2, "5 within a dB of stock's Mid");
+        assert!(mic_reg(8) < 0x3F && mic_reg(9) == 0x3F, "9 the field's top, over stock's High (0x37 on the bench radios)");
     }
 }

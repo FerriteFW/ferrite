@@ -10,11 +10,9 @@ impl Radio {
     /// SAFE-14: one held from boot for over 1 s is reported stuck (`TxLive::ptt_stuck`, the UI's notice; a cable
     /// log line with its name when that changes) until let go.
     pub(super) fn ptt_seen_released(&mut self) -> bool {
-        use crate::board::{KEY_PTT, KEY_SIDE1, KEY_SIDE2};
         use ferrite_radio::ptt;
         let was = self.tx.ptt.open();
-        let pressed = if KEY_PTT.read() { 0 } else { ptt::PTT_A } | if KEY_SIDE1.read() { 0 } else { ptt::PTT_B } | if KEY_SIDE2.read() { 0 } else { ptt::PTT_EXT };
-        let ok = self.tx.ptt.look(pressed);
+        let ok = self.tx.ptt.look(ptt_pressed());
         if ok && !was {
             log(b"ptt released since boot", 0);
         }
@@ -38,6 +36,20 @@ impl Radio {
             log(&t[..k], stuck as u32);
         }
         ok
+    }
+
+    /// SND-12.7 (decision 430): the mic for this key-up from the PTT pressed (`ferrite_radio::ptt::mic_src`), the
+    /// route (PE1) set to it; put back at the unkey ([`Radio::unkeyed`]).
+    pub(super) fn mic_route(&mut self) -> u8 {
+        let src = ferrite_radio::ptt::mic_src(acc_plugged(), ptt_pressed());
+        crate::board::ACC_ROUTE.write(src == ferrite_core::msg::MIC_SRC_SPK);
+        // SND-12.7: the radio's mic is silenced while PB8 is on; a speaker mic holds it on, so let it go.
+        let radio = src == ferrite_core::msg::MIC_SRC_RADIO;
+        super::RADIO_MIC.store(radio, core::sync::atomic::Ordering::Relaxed);
+        if radio {
+            crate::board::AMP_EN[0].write(false);
+        }
+        src
     }
 
     /// The battery for transmit (PWR-20): the PA1 reading against the calibration's gauge.
@@ -206,7 +218,8 @@ impl Radio {
         }
         self.tx.pa = pa;
         self.tx.fault = false;
-        self.live.tx = TxLive { keyed: false, slot, mic: 0, refused: None, refusals: self.live.tx.refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
+        let mic_src = self.mic_route(); // SND-12.7: the PTT pressed picks the mic
+        self.live.tx = TxLive { keyed: false, slot, mic: 0, refused: None, refusals: self.live.tx.refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck, mic_src };
         (self.tx.slot, self.tx.dialled) = (slot, false);
         let r = self.tx.seq.key(&req, &mut self.path, now, &mut st);
         if let Err(r) = r {
@@ -277,8 +290,11 @@ impl Radio {
         #[cfg(feature = "bench")]
         self.fsk_tx_poll(); // TERM-43: the next frame at each transmit-done flag
         let batt = self.battery_ok();
-        // TX-12's mic meter: PA0, the mic-level tap stock's VOX reads (decision 76).
-        self.live.tx.mic = tonegen::mic_percent(crate::hal::adc::read(crate::hal::adc::CH_PA0));
+        // TX-12's mic meter: the keyed chip's voice amplitude (REG_64), whichever mic is in use (decision 430; PA0,
+        // decision 76's tap, never hears the speaker mic).
+        if let Some(n) = self.tx.chip.filter(|&n| self.has(n)) {
+            self.live.tx.mic = tonegen::mic_amp_percent(self.chip(n).read(tonegen::REG_VOICE_AMP));
+        }
         let mut st = Steps::default();
         let cfg = self.tx_cfg();
         if let Some(e) = self.tx.seq.tick(&cfg, batt, &mut self.path, now, &mut st) {
@@ -429,12 +445,34 @@ impl Radio {
         self.tx.chip = None;
         self.tx.dial = None;
         self.live.tx.keyed = false;
+        // SND-12.7: the speaker mic's route back to stock's (PE1 follows the detect).
+        crate::board::ACC_ROUTE.write(acc_plugged());
+        // SND-12.7: after a key-up on the radio's mic, PB8 held for the speaker mic again (its audio, SND-12).
+        if super::RADIO_MIC.swap(false, core::sync::atomic::Ordering::Relaxed) {
+            super::pb8(false);
+        }
+        self.live.tx.mic_src = 0;
         log(b"tx unkey", 0);
     }
 
     pub(super) fn refuse(&mut self, slot: u8, why: Refusal) {
         let refusals = self.live.tx.refusals.wrapping_add(1); // TX-50
-        self.live.tx = TxLive { keyed: false, slot, mic: 0, refused: Some(why), refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck };
+        self.live.tx = TxLive { keyed: false, slot, mic: 0, refused: Some(why), refusals, dtmf_sent: self.live.tx.dtmf_sent, voice: self.live.tx.voice, ptt_stuck: self.live.tx.ptt_stuck, mic_src: 0 };
         log(b"tx refused ", why as u32);
     }
+}
+
+/// The PTT inputs pressed now (low when pressed): `ferrite_radio::ptt`'s PTT A (PE3), PTT B (PE2), the connector's
+/// (PE6).
+#[cfg(feature = "tx")]
+fn ptt_pressed() -> u8 {
+    use crate::board::{KEY_PTT, KEY_SIDE1, KEY_SIDE2};
+    use ferrite_radio::ptt;
+    (if KEY_PTT.read() { 0 } else { ptt::PTT_A }) | (if KEY_SIDE1.read() { 0 } else { ptt::PTT_B }) | (if KEY_SIDE2.read() { 0 } else { ptt::PTT_EXT })
+}
+
+/// SND-12: a speaker mic plugged in (the input task's debounced detect).
+#[cfg(feature = "tx")]
+fn acc_plugged() -> bool {
+    crate::chan::ACCESSORY.load(core::sync::atomic::Ordering::Relaxed) & ferrite_core::acc::ON != 0
 }

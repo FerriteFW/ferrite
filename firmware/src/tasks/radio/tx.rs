@@ -281,7 +281,9 @@ impl Radio {
     pub(super) fn tx_chip_setup(&mut self, freq: Freq10, narrow: bool, tone: u16, data: bool) -> radio_chip::TxSetup {
         self.tx.narrow = narrow;
         let tone_dev = self.tx.cal.map_or(0, |c| c.tone_dev(tone, self.tone_level));
-        let mic = if data { ferrite_core::vox::MIC_DATA } else { ferrite_core::vox::mic_reg(self.tx.mic) };
+        // VOX-15.2: a key-up on the speaker mic (its PTT, or VOX/the link with one plugged in, SND-12.7) one step up
+        let spk = ferrite_radio::ptt::mic_src(acc_plugged(), ptt_pressed()) == ferrite_core::msg::MIC_SRC_SPK;
+        let mic = if data { ferrite_core::vox::MIC_DATA } else { ferrite_core::vox::mic_reg_for(self.tx.mic, spk) };
         let freq = self.tx.cal.map_or(freq, |c| c.tx_word(freq)); // CAL-12: the factory crystal trim
         radio_chip::TxSetup { freq, narrow, tone, tone_dev, mic }
     }

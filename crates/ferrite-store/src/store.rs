@@ -968,8 +968,10 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
             let mut n = 0u16;
             n.load(r);
             let mut sub = Limit { inner: r, left: n as u32 };
+            set.mic_v2 = false; // VOX-15.1: a record from before 0.9.6 doesn't carry it
             set.load(&mut sub);
             sub.skip();
+            set.mic_upgrade();
             set.sanitize();
         })
     }

@@ -338,6 +338,16 @@ impl Radio {
         self.hint_tick(now, listening, &sq, &toned, out.audio);
         // The channel the channel scans need next, for the UI to answer (LiveAll::want).
         self.live.set_want(self.chans.want(&self.scans));
+        // BCR-23.1: while the broadcast plays both band receive selects stay on (the path machine's hold, SAFE-24:
+        // never the HF select or the relay; a key-up clears both first), so a hop between VHF and UHF moves no pin
+        let both = self.fm.is_some() && self.has(0) && self.has(1);
+        if both != self.bcast_both {
+            let mut st = Steps::default();
+            if self.path.set_both(both, &mut st).is_ok() {
+                self.bcast_both = both;
+            }
+            self.run(&st).await;
+        }
         // 4. The path on the chip to listen to now, and that chip on the slot the engine names; the other asleep
         // unless a kept slot has it (WATCH-2, PWR-7, decision 111: one BK4829 awake at a time, as stock).
         let path = self.hop.next(now, &out, self.active);

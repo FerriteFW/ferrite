@@ -219,6 +219,10 @@ struct Radio {
     /// a receive tune), and whether this tune may be the light one: `Some(same_slot)`.
     rx_set: [Option<radio_chip::RxSetup>; 2],
     light: [Option<bool>; 2],
+    /// BCR-23.1: the chips the watch let go of beside a broadcast, kept receiving (muted) instead of sleeping, so
+    /// the hop back is a light retune with no power step; and whether the broadcast holds both band selects on.
+    rx_kept: u8,
+    bcast_both: bool,
     /// SQL-18: each chip's software squelch, and the (slot, frequency) it is for (a retune starts it closed).
     soft_sq: [ferrite_core::softsq::SoftSq; 2],
     /// SQL-19: the APRS slot's squelch over the chip's, per chip.
@@ -804,6 +808,8 @@ pub async fn task() {
         sq_regs: [None; 2],
         rx_set: [None; 2],
         light: [None; 2],
+        rx_kept: 0,
+        bcast_both: false,
         soft_sq: [ferrite_core::softsq::SoftSq::DEFAULT; 2],
         aprs_sq: [ferrite_core::aprssq::AprsSq::NEW; 2],
         aprs_open_sent: false,

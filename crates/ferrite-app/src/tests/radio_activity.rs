@@ -1289,6 +1289,19 @@ fn split_across_the_relay() {
     assert_eq!(t.app.slot(0).cfg().offset, 0, "still simplex");
 }
 
+/// TX-39.1 (decision 438): a key-up's slot outside A-C (satellite mode's, HF mode's) is named, never looked up in the
+/// slots: a refused satellite key-up drew the TX refused screen with it and faulted on black (Nov 22, 2026).
+#[test]
+fn heads_for_the_satellite_and_hf_slots() {
+    let t = ready();
+    let mut h = ferrite_ui::text::Buf::<32>::new();
+    t.app.head_text(crate::sat::SAT_SLOT, &t.live, &store(), &mut h);
+    assert_eq!(h.as_bytes(), b"Satellite");
+    t.app.head_text(3, &t.live, &store(), &mut h);
+    assert_eq!(h.as_bytes(), b"HF mode");
+    assert!(t.app.chan_name(crate::sat::SAT_SLOT, &t.live).is_empty());
+}
+
 /// HOME-4, HOME-4.3: channel mode leads with the name; the header carries the short number and the channel's zone
 /// ("012 · Local"; the band, "012 · UHF", for a channel in no zone; a VFO keeps "VFO · VHF"), and a VFO, a scan or
 /// a channel with no name has no name line (its frequency stays large).

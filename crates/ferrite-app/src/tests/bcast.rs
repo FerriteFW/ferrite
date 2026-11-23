@@ -246,6 +246,23 @@ fn transmit_switches_the_receiver_away_and_back() {
     assert_eq!(t.app.radio.mode, Mode::Fm);
 }
 
+/// TX-24.2 (decision 442): while a data key-up (an SSTV picture, an APRS frame) is under way the App says the
+/// transmitter is busy, so the APRS task waits for it instead of asking for a key-up of its own; free again at its
+/// unkey.
+#[test]
+fn a_data_key_up_makes_the_transmitter_busy() {
+    let mut t = ready();
+    t.app.set.callsign = crate::settings::Text::EMPTY;
+    for &b in b"VE7GPL" {
+        t.app.set.callsign.push(b);
+    }
+    assert!(!t.app.tx_busy());
+    assert!(crate::screens::transmit::data_key(&mut t.app, 0, 0, b"Beacon"));
+    assert!(t.app.tx_busy(), "keyed for data");
+    crate::screens::transmit::data_unkey(&mut t.app, 0);
+    assert!(!t.app.tx_busy(), "free again at the unkey");
+}
+
 /// TX-24.1 (decision 435): a data key-up (an APRS beacon, an SSTV picture) stops the broadcast before it as PTT does
 /// (the Radio task refuses any key-up while it plays), and the unkey starts it again.
 #[test]

@@ -433,8 +433,10 @@ impl View for Home {
             (Key::Left | Key::Right, Short | Repeat) => group(app, if e.key == Key::Right { 1 } else { -1 }, store),
             (Key::Slot, Short) => {
                 // NAV-5
+                let old = app.active;
                 app.active = (app.active + 1) % SLOTS as u8;
                 app.out.push(RadioCmd::Active(app.active));
+                app.monitor_off_leaving(old); // SQL-14.1
             }
             (Key::Slot, Long) if app.slots[app.active as usize].on_channel() => app.screen = Screen::ChEdit(super::chedit::ChEdit { cell: 0 }), // EDIT-2
             (Key::Slot, Long) => app.screen = Screen::Edit(super::edit::Edit { cell: 0 }), // EDIT-1

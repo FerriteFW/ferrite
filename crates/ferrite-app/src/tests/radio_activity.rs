@@ -2729,3 +2729,19 @@ fn relay_cancel_toast_and_status_row() {
     t.wait(100);
     assert!(!readback(&t).iter().any(|l| l.contains("HF needs the relay")), "{:?}", readback(&t));
 }
+
+/// SQL-14.1 (ferrite#129): a monitor latched on the active slot goes off when another slot becomes active (SLOT):
+/// it kept the watch holding the old slot open, so the new active slot heard nothing.
+#[test]
+fn slot_change_turns_a_latched_monitor_off() {
+    let mut t = ready();
+    let a = t.app.active;
+    t.tap(Key::Side(1));
+    assert_ne!(t.app.monitor & 1 << a, 0, "latched");
+    let _ = t.cmds();
+    t.tap(Key::Slot);
+    assert_ne!(t.app.active, a);
+    assert_eq!(t.app.monitor, 0, "off with the slot change");
+    assert!(t.cmds().contains(&RadioCmd::Monitor { slot: a, on: false }));
+    assert!(t.app.toast_up(), "says so");
+}

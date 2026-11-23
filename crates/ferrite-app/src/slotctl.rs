@@ -194,6 +194,7 @@ impl App {
         if ch.active && self.active != s {
             self.active = s; // NAV-5, the SLOT key
             self.out.push(RadioCmd::Active(s));
+            self.monitor_off_leaving(was); // SQL-14.1
         }
         Ok(())
     }
@@ -299,6 +300,7 @@ impl App {
                 }
                 if was != s {
                     self.out.push(RadioCmd::Active(s)); // NAV-5
+                    self.monitor_off_leaving(was); // SQL-14.1
                 }
                 return Ok(());
             }

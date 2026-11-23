@@ -96,8 +96,10 @@ impl App {
         (self.drawn.screen, self.drawn.sbar) = (None, None); // PWR-24.7: its own home, drawn whole
         self.go_home(); // the mode screens close, and wanted_mode keeps them off
         if self.bcast_slot() == Some(self.active) && self.active != 0 {
+            let old = self.active;
             self.active = 0; // PWR-24.4: a broadcast slot gives way to A
             self.out.push(RadioCmd::Active(0));
+            self.monitor_off_leaving(old); // SQL-14.1
         }
         for s in 0..SLOTS as u8 {
             if self.scan_mask & 1 << s != 0 {

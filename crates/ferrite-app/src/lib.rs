@@ -1736,6 +1736,16 @@ impl App {
         }
     }
 
+    /// SQL-14.1 (ferrite#129): the active slot changed from `old`: a monitor latched on `old` goes off. It held the
+    /// receiver for that slot (the watch kept it open), so the new active slot heard nothing.
+    pub(crate) fn monitor_off_leaving(&mut self, old: u8) {
+        if old != self.active && self.monitor & 1 << old != 0 {
+            self.monitor &= !(1 << old);
+            self.out.push(RadioCmd::Monitor { slot: old, on: false });
+            self.show_toast(b"Monitor off", b"slot changed", false);
+        }
+    }
+
     pub(crate) fn off_refuse(&mut self, s: u8) -> bool {
         if !self.slot_off(s) {
             return false;

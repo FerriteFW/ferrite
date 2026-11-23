@@ -995,7 +995,7 @@ impl View for Compose {
         } else {
             app.forget(R_LIST_GATE, 1); // the book draws whole when it comes back
             let focus = self.field == 1;
-            let bg = if focus { FOCUS } else { SURFACE };
+            let bg = if focus { focus_fill() } else { SURFACE };
             let key = Mix::new().h(&full).h(&self.tail).h(&word).h(&self.field).h(&(pending_tap && self.field == 1)).h(&quick_list).get();
             // DISP-28: the quick list's box once; its rows below, each when it changes.
             let boxed = app.dirty(R_LIST_BOX, if quick_list { Mix::new().h(&2u8).h(&self.field).get() } else { Mix::new().h(&9u8).h(&key).get() });
@@ -1143,7 +1143,7 @@ fn book_rows(app: &mut App, lcd: &mut impl Panel, d: &dyn crate::data::Data, b: 
     }
     if app.dirty(R_LIST_BOX, Mix::new().h(&3u8).get()) {
         ferrite_ui::canvas::banded(lcd, 0, y + 18, 240, h + 6, BG, |lcd| {
-            lcd.fill_r(8, y + 18, 224, h, 2, FOCUS);
+            lcd.fill_r(8, y + 18, 224, h, 2, focus_fill());
             lcd.frame_r(8, y + 18, 224, h, 2, BLUE);
         });
         app.forget(R_LIST_ROW, LIST_VIS);
@@ -1157,8 +1157,8 @@ fn book_rows(app: &mut App, lcd: &mut impl Panel, d: &dyn crate::data::Data, b: 
             continue;
         }
         let ry = y + 22 + k as i32 * 19;
-        let (fg, dim, rb) = if on { (BLUE_FG, BLUE_FG, BLUE) } else { (TEXT, SUB, FOCUS) };
-        ferrite_ui::canvas::banded(lcd, 10, ry, 220, 19, FOCUS, |lcd| {
+        let (fg, dim, rb) = if on { (BLUE_FG, BLUE_FG, BLUE) } else { (TEXT, SUB, focus_fill()) };
+        ferrite_ui::canvas::banded(lcd, 10, ry, 220, 19, focus_fill(), |lcd| {
             let Some((g, call, sub)) = (i < n).then(|| b.row(d, i)).flatten() else { return };
             if on {
                 lcd.fill_r(10, ry, 220, 19, 1, BLUE);
@@ -1243,6 +1243,13 @@ fn mark_strip(lcd: &mut impl Panel, y: i32, punct: u8) {
     w::chips_sel(lcd, 8, y, 224, &items, Some(punct as usize - 1), BG);
 }
 
+/// The focused field's and list's fill (DISP-18.2): FOCUS, but none in night red, where FOCUS is solid red and
+/// the selected row's red bar was lost in it (a Discord report, ferrite#119): red text on black, the selection the
+/// one red bar.
+fn focus_fill() -> u16 {
+    if ferrite_ui::theme::get() == ferrite_ui::theme::NIGHT_RED { BG } else { FOCUS }
+}
+
 fn pop<const N: usize>(b: &mut Buf<N>) {
     let t = *b;
     b.set(&t.as_bytes()[..t.len().saturating_sub(1)]);
@@ -1252,7 +1259,7 @@ fn pop<const N: usize>(b: &mut Buf<N>) {
 fn field_box(lcd: &mut impl Panel, y: i32, h: i32, label: &[u8], v: &[u8], focus: bool, pending: bool, empty: &[u8]) {
     ferrite_ui::canvas::banded(lcd, 0, y, 240, h + 26, BG, |lcd| {
         lcd.text4(8, y + 12, label, &UI_12, SUB, BG);
-        let bg = if focus { FOCUS } else { SURFACE };
+        let bg = if focus { focus_fill() } else { SURFACE };
         lcd.fill_r(8, y + 18, 224, h, 2, bg);
         lcd.frame_r(8, y + 18, 224, h, 2, if focus { BLUE } else { LINE });
         let base = y + 18 + h / 2 + 6;

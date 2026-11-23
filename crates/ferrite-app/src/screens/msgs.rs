@@ -287,14 +287,14 @@ impl View for Msgs {
 // ---- compose (A16) ----
 
 /// Multi-tap letters per digit (KEY-12); 1 has the punctuation, the same marks as predictive's (TEXT-2.1).
-const TAPS: [&[u8]; 10] = [b" 0", b".,?!'/-@:1", b"abc2", b"def3", b"ghi4", b"jkl5", b"mno6", b"pqrs7", b"tuv8", b"wxyz9"];
+const TAPS: [&[u8]; 10] = [b" 0", b".,?!'/-@:+1", b"abc2", b"def3", b"ghi4", b"jkl5", b"mno6", b"pqrs7", b"tuv8", b"wxyz9"];
 /// The same key again within this many ms changes the last letter instead of adding one.
 pub const TAP_MS: u32 = 1000;
 /// APRS limits: an addressee of 9, a message of 67 characters.
 const TO_MAX: usize = 9;
 const TEXT_MAX: usize = 67;
 /// Predictive: what 1 cycles through (TEXT-2.1). Printable ASCII, none of APRS's | ~ { (TEXT-13).
-const PUNCT: &[u8] = b".,?!'/-@:";
+const PUNCT: &[u8] = b".,?!'/-@:+";
 /// Compose's text is the draft's, unless a quick message is being edited (TEXT-7) or the comment (APRS-50).
 const DRAFT: u8 = 255;
 const COMMENT: u8 = 254;
@@ -1234,7 +1234,7 @@ pub(crate) fn taps() -> [&'static [u8]; 10] {
 
 /// While 1 cycles the marks (TEXT-2.1): every mark, the one in the text highlighted.
 fn mark_strip(lcd: &mut impl Panel, y: i32, punct: u8) {
-    let mut items: [&[u8]; 9] = [b""; 9];
+    let mut items: [&[u8]; PUNCT.len()] = [b""; PUNCT.len()];
     for (i, it) in items.iter_mut().enumerate() {
         *it = &PUNCT[i..i + 1];
     }

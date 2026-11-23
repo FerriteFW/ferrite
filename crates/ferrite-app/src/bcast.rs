@@ -170,7 +170,14 @@ impl App {
 
     /// HOME-14, MODE-5: home's strip can't sweep beside the broadcast: the active slot is in the broadcast band (it
     /// plays, or shows "FM on B"), or needs the band relay the broadcast leaves released (BCR-15).
+    /// MODE-5.1 (ferrite#120): nor while APRS mode or KISS keep C listening (APRS-21.1), or the active slot is the
+    /// APRS slot: a sweep is all the Radio task does while it runs (no watch turns, no turn for C, no squelch for
+    /// the decoder's capture), so with the strip on home nothing was decoded, and on the APRS slot it swept
+    /// around the frequency C held before.
     pub(crate) fn strip_blocked(&self) -> bool {
+        if self.aprs_prio() || self.aprs_slot(self.active) {
+            return true;
+        }
         self.radio.bcast.is_some() && (self.in_bcast_band(self.active) || ferrite_core::path::Sel::rx(self.tuned_freq(self.active)).relay())
     }
 }

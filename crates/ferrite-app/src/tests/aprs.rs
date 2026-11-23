@@ -808,3 +808,49 @@ fn message_retries_row_steps_through_its_values() {
     assert_eq!(seen, [0, 1, 2, 3, 4]);
     assert_eq!(a.app.aprs_cfg().tries(), 5);
 }
+
+/// MODE-5.1, APRS-15.3 (ferrite#120, ferrite#59): C on airband in AM, then APRS mode on the single + scope
+/// layout. C goes to the Radio task as FM on the APRS frequency, the card's settings are the APRS slot's (it read
+/// AM), and home's strip doesn't sweep while APRS listens (a sweep is all the Radio task does while it runs: no
+/// turn for C, nothing decoded; with C active it swept around 118.950), whichever slot is active. APRS mode off:
+/// C is back in AM on airband and the strip sweeps again.
+#[test]
+fn aprs_from_an_am_slot_is_fm_and_the_strip_waits() {
+    use crate::screens::activity::Mode;
+    let air = ferrite_core::freq::mhz(118) + 95_000;
+    let mut a = A::new();
+    a.app.active = APRS_SLOT;
+    let s = &mut a.app.slots[APRS_SLOT as usize];
+    (s.vfo_mode, s.vfo) = (true, air);
+    s.cfg_mut().mode = 2;
+    a.app.send_slot(APRS_SLOT);
+    a.app.set_layout(1);
+    a.wait(700);
+    let c = a.cmds();
+    assert!(c.contains(&RadioCmd::SlotParam { slot: 2, param: Param::Mode, value: 2 }), "AM on airband: {c:?}");
+    assert!(c.iter().any(|c| matches!(c, RadioCmd::Sweep { centre, on: true, .. } if *centre == air)), "the strip around it: {c:?}");
+    assert_eq!(a.app.radio.mode, Mode::Strip);
+    a.mode(true);
+    a.wait(700);
+    let c = a.cmds();
+    let at = |want: RadioCmd| c.iter().rposition(|x| *x == want);
+    let tuned = at(RadioCmd::TuneSlot { slot: 2, freq: 14_439_000 }).expect("on the APRS frequency");
+    assert!(at(RadioCmd::SlotParam { slot: 2, param: Param::Mode, value: 0 }) > Some(tuned), "FM, after the retune: {c:?}");
+    assert!(!c.contains(&RadioCmd::SlotParam { slot: 2, param: Param::Mode, value: 2 }), "never AM again: {c:?}");
+    assert!(c.iter().any(|c| matches!(c, RadioCmd::Sweep { on: false, .. })), "the strip stopped: {c:?}");
+    assert!(!c.iter().any(|c| matches!(c, RadioCmd::Sweep { on: true, .. })), "and not started again: {c:?}");
+    assert!(a.app.strip_blocked() && a.app.radio.mode != Mode::Strip);
+    assert_eq!((a.app.tuned_cfg(APRS_SLOT).mode, a.app.slot(APRS_SLOT).cfg().mode), (0, 2), "the card's FM; C's own AM kept aside");
+    // A active, on 2 m beside APRS: still no strip
+    a.app.active = 0;
+    a.wait(700);
+    assert!(a.app.strip_blocked() && a.app.radio.mode != Mode::Strip);
+    assert!(!a.cmds().iter().any(|c| matches!(c, RadioCmd::Sweep { on: true, .. })));
+    // off: C as it was, and the strip again
+    a.app.active = APRS_SLOT;
+    a.mode(false);
+    a.wait(700);
+    let c = a.cmds();
+    assert!(c.contains(&RadioCmd::TuneSlot { slot: 2, freq: air }) && c.contains(&RadioCmd::SlotParam { slot: 2, param: Param::Mode, value: 2 }), "{c:?}");
+    assert!(c.iter().any(|c| matches!(c, RadioCmd::Sweep { centre, on: true, .. } if *centre == air)), "{c:?}");
+}

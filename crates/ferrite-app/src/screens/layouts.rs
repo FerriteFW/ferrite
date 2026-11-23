@@ -82,7 +82,8 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
         });
     }
     // The settings, label over value (HOME-4): mode, tone, power; step, offset, squelch.
-    let cfg = *app.slot(a).cfg();
+    // as the radio has them: FM, no tone and the APRS power on the APRS slot, not what C held before (APRS-15.3)
+    let cfg = app.tuned_cfg(a);
     let mut v = [Buf::<16>::new(), Buf::<16>::new(), Buf::<16>::new(), Buf::<16>::new(), Buf::<16>::new(), Buf::<16>::new()];
     mode_chip(&cfg, &mut v[0]);
     card_tone(&cfg, &mut v[1]);
@@ -203,7 +204,7 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
     // HOME-13: the strip and the other slots' lines wait while the knob turns.
     if !app.held(10) {
         if bcast || app.strip_blocked() {
-            scope::strip_off(app, lcd, 10, 200, 34); // HOME-14: the broadcast slot is active (or needs the relay)
+            scope::strip_off(app, lcd, 10, 200, 34); // HOME-14: the broadcast slot is active (or needs the relay); MODE-5.1: APRS listens
         } else {
             scope::strip(app, lcd, 10, 200, 34, centre, STRIP_STEP, &bars[..scope::STRIP_BARS]);
         }
@@ -281,7 +282,6 @@ pub fn activity(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>)
         let f = app.shown_freq(s, live);
         // Channel mode: the name at the left, the frequency small at the right (HOME-4).
         let name = app.card_name(s, live, cx.store);
-        let sl = *app.slot(s);
         let mut right = Buf::<16>::new();
         if lv.scanning {
             let _ = ufmt::uwrite!(right, "{} hits", lv.hits);
@@ -305,7 +305,7 @@ pub fn activity(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>)
         } else if info {
             w::field(lcd, x, 226 - x, y + 26, y + 44, y + 42, right.as_bytes(), &w::st(fo, c, SURFACE, Align::Right));
         }
-        let cfg = *sl.cfg();
+        let cfg = app.tuned_cfg(s); // APRS-15.3: the APRS slot's, not what C held before
         // The value line in fixed columns (HOME-4): mode, tone, power pinned right; a scan's mode and last hit.
         let mut cols = [Buf::<16>::new(), Buf::<16>::new(), Buf::<16>::new()];
         if lv.scanning {

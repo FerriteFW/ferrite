@@ -102,6 +102,7 @@ pub fn preset(app: &mut App, i: u8, store: &impl ChannelStore) {
     app.out.push(RadioCmd::ScanRangeSet { slot: a, what: RANGE_STEP, f: step });
     // the skips (up to 48) and then the start, a few each tick ([`feed_range`]); the queue holds 32 commands
     app.range_feed = Some((a, i, 0, crate::chanscan::preset_resume(app, p.resume)));
+    app.range_scan = Some((a, i));
     feed_range(app, store);
     app.screen = crate::Screen::Scan(Scan { slot: a, list: false, sel: 0 });
 }
@@ -128,6 +129,26 @@ pub(crate) fn feed_range(app: &mut App, store: &impl ChannelStore) {
     if app.set.scan_down {
         app.out.push(RadioCmd::ScanDir { slot: a, up: false, resume: false }); // SCAN-26
     }
+}
+
+/// SCAN-17: a range scan's hit added to its preset's skipped list (SCAN-10), the scan told to leave it out now
+/// and go on; refused with a toast when the 48 are full.
+fn preset_skip(app: &mut App, s: u8, i: u8, f: ferrite_core::freq::Freq10, store: &impl ChannelStore) {
+    use crate::data::{Op, SKIP_CHUNK};
+    use ferrite_core::msg::RANGE_SKIP;
+    let d = store.data();
+    let Some(p) = d.preset(i) else { return };
+    if p.skips as usize >= ferrite_core::link::PRESET_SKIPS_MAX {
+        return app.show_toast(b"Skip list full", b"48 per preset", false);
+    }
+    let mut fs = [0; SKIP_CHUNK];
+    fs[0] = f;
+    if !d.request(Op::PresetSkips { preset: i, at: p.skips, count: p.skips + 1, f: fs }) {
+        return app.show_toast(b"Not saved", b"try again", false);
+    }
+    app.out.push(RadioCmd::ScanRangeSet { slot: s, what: RANGE_SKIP, f });
+    app.out.push(RadioCmd::ScanSkip { slot: s });
+    app.show_toast(b"Skipped", crate::slot::mhz3(f).as_bytes(), false);
 }
 
 /// SCAN-27: skips sent each tick while a preset scan waits to start.
@@ -459,13 +480,17 @@ fn hit_list(s: Scan, app: &mut App, lcd: &mut impl Panel, store: &impl ChannelSt
 }
 
 /// SCAN-17: # on a hit sets the channel's Skip flag (CHAN-4), so no scan stops there again, and the scan goes
-/// on. A band scan has no list to keep it in: \* still skips it for this scan.
-fn lasting_skip(app: &mut App, s: u8, store: &impl ChannelStore) {
+/// on. A range preset's scan adds it to the preset's skipped list (SCAN-10, up to 48). A band scan has no list to
+/// keep it in: \* still skips it for this scan.
+pub(crate) fn lasting_skip(app: &mut App, s: u8, store: &impl ChannelStore) {
     let f = app.scan_hit[s as usize];
     if f == 0 {
         return app.show_toast(b"Nothing to skip", b"", false);
     }
     let sl = *app.slot(s);
+    if let Some((_, i)) = app.range_scan.filter(|r| r.0 == s && app.scan_mask & 1 << s != 0) {
+        return preset_skip(app, s, i, f, store);
+    }
     if !sl.on_channel() {
         return app.show_toast(b"No skip list", b"* skips it once", false);
     }

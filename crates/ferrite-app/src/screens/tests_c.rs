@@ -422,6 +422,7 @@ fn gps_pages_and_waypoints() {
     assert_eq!(t.s.waypoint(0).unwrap().name.as_bytes(), b"VE3KPW-9");
 }
 
+/// SCAN-17.1: on the Skip list OK lets one back in and # clears them all after the shared confirm; range presets.
 #[test]
 fn skips_and_presets() {
     let mut t = T::new();
@@ -429,7 +430,11 @@ fn skips_and_presets() {
     t.tap(Key::Menu);
     assert_eq!(t.s.skips(), 2, "OK lets one back in");
     t.tap(Key::Hash);
+    assert!(matches!(t.app.screen(), Screen::Confirm(_)), "SCAN-17.1: # asks before clearing them all");
+    assert_eq!(t.s.skips(), 2);
+    t.tap(Key::Menu);
     assert_eq!(t.s.skips(), 0);
+    assert_eq!(t.name(), "Skip list", "back on the list");
     t.open(Dest::RangePresets);
     t.tap(Key::Menu);
     assert_eq!(t.name(), "Range preset");
@@ -1544,4 +1549,61 @@ fn all_48_skips_reach_the_radio() {
     let start = c.iter().position(|c| *c == RadioCmd::Scan { slot: a, on: true }).expect("the scan starts");
     let last = c.iter().rposition(|c| matches!(c, RadioCmd::ScanRangeSet { .. })).unwrap();
     assert!(last < start, "after the last skip");
+}
+
+/// WATCH-6: the watch-pause toast says the time 0 1 6 1 set (it always said 1 min); TX-20: the refusals' fixes
+/// name the right place: Status is MENU 0 0 (# is the quick help, decision 376), Extend TX is 0 8 8 4.
+#[test]
+fn pause_toast_and_refusal_fixes_say_the_truth() {
+    use crate::screens::transmit::fix;
+    use ferrite_core::txplan::Refusal;
+    let mut t = T::new();
+    for (i, name) in crate::settings::PAUSE_TIME_NAMES.iter().enumerate() {
+        t.app.set.pause_time = i as u8;
+        assert_eq!(t.app.set.pause_name(), *name);
+        assert_eq!(t.app.set.pause_s(), crate::settings::PAUSE_TIMES_S[i]);
+    }
+    assert_eq!(fix(&t.app, Refusal::Battery).map(|f| (f.0, f.1)), Some(("MENU 0 0", "Status page")));
+    t.app.settings_mut().set_region(Some(ferrite_core::txplan::Region::Us));
+    assert_eq!(fix(&t.app, Refusal::OutOfBand).map(|f| (f.0, f.1)), Some(("MENU 0 8 8 4", "Extend TX")));
+}
+
+/// SCAN-17, SCAN-10: # on a range preset scan's hit adds the frequency to the preset's skipped list (kept, up to
+/// 48), tells the scan to leave it out now and go on; once the scan stops, # adds nothing to the preset. It said
+/// "No skip list" for every VFO scan (the audit of Nov 23, 2026).
+#[test]
+fn hash_on_a_range_scan_hit_skips_it_in_the_preset() {
+    use crate::data::Op;
+    use ferrite_core::msg::RANGE_SKIP;
+    let mut t = T::new();
+    while t.s.data().presets() > 0 {
+        assert!(t.s.request(Op::DeletePreset(0)));
+    }
+    let mut p = crate::data::RangePreset { name: ferrite_ui::text::Buf::from(b"TEST AIR"), start: 11_800_000, end: 12_100_000, step: 7, mode: 2, narrow: false, skips: 0, resume: 11 };
+    p.step = crate::slot::STEPS.iter().position(|s| s.0 == 2_500).unwrap() as u8;
+    assert!(t.s.request(Op::PutPreset(0, p)));
+    let mut f = [0u32; crate::data::SKIP_CHUNK];
+    (f[0], f[1]) = (11_900_000, 11_950_000);
+    assert!(t.s.request(Op::PresetSkips { preset: 0, at: 0, count: 2, f }));
+    t.open(Dest::RangePresets);
+    t.tap(Key::Side(2));
+    t.wait(300);
+    let a = t.app.active;
+    assert_eq!(t.app.range_scan, Some((a, 0)));
+    // the Radio task reports it scanning, stopped on 120.000; # on the Scan screen (the harness's own ticks would
+    // report nothing scanning)
+    t.app.scan_mask |= 1 << a;
+    t.app.scan_hit[a as usize] = 12_000_000;
+    let _ = t.cmds();
+    crate::screens::scan::lasting_skip(&mut t.app, a, &t.s);
+    let pr = t.s.data().preset(0).unwrap();
+    assert_eq!(pr.skips, 3, "kept with the preset");
+    assert_eq!(t.s.data().preset_skip(0, 2), Some(12_000_000));
+    assert_eq!(t.s.data().preset_skip(0, 0), Some(11_900_000), "the others kept");
+    let c = t.cmds();
+    assert!(c.contains(&RadioCmd::ScanRangeSet { slot: a, what: RANGE_SKIP, f: 12_000_000 }), "{c:?}");
+    assert!(c.contains(&RadioCmd::ScanSkip { slot: a }), "and the scan goes on: {c:?}");
+    assert!(t.app.toast_up(), "says so");
+    t.app.stop_scan(a, &t.s);
+    assert_eq!(t.app.range_scan, None, "a stopped scan's hits go to no preset");
 }

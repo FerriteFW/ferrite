@@ -39,6 +39,10 @@ pub enum Ask {
     CopyToVfo,
     /// CAL-20: OK on About while the calibration reads "Changed": use the sector as it is now.
     AcceptCal,
+    /// SCAN-17.1: # on the skip list clears it all (one at a time is OK there).
+    ClearSkips,
+    /// HF-28.1: # on HF mode's recent list clears it all.
+    ClearRecent,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -72,6 +76,8 @@ pub(crate) fn words(ask: Ask) -> (&'static str, Option<Txt>, Txt, &'static str) 
         Ask::DeleteChannel(_) => ("Delete this channel?", None, txt!("Every other channel, and the zone it was in."), "Delete"),
         Ask::DeleteZone(_) => ("Delete this zone?", None, txt!("Its channels: they move to no zone and stay in All."), "Delete"),
         Ask::DeletePreset(_) => ("Delete this range?", Some(txt!("Its skipped frequencies too.")), txt!("Every other range preset, and the channels."), "Delete"),
+        Ask::ClearSkips => ("Clear the skip list?", None, txt!("The channels and frequencies themselves, and the range presets."), "Clear"),
+        Ask::ClearRecent => ("Clear the recent list?", None, txt!("The HF VFOs and your channels."), "Clear"),
         Ask::ToneTx(_) => ("Set the TX tone too?", None, txt!("The RX tone is already set. BACK leaves TX as it is."), "Set"),
         Ask::AcceptCal => (
             "Use the calibration as it is?",
@@ -144,6 +150,22 @@ impl View for Confirm {
                     app.back();
                     if let Screen::ScanLists(s) = app.screen {
                         app.screen = Screen::ScanLists(super::scanlists::ScanLists { cur: Default::default(), ..s });
+                    }
+                }
+                Ask::ClearSkips => {
+                    store.data().request(Op::ClearSkips);
+                    app.show_toast(b"Skip list", b"cleared", false);
+                    app.back();
+                    if let Screen::ScanLists(s) = app.screen {
+                        app.screen = Screen::ScanLists(super::scanlists::ScanLists { cur: Default::default(), ..s });
+                    }
+                }
+                Ask::ClearRecent => {
+                    app.set.hf.recent = [0; super::hf::RECENT];
+                    app.show_toast(b"Recent list", b"cleared", false);
+                    app.back();
+                    if let Screen::Recall(_) = app.screen {
+                        app.screen = Screen::Recall(super::recall::Recall { cur: Default::default() });
                     }
                 }
                 // TSRCH-16 (the tone hint), as tone search asks (TSRCH-4): TX too, loaded on a channel.
@@ -237,7 +259,7 @@ impl View for Confirm {
                 tone_text(t, &mut b);
                 what.set(b.as_bytes());
             }
-            Ask::Reset { .. } | Ask::AcceptCal => {}
+            Ask::Reset { .. } | Ask::AcceptCal | Ask::ClearSkips | Ask::ClearRecent => {}
         }
         if app.dirty(R_TOP, Mix::new().any(&self.ask).h(&what).h(&title).get()) {
             lcd.fill(0, 21, 240, 279, BG);

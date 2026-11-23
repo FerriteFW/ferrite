@@ -44,11 +44,8 @@ impl View for Recall {
                     super::hf::tune_recent(app, f, m);
                 }
             }
-            (Key::Hash, Short) if n(app) > 0 => {
-                app.set.hf.recent = [0; super::hf::RECENT];
-                app.show_toast(b"Recent list", b"cleared", false);
-                app.screen = Screen::Recall(Recall { cur: Cursor::default() });
-            }
+            // HF-28.1: # clears the list, asked first (MENU-23)
+            (Key::Hash, Short) if n(app) > 0 => super::confirm::ask(app, super::confirm::Ask::ClearRecent),
             (Key::Exit, Short) => app.back(),
             _ => {}
         }

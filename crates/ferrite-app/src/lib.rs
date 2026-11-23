@@ -406,6 +406,8 @@ pub struct App {
     /// SCAN-27: a range preset scan waiting for its skips to reach the Radio task, a few each tick (the command queue
     /// holds 32): the slot, the preset, the next skip to send, the resume code.
     pub(crate) range_feed: Option<(u8, u8, u8, u8)>,
+    /// SCAN-17: the slot scanning a range preset and the preset, while the scan runs (# adds a hit to its skips).
+    pub(crate) range_scan: Option<(u8, u8)>,
     relay_mask: u8,
     /// The tone hint per slot (TSRCH-13, TSRCH-16): the tone word the Radio task heard, kept from the last tick
     /// for the quick settings' Tones row.
@@ -547,6 +549,7 @@ impl App {
             update_told: false,
             last_hit: [0; SLOTS],
             range_feed: None,
+            range_scan: None,
             relay_mask: 0,
             scan_hit: [0; SLOTS],
             heard: [0; SLOTS],
@@ -873,6 +876,7 @@ impl App {
     pub(crate) fn stop_scan(&mut self, slot: u8, store: &impl ChannelStore) {
         self.out.push(RadioCmd::Scan { slot, on: false });
         self.range_feed = self.range_feed.filter(|f| f.0 != slot); // SCAN-27: a preset scan not started yet
+        self.range_scan = self.range_scan.filter(|r| r.0 != slot); // SCAN-17: its skips go to no preset now
         let f = core::mem::take(&mut self.last_hit[slot as usize % SLOTS]);
         if self.set.scan_return_hit {
             self.scan_move(slot, f, store);

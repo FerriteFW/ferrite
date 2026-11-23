@@ -69,8 +69,8 @@ fn channel_page() {
     t.tap(Key::Down); // end tone
     assert!(matches!(t.screen(), Screen::Tones(Tones { row: 2, .. })));
     t.shows("End tone");
-    t.shows("Global: the radio's, MENU 0 8 8");
-    t.shows("This channel's end tone and tail elimination.");
+    t.shows("Global: the radio's, MENU 0 8 4"); // End tone's own path; Tail removal's is 0 8 8 2
+    t.shows("This channel's end tone and tail removal.");
     t.tap(Key::Right);
     t.shows("Off");
     t.knob(1);

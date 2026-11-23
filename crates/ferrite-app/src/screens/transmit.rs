@@ -285,11 +285,11 @@ pub fn short(r: Refusal) -> &'static str {
 pub(crate) fn fix(app: &App, r: Refusal) -> Option<(&'static str, &'static str, Dest)> {
     match r {
         Refusal::OutOfBand if app.set.region().is_none() => Some(("MENU 0 9 4", "Region", Dest::Group(9))),
-        Refusal::OutOfBand => Some(("MENU 0 8 8", "Extend TX", Dest::Group(8))),
+        Refusal::OutOfBand => Some(("MENU 0 8 8 4", "Extend TX", Dest::Sub(8, 8))), // TX-10: the row itself, not 0 8 8
         Refusal::NotCalibrated => Some(("MENU 0 9 9 2", "Calibration", Dest::Calibration)),
         Refusal::RxOnlyChannel => Some(("MENU 8", "Channel editor", Dest::ChannelEdit)),
         Refusal::Busy => Some(("MENU 0 8 7", "Busy lockout", Dest::Group(8))),
-        Refusal::Battery => Some(("#", "Status page", Dest::Status)),
+        Refusal::Battery => Some(("MENU 0 0", "Status page", Dest::Status)), // # is the quick help since decision 376
         Refusal::Locked | Refusal::RxOnlyBuild => Some(("MENU 0 9 8", "About", Dest::About)),
         Refusal::NoCallsign => Some(("MENU 0 8 6 1", "Callsign", Dest::Setup)),
         Refusal::RelayMismatch => Some(("MENU 5", "Offset", Dest::Value(Item::Offset))),

@@ -137,16 +137,12 @@ impl View for ScanLists {
                 let fs = if r == 1 { super::entry::FreqSet::RangeStart(i) } else { super::entry::FreqSet::RangeEnd(i) };
                 return super::entry::open_setting(app, fs);
             }
-            // C13: OK lets one back in, # clears them all (RAM only, this scan: no confirm).
+            // C13: OK lets one back in; # clears them all, asked first as the lists beside it ask (SCAN-17.1).
             (Key::Menu, Short, Page::Skips) if n > 0 => {
                 d.request(Op::Unskip(self.cur.sel));
                 s.cur = Cursor { sel: self.cur.sel.min(n.saturating_sub(2)), ..self.cur }.shown(n - 1, ROWS2, &ALL);
             }
-            (Key::Hash, Short, Page::Skips) if n > 0 => {
-                d.request(Op::ClearSkips);
-                app.show_toast(b"Skip list", b"cleared", false);
-                s.cur = Cursor::default();
-            }
+            (Key::Hash, Short, Page::Skips) if n > 0 => return super::confirm::ask(app, super::confirm::Ask::ClearSkips),
             (Key::Exit, Short, Page::Edit(_)) => s.page = Page::Presets,
             (Key::Exit, Short, _) => return app.back(),
             _ => return,

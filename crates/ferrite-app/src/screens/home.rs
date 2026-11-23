@@ -455,7 +455,10 @@ impl View for Home {
                     let pause = app.set.pause_s(); // 0 1 6 1
                     app.paused_until = Some(app.now.wrapping_add(pause as u32 * 1000));
                     app.out.push(RadioCmd::PauseWatch(pause));
-                    app.show_toast(b"Watch paused", b"for 1 min", false);
+                    // WATCH-6: the time 0 1 6 1 set, not always a minute
+                    let mut t = Buf::<12>::from(b"for ");
+                    t.push(app.set.pause_name().as_bytes());
+                    app.show_toast(b"Watch paused", t.as_bytes(), false);
                 } else {
                     // HOME-10: the quick help, its first page the holds; # goes on through the help pages,
                     // BACK home (the Status page is MENU 0 0 since decision 376)

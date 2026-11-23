@@ -53,7 +53,7 @@ const PAGES: [(&str, crate::text::Txt, Ask); 8] = [
     ("Region", txt!("Where you may transmit, and defaults like weather alerts."), Ask::Region),
     (
         "Owner card",
-        txt!("Optional. Shown at power on if chosen (MENU 0 7 3 3); later, edit it in the web app."),
+        txt!("Optional. Boot screen (MENU 0 7 3 3) can show it; later, edit it in the web app."),
         Ask::Owner,
     ),
     ("Time", txt!("Time zone, clock and units. The GPS sets the time once it has a fix."), Ask::Time),

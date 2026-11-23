@@ -214,6 +214,7 @@ pub fn data_key(app: &mut App, slot: u8, power: u8, what: &[u8]) -> bool {
     if app.remote_tx_refused() || !auto_tx(app, slot, what) {
         return false;
     }
+    data_begin(app);
     let region = txplan::Region::ALL.iter().position(|&r| r == app.set.tx_region()).unwrap_or(0) as u8;
     app.out.push(RadioCmd::TxPlan { tx: tx_freq(app, slot), region, extend: app.set.extend_tx, confirmed: false });
     app.out.push(RadioCmd::TransmitData { slot, power, on: true });
@@ -231,6 +232,15 @@ pub fn not_sent(app: &mut App, what: &[u8], why: &[u8]) {
 /// The data transmission's end (after [`data_key`]).
 pub fn data_unkey(app: &mut App, slot: u8) {
     app.out.push(RadioCmd::TransmitData { slot, power: 0, on: false });
+    app.radio.data_keyed = false;
+    app.reconcile_mode(); // TX-24.1: the broadcast back
+}
+
+/// TX-24.1: before a data key-up (APRS, SSTV), the broadcast stops as it does before PTT's: the Radio task refuses
+/// any key-up while it plays (TX-24), and a data key-up has no screen to say so. [`data_unkey`] starts it again.
+pub fn data_begin(app: &mut App) {
+    app.radio.data_keyed = true;
+    app.reconcile_mode();
 }
 
 /// A refusal in a few words (toasts).

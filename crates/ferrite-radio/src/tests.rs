@@ -1188,6 +1188,22 @@ fn retune_mutes_first() {
     assert_eq!(log.take()[0], (reg::AF_OUT, 0x6042));
 }
 
+/// SQL-18.10 (decision 433): the light retune moves the frequency and turns receive on again without REG_30 = 0 or
+/// REG_37 (the AF DAC stays on: no click), mutes only for a turn to another slot, and ends receiving (0xBFF1).
+#[test]
+fn light_retune_keeps_the_chip_on() {
+    let log = Log::default();
+    let mut bk = Bk4829::new(log.clone());
+    chip::retune_light(&mut bk, &RX, None, false);
+    let w = log.take();
+    assert!(w.iter().all(|&(r, v)| !(r == 0x30 && v == 0)), "REG_30 never 0: {w:x?}");
+    assert!(w.iter().all(|&(r, _)| r != 0x37), "REG_37 untouched");
+    assert!(w.iter().all(|&(r, _)| r != reg::AF_OUT), "same slot: its audio kept");
+    assert_eq!(w.last(), Some(&(0x30, 0xBFF1)), "receive on last");
+    chip::retune_light(&mut bk, &RX, None, true);
+    assert_eq!(log.take()[0], (reg::AF_OUT, 0x6042), "another slot: muted first");
+}
+
 #[cfg(feature = "bench")]
 /// TERM-34 (decision 139) `txtest suite` on the recording bus, for a key-up with no sub-tone, CTCSS and DCS: every
 /// step of the table in turn, then the hold, then the end. At each step the chip is on the mic (REG_30 0xC1FE) for

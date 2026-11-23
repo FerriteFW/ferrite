@@ -27,6 +27,8 @@ mod restart {
     pub fn fault(_pc: Option<u32>) -> bool {
         false
     }
+    /// The stop's power-switch exit (SAFE-8.1) clears the firmware's count; the reader keeps none.
+    pub fn settled() {}
 }
 #[allow(dead_code)]
 #[path = "../../firmware/src/bus.rs"]

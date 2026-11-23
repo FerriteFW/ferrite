@@ -79,6 +79,8 @@ pub struct RadioUi {
     pub ssb_patch: bool,
     /// The slot keyed (3 = HF), if any.
     pub keyed: Option<u8>,
+    /// TX-24.1: a data key-up (APRS, SSTV) asked for and not yet let go: the broadcast stops for it as for PTT.
+    pub data_keyed: bool,
     /// TX-50: the Radio task's refusal count ([`ferrite_core::msg::TxLive::refusals`]) last seen, and as it was at
     /// the last key-up: only a refusal after that ends a transmission.
     pub refusals_seen: u8,
@@ -155,6 +157,7 @@ impl RadioUi {
             batt_cut: false,
             ssb_patch: false,
             keyed: None,
+            data_keyed: false,
             refusals_seen: 0,
             refusals_at_key: 0,
             mode: Mode::Off,
@@ -271,7 +274,7 @@ impl App {
     /// and the crossband repeater (XB-14, held through local PTT) keep running; the others stop before the
     /// key-up (BCR-16, SCOPE-12). Screens never start or stop a mode themselves: [`App::reconcile_mode`] does.
     pub(crate) fn wanted_mode(&self) -> Mode {
-        let keyed = self.radio.keyed.is_some();
+        let keyed = self.radio.keyed.is_some() || self.radio.data_keyed; // TX-24.1: a data key-up too
         let under = self.back.iter().rev().flatten().copied();
         for s in core::iter::once(self.screen).chain(under) {
             let m = match s {

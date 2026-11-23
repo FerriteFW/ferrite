@@ -7,8 +7,10 @@ const HF_SEEK_KHZ: (u16, u16) = (150, 18_000);
 /// HF-15.1: the board's front end (an LNA before the SI4732's AM input) gain, estimated at 20 dB: the chip reads
 /// 13-33 dBuV of indoor noise on the whip, which a receiver measured at the antenna shows as about S2-S5.
 const SI_FRONT_DB: i16 = 20;
-/// HF-19: the SI4732's I2C half period for the patch download, us (5 otherwise, about 50 kHz).
-const PATCH_HALF_US: u32 = 1;
+/// HF-19: the SI4732's I2C half period for the patch download, us (5 otherwise, about 50 kHz). 3 (about 150 kHz,
+/// decision 433): at 1 the clock's low time was about 1.0 us against the SI4732's 1.3 us minimum, and a 1 bit's
+/// SDA rises through the MCU's 60-100 kOhm pull-up, marginal in 1 us (ferrite#88: "SSB works when it feels like it").
+const PATCH_HALF_US: u32 = 3;
 /// HF mode's modes as the UI sends them (`screens::hf`): USB, LSB, CW.
 const MODE_USB: u8 = 3;
 const MODE_LSB: u8 = 4;

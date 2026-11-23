@@ -544,7 +544,7 @@ impl Settings {
         smeter_dbm: false,
         ch_display: 0,
         scan_down: false,
-        scan_return_hit: false,
+        scan_return_hit: true, // SCAN-6: stopping stays on what the scan found (decision 434)
         msg_vol: 3,
         mcu_fixed: false,
         sq_soft: false,

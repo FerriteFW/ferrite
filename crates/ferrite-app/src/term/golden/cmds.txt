@@ -649,7 +649,7 @@
   | set 0 1 6 1 1 min                 # Pause time
   | set 0 1 6 2 Up                    # Direction
   | set 0 1 6 3 Off                   # Scan inputs
-  | set 0 1 6 4 Start                 # Return to
+  | set 0 1 6 4 Last hit              # Return to
   | set 0 2 4 Name                    # Channel shows
   | set 0 2 5 50 km                   # Local zone
   | set 0 2 6 1 100 kHz               # Step
@@ -910,7 +910,7 @@
   | set 0 1 6 1 1 min                 # Pause time
   | set 0 1 6 2 Up                    # Direction
   | set 0 1 6 3 Off                   # Scan inputs
-  | set 0 1 6 4 Start                 # Return to
+  | set 0 1 6 4 Last hit              # Return to
   | set 0 2 4 Name                    # Channel shows
   | set 0 2 5 50 km                   # Local zone
   | set 0 2 6 1 100 kHz               # Step

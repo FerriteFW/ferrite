@@ -35,13 +35,28 @@ const READ_STATUS1: u8 = 0x05;
 const READ_STATUS2: u8 = 0x35;
 const SUSPEND: u8 = 0x75;
 const RESUME: u8 = 0x7A;
-/// Status 2, bit 7: a program or erase is suspended.
-const SUS: u8 = 0x80;
-/// tSUS: the longest a suspend takes, and the least time between a resume and the next suspend.
+/// tSUS: the longest a suspend takes (Winbond and Zbit alike).
 const T_SUS_US: u32 = 20;
-/// SAFE-1.3: the JEDEC maker bytes of the chips whose suspend we know: Winbond, and Zbit (both keep SUS in status 2's
-/// bit 7; Zbit is every one of Alex's radios, suspended from the first builds to 0.9.4, Nov 22, 2026).
-const SUSPEND_MAKERS: [u8; 2] = [0xEF, 0x5E];
+
+/// SAFE-1.3: how a maker's chip shows a suspend, and how long after a resume the next suspend may come.
+#[derive(Clone, Copy)]
+pub(crate) struct Sus {
+    /// Status 2's suspend bits.
+    mask: u8,
+    /// tRS: the least time from a resume to the next suspend.
+    t_rs_us: u32,
+}
+
+/// SAFE-1.3: the chips whose suspend we know, by JEDEC maker byte. Winbond keeps one SUS bit, status 2's bit 7, for
+/// both; Zbit has two, SUS1 (bit 7) for an erase and SUS2 (bit 2) for a program, and wants 200 us from a resume to
+/// the next suspend (ZB25VQ32D sections 6.2.8 and 8.5; Winbond's is 20 us). Zbit is every one of Alex's radios.
+pub(crate) fn sus_of(maker: u8) -> Option<Sus> {
+    match maker {
+        0xEF => Some(Sus { mask: 0x80, t_rs_us: 20 }),
+        0x5E => Some(Sus { mask: 0x84, t_rs_us: 200 }),
+        _ => None,
+    }
+}
 /// The longest a read waits for a program or erase it can't suspend (several times a slow sector erase).
 const WAIT_READ_US: u32 = 2_000_000;
 
@@ -58,7 +73,7 @@ pub struct Chip {
     /// A program or erase was started and hasn't been seen to finish.
     active: bool,
     /// SAFE-1.3: a Winbond or Zbit chip, whose program or erase a read may suspend.
-    suspend: bool,
+    sus: Option<Sus>,
 }
 
 impl Chip {
@@ -123,33 +138,34 @@ impl Nor for Chip {
         let spi = self.spi.as_mut().ok_or(NorError)?;
         let busy = active && Self::status(spi, READ_STATUS1) & 1 != 0;
         // SAFE-1.3: another maker's chip: wait for the program or erase to end (stock's way), then read.
-        if busy && !self.suspend {
+        if busy && self.sus.is_none() {
             Self::wait_idle(spi)?;
             self.active = false;
         }
         // A program or erase running on a Winbond or Zbit chip: suspend it for the read (its own bytes are never read
-        // meanwhile).
-        let suspended = busy && self.suspend && {
+        // meanwhile). Once a suspend is sent a resume always follows, whatever the status bits said: a chip that
+        // finished by itself ignores it, and one whose suspend bit we misread is never left suspended.
+        let sus = self.sus.filter(|_| busy);
+        if let Some(k) = sus {
             Self::command(spi, SUSPEND);
             let mut t = 0;
-            while Self::status(spi, READ_STATUS2) & SUS == 0 && Self::status(spi, READ_STATUS1) & 1 != 0 && t < 4 * T_SUS_US {
+            while Self::status(spi, READ_STATUS2) & k.mask == 0 && Self::status(spi, READ_STATUS1) & 1 != 0 && t < 4 * T_SUS_US {
                 BusyDelay.delay_us(2);
                 t += 2;
             }
-            Self::status(spi, READ_STATUS2) & SUS != 0
-        };
-        // The suspend didn't take: never read a busy chip (it answers 0xFF or garbage); wait for it instead.
-        if busy && self.suspend && !suspended && Self::status(spi, READ_STATUS1) & 1 != 0 {
-            Self::wait_idle(spi)?;
-            self.active = false;
+            // The suspend didn't take: never read a busy chip (it answers 0xFF or garbage); wait for it instead.
+            if Self::status(spi, READ_STATUS1) & 1 != 0 {
+                Self::wait_idle(spi)?;
+                self.active = false;
+            }
         }
         spi.select(true);
         Self::command_addr(spi, READ, addr);
         spi.read(buf);
         spi.select(false);
-        if suspended {
+        if let Some(k) = sus {
             Self::command(spi, RESUME);
-            BusyDelay.delay_us(T_SUS_US);
+            BusyDelay.delay_us(k.t_rs_us);
         }
         Ok(())
     }
@@ -201,20 +217,33 @@ pub static WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 /// and size, or None when it didn't answer (the self-test's SPI flash check).
 #[inline(never)] // SBAR-23: the store is built on this frame's stack before it moves to its static
 pub fn make() -> (Option<(u32, u32)>, &'static Store) {
-    let (spi, id) = match W25q::new(Flash::new(), &mut BusyDelay, WRITE_OK) {
+    // SAFE-1.5: a restart (a fault, a hang, the updater) doesn't reset the chip: a program or erase started before it
+    // may still be running, and a busy chip ignores the ID read. Woken, then waited for (busy-polled, as stock waits)
+    // before it is identified or read.
+    let mut flash = Flash::new();
+    Chip::command(&mut flash, 0xAB);
+    BusyDelay.delay_us(50);
+    let _ = Chip::wait_idle(&mut flash);
+    let (spi, id) = match W25q::new(flash, &mut BusyDelay, WRITE_OK) {
         Ok(mut f) => {
             let id = (f.jedec_id(), f.size());
             let mut spi = f.release();
-            // SAFE-1.5: a restart (a fault, a hang, the updater) doesn't reset the chip: a program or erase started
-            // before it may still be running. Wait for it (busy-polled, as stock waits) before anything is read.
-            let _ = Chip::wait_idle(&mut spi);
+            // SAFE-1.5: nor does it end a suspend: a restart between a suspend and its resume leaves the program or
+            // erase held, and every later write to it refused. Resumed here, then waited for.
+            if let Some(k) = sus_of((id.0 >> 16) as u8) {
+                if Chip::status(&mut spi, READ_STATUS2) & k.mask != 0 {
+                    Chip::command(&mut spi, RESUME);
+                    BusyDelay.delay_us(k.t_rs_us);
+                    let _ = Chip::wait_idle(&mut spi);
+                }
+            }
             (Some(spi), Some(id))
         }
         Err(_) => (None, None),
     };
     let size = id.map_or(0, |i| i.1);
-    let suspend = id.is_some_and(|i| SUSPEND_MAKERS.contains(&((i.0 >> 16) as u8))); // SAFE-1.3
-    let store: &'static Store = cortex_m::singleton!(: Store = FlashStore::new(Chip { spi, size, active: false, suspend }, RadioData::new())).unwrap();
+    let sus = id.and_then(|i| sus_of((i.0 >> 16) as u8)); // SAFE-1.3
+    let store: &'static Store = cortex_m::singleton!(: Store = FlashStore::new(Chip { spi, size, active: false, sus }, RadioData::new())).unwrap();
     store.set_deferred(true);
     let _ = STORE.init(Shared(store));
     (id, store)

@@ -60,6 +60,24 @@ pub fn tune_rest_sq<B: Bus>(bk: &mut Bk4829<B>, s: &RxSetup, sq: Option<(u16, u1
     bk.rx_on();
 }
 
+/// SQL-18.10 (decision 433): a receiving chip retuned with only its frequency changed (a scan step, a watch turn to a
+/// slot set up the same, a Doppler step, the clarifier): the frequency, the thresholds `sq` when they changed, the
+/// sub-tone detector (a tone probe may have moved it, TSRCH-12), then receive on (0x0200, then 0xBFF1). REG_30 never
+/// goes to 0 and REG_37 isn't touched, so the chip's AF DAC stays on: 0.9.5's full order clicked in whatever the
+/// shared amplifier carried (console#51, ferrite#70, #79). `mute` for a turn to another slot (the audio decision
+/// unmutes the one heard); a step on the same slot keeps its audio.
+pub fn retune_light<B: Bus>(bk: &mut Bk4829<B>, s: &RxSetup, sq: Option<(u16, u16)>, mute: bool) {
+    if mute {
+        bk.af_out(AfOut::Mute);
+    }
+    bk.set_freq(s.freq * 10);
+    if let Some(r) = sq {
+        squelch(bk, r);
+    }
+    subtone(bk, s.rx_tone, s.rx_tail);
+    bk.rx_on();
+}
+
 /// APRS-55 (decision 309): REG_2B for the APRS slot's FM receive (1 = off): bit 10 the 300 Hz high-pass and bit 8
 /// de-emphasis. The 3 kHz low-pass (bit 9) stays on: the chip's fixed receive wall near 3.1 kHz is there either way,
 /// and the recorded-audio study (`ferrite-app/tests/rxaf_study.rs`) decoded the same with or without it.

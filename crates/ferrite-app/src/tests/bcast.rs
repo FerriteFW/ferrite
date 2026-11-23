@@ -246,6 +246,29 @@ fn transmit_switches_the_receiver_away_and_back() {
     assert_eq!(t.app.radio.mode, Mode::Fm);
 }
 
+/// TX-24.1 (decision 435): a data key-up (an APRS beacon, an SSTV picture) stops the broadcast before it as PTT does
+/// (the Radio task refuses any key-up while it plays), and the unkey starts it again.
+#[test]
+fn a_data_key_up_stops_the_broadcast_too() {
+    let mut t = ready();
+    tune(&mut t, 1, FM1005);
+    t.wait(200);
+    t.cmds();
+    t.app.set.callsign = crate::settings::Text::EMPTY;
+    for &b in b"VE7GPL" {
+        t.app.set.callsign.push(b);
+    }
+    assert!(crate::screens::transmit::data_key(&mut t.app, 0, 0, b"Beacon"));
+    let c = t.cmds();
+    let off = c.iter().position(|c| *c == RadioCmd::Broadcast(BroadcastCmd::Off)).expect("broadcast off");
+    let key = c.iter().position(|c| matches!(c, RadioCmd::TransmitData { on: true, .. })).expect("keyed");
+    assert!(off < key, "{c:?}");
+    crate::screens::transmit::data_unkey(&mut t.app, 0);
+    t.wait(200);
+    assert!(t.cmds().contains(&RadioCmd::Broadcast(BroadcastCmd::Fm(10_050))));
+    assert_eq!(t.app.radio.mode, Mode::Fm);
+}
+
 /// MODE-5, BCR-29.2, HOME-14 (decision 115): on single + scope with another slot playing broadcast, home's strip sweeps
 /// around the active slot and the broadcast keeps playing beside it: the knob stops and restarts the strip only
 /// (MODE-4), never the broadcast; the strip tells the Radio task it is the strip (it looks at the slot's own

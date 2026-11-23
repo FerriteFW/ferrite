@@ -171,7 +171,7 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
         Entry(concat!("Pause time|1 min|", txtc!("# on home pauses watch this long."))),
         Entry(concat!("Direction|Up|", txtc!("Scan up or down."))),
         Entry(concat!("Scan inputs|Off|", txtc!("Also a channel's TX frequency."))),
-        Entry(concat!("Return to|Start|", txtc!("Where a stopped scan returns."))),
+        Entry(concat!("Return to|Last hit|", txtc!("Where a stopped scan returns."))),
     ]),
     ((2, 6), &[
         Entry(concat!("Step|100 kHz|", txtc!("Tuning step."))),

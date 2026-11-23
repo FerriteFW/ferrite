@@ -519,6 +519,7 @@ version = "0.9.5"
 dependencies = [
  "ferrite-app",
  "ferrite-core",
+ "ferrite-fuzzkit",
  "ferrite-ui",
 ]
 

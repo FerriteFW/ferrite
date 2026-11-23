@@ -28,8 +28,11 @@ use ferrite_ui::text::Buf;
 /// comment (APRS-50), ambiguity (APRS-51), Mic-E (APRS-52) and telemetry (APRS-54): every MENU 0 5 value, so
 /// Console needs no terminal for them; then (0.8.2) auto reply (APRS-57): on and the delay, the pattern, the
 /// reply, at [`APRS_REPLY_AT`]; then (0.8.5) the beacon text rate (APRS-50.1, 0 5 6 5: 0 all, 1 every 2nd, 2 every 4th,
-/// 3 every 8th) at [`APRS_TEXT_AT`]. A shorter record (Console before them) keeps the radio's values past its end.
-pub const APRS_REC: usize = APRS_TEXT_AT + 1;
+/// 3 every 8th) at [`APRS_TEXT_AT`]; then (0.9.6) message retries (APRS-13.6) at [`APRS_RETRIES_AT`]. A shorter
+/// record (Console before them) keeps the radio's values past its end.
+pub const APRS_REC: usize = APRS_RETRIES_AT + 1;
+/// APRS-13.6: message retries (0 off - 4), after the text rate. A record without it keeps the radio's.
+pub const APRS_RETRIES_AT: usize = APRS_TEXT_AT + 1;
 /// APRS-50.1: where the beacon text rate is in the record (the record before it ends here).
 pub const APRS_TEXT_AT: usize = APRS_REPLY_AT + 1 + crate::aprs::REPLY_TO_LEN + crate::aprs::REPLY_TEXT_LEN;
 /// APRS-57: where auto reply starts in the record: its byte (bit 0 on, bits 4-5 the delay), the pattern (9, zero-
@@ -635,13 +638,14 @@ pub(super) fn aprs_record(app: &App, w: &mut Window) {
     w.put(&c.reply_to);
     w.put(&c.reply_text);
     w.put(&[c.text_every]); // APRS-50.1
+    w.put(&[c.retries]); // APRS-13.6
 }
 
 /// A whole APRS record written (LINK-43): checked as MENU 0 5's editors check each value, then kept as they keep
 /// it (written back at the next tick, slot C retuned when it is the APRS slot). Nothing changes if any value is
 /// refused.
 pub(super) fn aprs_apply(app: &mut App, rec: &[u8], o: &mut Out) -> Status {
-    if rec.len() != APRS_REC && rec.len() != APRS_TEXT_AT && rec.len() != APRS_REPLY_AT && rec.len() != APRS_V1 && rec.len() != APRS_V1 - 1 {
+    if rec.len() != APRS_REC && rec.len() != APRS_RETRIES_AT && rec.len() != APRS_TEXT_AT && rec.len() != APRS_REPLY_AT && rec.len() != APRS_V1 && rec.len() != APRS_V1 - 1 {
         return Status::BadArg;
     }
     let invalid = |o: &mut Out, why: &str| {
@@ -679,6 +683,12 @@ pub(super) fn aprs_apply(app: &mut App, rec: &[u8], o: &mut Out) -> Status {
     }
     // APRS-50.1: the beacon text rate, as 0 5 6 5 steps it
     if rec.len() == APRS_REC {
+        if rec[APRS_RETRIES_AT] > crate::aprs::RETRIES_DEFAULT {
+            return invalid(o, "message retries: 0-4");
+        }
+        c.retries = rec[APRS_RETRIES_AT];
+    }
+    if rec.len() >= APRS_RETRIES_AT {
         if rec[APRS_TEXT_AT] > 3 {
             return invalid(o, "text rate: 0-3 (all, every 2nd, 4th or 8th)");
         }

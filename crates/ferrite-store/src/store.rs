@@ -150,7 +150,9 @@ const APRS_MIC_E: usize = APRS_AMBIG + 1;
 const APRS_REPLY: usize = APRS_MIC_E + 1;
 const APRS_REPLY_TO: usize = APRS_REPLY + 1;
 const APRS_REPLY_TEXT: usize = APRS_REPLY_TO + ferrite_app::aprs::REPLY_TO_LEN;
-const APRS_PAYLOAD: usize = APRS_REPLY_TEXT + ferrite_app::aprs::REPLY_TEXT_LEN;
+const APRS_RETRIES: usize = APRS_REPLY_TEXT + ferrite_app::aprs::REPLY_TEXT_LEN;
+/// APRS-13.6: message retries, 0-4 (a record without it: the default, 4).
+const APRS_PAYLOAD: usize = APRS_RETRIES + 1;
 const APRS_COPIES: [u32; 2] = [APRS.start, APRS.start + SECTOR];
 const _: () = assert!(APRS.end - APRS.start >= 2 * SECTOR);
 /// APRS-32: the stored messages [`FlashStore::message_heard`] looks through, newest first.
@@ -396,8 +398,16 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
                 }
             }
             if c.len as usize >= APRS_PAYLOAD {
+                // APRS-13.6: message retries, only in range
+                let mut x = [0u8; 1];
+                self.f.raw_read(c.at + APRS_RETRIES as u32, &mut x)?;
+                if x[0] <= ferrite_app::aprs::RETRIES_DEFAULT {
+                    cfg.retries = x[0];
+                }
+            }
+            if c.len as usize >= APRS_RETRIES {
                 // APRS-57: on (bit 0) and the delay (bits 4-5); the pattern and the reply only when printable
-                let mut r = [0u8; APRS_PAYLOAD - APRS_REPLY];
+                let mut r = [0u8; APRS_RETRIES - APRS_REPLY];
                 self.f.raw_read(c.at + APRS_REPLY as u32, &mut r)?;
                 if r[0] & !0x31 == 0 {
                     cfg.reply = r[0];
@@ -1844,7 +1854,8 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         p[APRS_MIC_E] = c.mic_e;
         p[APRS_REPLY] = c.reply;
         p[APRS_REPLY_TO..APRS_REPLY_TEXT].copy_from_slice(&c.reply_to);
-        p[APRS_REPLY_TEXT..APRS_PAYLOAD].copy_from_slice(&c.reply_text);
+        p[APRS_REPLY_TEXT..APRS_RETRIES].copy_from_slice(&c.reply_text);
+        p[APRS_RETRIES] = c.retries;
         for i in 0..ferrite_app::words::QUICK {
             let t = match q {
                 Some((k, t)) if k as usize == i => t,
@@ -2565,7 +2576,7 @@ mod tests {
         comment[..7].copy_from_slice(b"On foot");
         let mut custom = [0u8; ferrite_app::aprs::CUSTOM_LEN];
         custom[..7].copy_from_slice(b"WIDE2-2");
-        AprsCfg { f5k: 28_878, beacon: 3, power: 1, path: ferrite_app::aprs::PATH_CUSTOM, digi: 0x23, after_voice: true, custom, ssid: 9, fx25: 32, sound: 3, symbol: 4, txdelay: 45, tx_level: 2, comment, ambiguity: 3, mic_e: 5, telemetry: true, text_every: 2, reply: 0x21, reply_to: *b"VE7*\0\0\0\0\0", reply_text: reply_text() }
+        AprsCfg { f5k: 28_878, beacon: 3, power: 1, path: ferrite_app::aprs::PATH_CUSTOM, digi: 0x23, after_voice: true, custom, ssid: 9, fx25: 32, sound: 3, symbol: 4, txdelay: 45, tx_level: 2, comment, ambiguity: 3, mic_e: 5, telemetry: true, text_every: 2, reply: 0x21, reply_to: *b"VE7*\0\0\0\0\0", reply_text: reply_text(), retries: 1 }
     }
 
     fn reply_text() -> [u8; ferrite_app::aprs::REPLY_TEXT_LEN] {
@@ -2602,7 +2613,7 @@ mod tests {
         assert_eq!(p.len(), APRS_PAYLOAD);
         assert!(mounted_with(&p) == full, "a whole record reads back");
         let d = AprsCfg::DEFAULT;
-        for len in [APRS_MORE, APRS_PATH, APRS_FX25, APRS_SOUND, APRS_SYMBOL, APRS_COMMENT, APRS_MIC_E, APRS_REPLY] {
+        for len in [APRS_MORE, APRS_PATH, APRS_FX25, APRS_SOUND, APRS_SYMBOL, APRS_COMMENT, APRS_MIC_E, APRS_REPLY, APRS_RETRIES] {
             let c = mounted_with(&p[..len]);
             let pick = |kept: bool, f: &dyn Fn(&AprsCfg) -> u32| if kept { f(&full) } else { f(&d) };
             assert_eq!((c.f5k, c.beacon, c.power), (full.f5k, full.beacon, full.power), "{len}: the first settings");
@@ -2618,7 +2629,9 @@ mod tests {
             assert_eq!((c.symbol as u32, c.txdelay as u32, c.tx_level as u32), (pick(sym, &|x| x.symbol as u32), pick(sym, &|x| x.txdelay as u32), pick(sym, &|x| x.tx_level as u32)), "{len}: symbol");
             assert_eq!((c.comment == full.comment, c.ambiguity as u32), (len >= APRS_MIC_E, pick(len >= APRS_MIC_E, &|x| x.ambiguity as u32)), "{len}: comment");
             assert_eq!(c.mic_e as u32, pick(len >= APRS_REPLY, &|x| x.mic_e as u32), "{len}: Mic-E");
-            assert!((c.reply, c.reply_to, c.reply_text) == (d.reply, d.reply_to, d.reply_text), "{len}: auto reply (APRS-57)");
+            let reply = if len >= APRS_RETRIES { (full.reply, full.reply_to, full.reply_text) } else { (d.reply, d.reply_to, d.reply_text) };
+            assert!((c.reply, c.reply_to, c.reply_text) == reply, "{len}: auto reply (APRS-57)");
+            assert_eq!(c.retries, d.retries, "{len}: message retries (APRS-13.6): the default, 4");
         }
     }
 
@@ -2638,12 +2651,14 @@ mod tests {
         p[APRS_COMMENT] = 0x01;
         p[APRS_AMBIG] = 5;
         p[APRS_MIC_E] = 200;
+        p[APRS_RETRIES] = 9; // APRS-13.6: 0-4 only
         let c = mounted_with(&p);
         let d = AprsCfg::DEFAULT;
         assert_eq!((c.f5k, c.beacon, c.power), (28_878, 3, 2));
         assert_eq!((c.path, c.digi, c.after_voice, c.ssid), (d.path, 0x73, false, ferrite_app::aprs::SSID_DEFAULT));
         assert!(c.custom == d.custom && c.comment == d.comment);
         assert_eq!((c.fx25, c.sound, c.symbol, c.txdelay, c.tx_level, c.ambiguity, c.mic_e), (d.fx25, d.sound, d.symbol, d.txdelay, d.tx_level, 0, d.mic_e));
+        assert_eq!(c.retries, d.retries, "message retries out of range: the default");
     }
 
     /// Zone names count from 1: "Zone 1", "Zone 10", "Zone 100", "Zone 512".

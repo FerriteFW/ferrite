@@ -166,10 +166,10 @@ fn aprs_settings_record() {
     b[..2].copy_from_slice(&(30_000_500u32 / 500).to_le_bytes()[..2]);
     assert_eq!(pc.aprs_write(&b).0, Status::Invalid as u8);
     assert_eq!(pc.aprs_write(&b[..20]).0, Status::BadArg as u8, "the whole record");
-    // APRS-50.1 (0.8.5): the beacon text rate is the record's last byte; a record without it keeps the radio's
+    // APRS-50.1 (0.8.5): the beacon text rate after auto reply; a record without it keeps the radio's
     let t = crate::link::APRS_TEXT_AT;
     let mut b = pc.aprs_rec();
-    assert_eq!(b.len(), t + 1);
+    assert_eq!(b.len(), crate::link::APRS_REC);
     b[t] = 2; // every 4th
     assert_eq!(pc.aprs_write(&b).0, 0);
     assert_eq!(pc.app.aprs_cfg().text_every, 2);
@@ -178,6 +178,20 @@ fn aprs_settings_record() {
     assert_eq!(pc.app.aprs_cfg().text_every, 2, "a record without it keeps it");
     b[t] = 4;
     assert_eq!(pc.aprs_write(&b).0, Status::Invalid as u8, "text rate past every 8th");
+    b[t] = 2;
+    // APRS-13.6 (0.9.6): message retries, the record's last byte; a record without it (0.9.5's Console) keeps them
+    let r = crate::link::APRS_RETRIES_AT;
+    assert_eq!((r, b.len()), (t + 1, r + 1));
+    assert_eq!(b[r], crate::aprs::RETRIES_DEFAULT, "four by default");
+    b[r] = 0; // off: sent once
+    assert_eq!(pc.aprs_write(&b).0, 0);
+    assert_eq!((pc.app.aprs_cfg().retries, pc.app.aprs_cfg().tries()), (0, 1));
+    assert_eq!(pc.aprs_rec()[r], 0);
+    b[t] = 1;
+    assert_eq!(pc.aprs_write(&b[..r]).0, 0, "0.9.5's record");
+    assert_eq!((pc.app.aprs_cfg().text_every, pc.app.aprs_cfg().retries), (1, 0), "its text rate taken, the retries kept");
+    b[r] = 5;
+    assert_eq!(pc.aprs_write(&b).0, Status::Invalid as u8, "retries past 4");
 }
 
 /// LINK-44: the heard list and the messages read in answers that hold whole records, from any index.

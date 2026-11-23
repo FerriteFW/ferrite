@@ -789,3 +789,22 @@ fn log_counts_follow_clear_and_read_all() {
     a.tap(Key::Menu);
     assert_eq!(a.app.log_unread, 0);
 }
+
+/// APRS-13.6: the Messages options' last row, Message retries, shows its value; OK steps 4, off, 1, 2, 3, 4 and
+/// says so (ferrite#110).
+#[test]
+fn message_retries_row_steps_through_its_values() {
+    use crate::screens::opts::{rows, Of, Options};
+    let mut a = A::new();
+    let row = rows(Of::Messages).iter().position(|r| r.0 == "Message retries").expect("a Message retries row") as u8;
+    assert_eq!(row as usize, rows(Of::Messages).len() - 1, "last, so the other rows keep their digits");
+    assert_eq!(a.app.aprs_cfg().retries, crate::aprs::RETRIES_DEFAULT);
+    let mut seen = std::vec::Vec::new();
+    for _ in 0..5 {
+        a.app.screen = Screen::Options(Options { of: Of::Messages, row, confirm: false });
+        a.tap(Key::Menu);
+        seen.push(a.app.aprs_cfg().retries);
+    }
+    assert_eq!(seen, [0, 1, 2, 3, 4]);
+    assert_eq!(a.app.aprs_cfg().tries(), 5);
+}

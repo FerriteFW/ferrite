@@ -310,3 +310,19 @@ fn side2_does_nothing_in_satellite_mode() {
     assert!(!c.iter().any(|c| matches!(c, RadioCmd::Scan { .. })), "no scan: {c:?}");
     assert_eq!(t.app.screen(), at);
 }
+
+/// WATCH-6, MODE-5.1 (ferrite#134): in single + scope with the strip paused, a watched slot receiving makes # the
+/// watch's pause again, as everywhere else; it resumed the strip, which stopped the watch and APRS.
+#[test]
+fn hash_pauses_the_watch_while_the_strip_is_paused() {
+    let mut t = T::new();
+    t.app.set_layout(1);
+    t.app.strip_paused = true;
+    t.live.slots[1] = SlotLive { squelch_open: true, carrier: true, rssi: -90, ..Default::default() };
+    t.wait(100);
+    assert!(t.app.strip_pausable() && t.app.watched_rx());
+    let _ = t.cmds();
+    t.tap(Key::Hash);
+    assert!(t.cmds().iter().any(|c| matches!(c, RadioCmd::PauseWatch(p) if *p > 0)), "the watch paused");
+    assert!(t.app.strip_paused, "the strip stays paused");
+}

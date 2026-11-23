@@ -283,7 +283,7 @@ impl App {
                 Screen::Scope(_) => Mode::Scope,
                 Screen::ToneSearch(_) => Mode::Tone,
                 Screen::Counter(_) => Mode::Counter,
-                Screen::Hf(_) | Screen::Crossband(_) if self.low_power() => continue,
+                Screen::Hf(_) | Screen::Crossband(_) | Screen::Sat(_) if self.low_power() => continue, // PWR-24.4 (ferrite#133)
                 Screen::Hf(_) => Mode::Hf,
                 Screen::Sat(_) => Mode::Sat,
                 Screen::Crossband(_) if self.radio.xb_on => Mode::Xb,

@@ -517,10 +517,11 @@ impl App {
         !self.set.aprs_mode && !self.low_power() && !s.vfo_mode && s.ch.is_some_and(|c| c.flags & crate::chan::FLAG_APRS != 0)
     }
 
-    /// Automatic beacons are on (0 5 6 1 timed or smart; APRS-24): with APRS mode off they still hold C
-    /// (APRS-29). Manual ("Beacon now" only) doesn't.
+    /// Automatic beacons are on (0 5 6 1 timed or smart; APRS-24), and only with APRS mode on: APRS mode is the
+    /// master switch, so beacons never hold C or go out without it (APRS-29, retired by decision 436; Alex:
+    /// "if aprs is off dont beacon", ferrite#101). Manual ("Beacon now" only) doesn't count.
     pub fn beacons_on(&self) -> bool {
-        self.aprs.beacons_on() && !self.low_power() && !self.set.kiss_on() // KISS-10
+        self.set.aprs_mode && self.aprs.beacons_on() && !self.low_power() && !self.set.kiss_on() // KISS-10
     }
 
     /// KISS-10: why the radio won't send APRS of its own now (KISS on: the app sends), if so.

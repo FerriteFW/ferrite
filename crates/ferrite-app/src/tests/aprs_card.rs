@@ -158,51 +158,24 @@ fn aprs_card_kiss() {
     assert_eq!(a.hints()[1], ("OK", "Heard"));
 }
 
-/// APRS-17.1 – APRS-17.4, APRS-29 (decision 181): beacons alone: "APRS Beacon", the countdown to the next beacon (m:ss) or why
-/// there is none, the interval and the position's source; OK leads to Beacon now (the APRS page on that row).
-/// With APRS mode on too, the header says APRS Mode (the precedence) and the countdown stays in `next`.
+/// APRS-29.1 (decision 436): timed beacons with APRS mode off give no APRS card (C is the user's slot); with APRS
+/// mode on the card is APRS Mode's and the countdown is read back (`next=`), or why there is none.
 #[test]
 fn aprs_card_beacon() {
     let mut a = A::new();
     a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() }); // every 10 min
     a.tick();
-    assert_eq!(a.app.aprs_holder(), Some(Holder::Beacon));
-    // The simulated APRS task runs the beacon's timer (as the simulators do, once a second).
-    a.s.aprs_tick(10, true, true);
-    let k = a.app.aprs_card(&a.s).expect("beacons hold C");
-    // APRS-17.2.1 (decision 313): the small card's countdown "Beacon in" over "10m" (whole minutes, rounded up);
-    // the readback's next= keeps m:ss
-    assert!(k.countdown && k.right.as_bytes().ends_with(b"m"), "{:?}", core::str::from_utf8(k.right.as_bytes()));
-    assert!(k.next.as_bytes().contains(&b':'));
-    assert_eq!(k.line.as_bytes(), "Every 10 min \u{b7} GPS fix".as_bytes());
-    let l = a.card_line();
-    assert!(l.contains("head=\"APRS Beacon \u{b7} VHF\"") && l.contains("holder=beacon") && l.contains("next=\"") && l.contains("line=\"Every 10 min"), "{l}");
-    // No fix: the reason instead of the countdown.
-    a.s.fix.set(None);
-    let k = a.app.aprs_card(&a.s).unwrap();
-    assert!(!k.countdown && k.right_warn);
-    assert_eq!(k.right.as_bytes(), b"no fix");
-    assert!(k.line.as_bytes().ends_with(b"no fix"));
-    a.s.fix.set(Sample::sample_fix());
-    // The countdown drawn: C's colour right of the frequency on the small card.
-    let (y, _) = crate::screens::home::card(APRS_SLOT, a.app.active());
-    let fb = a.fb();
-    assert!(count(&fb, 150, y + 34, 76, 16, VIOLET) > 10, "the countdown in C's colour");
-    a.c_active();
-    // APRS-17.3 (decision 313): "OK Send" (from "Beacon now", which ran into "Hold MENU": 8 px between pairs)
-    assert_eq!(a.hints()[1], ("OK", "Send"));
-    let mut fb = FrameBuffer::new();
-    let w = ferrite_ui::widgets::hint_width(&mut fb, &a.hints());
-    assert!(w <= 224, "the hint bar's pairs with 8 px between them: {w}");
-    a.press(Key::Menu, 100);
-    assert!(matches!(a.app.screen(), Screen::Options(o) if o.row == crate::screens::opts::APRS_ROW_BEACON_NOW));
-    a.press(Key::Exit, 100);
-    // APRS mode too: the header's word is APRS Mode; the countdown is still read back.
+    assert_eq!(a.app.aprs_holder(), None);
+    assert!(a.app.aprs_card(&a.s).is_none(), "APRS mode off: no APRS card");
     a.app.set_aprs_mode(true);
     a.tick();
+    a.s.aprs_tick(10, true, true);
     let k = a.app.aprs_card(&a.s).unwrap();
     assert_eq!(k.holder, Holder::Mode);
-    assert!(!k.next.is_empty(), "beacons on beside APRS mode: next= still");
+    assert!(k.next.as_bytes().contains(&b':'), "beacons on with APRS mode: next= m:ss");
+    a.s.fix.set(None);
+    let k = a.app.aprs_card(&a.s).unwrap();
+    assert_eq!(k.next.as_bytes(), b"no fix");
 }
 
 /// APRS-17.5 (decision 313): APRS mode with automatic beacons is still "APRS Mode" in the header (the beacon row
@@ -593,18 +566,21 @@ fn aprs_squelch_counts_in_the_readback() {
     assert_eq!(line, "aprs_sq opens=3 short=1 spikes=2 settle=4");
 }
 
-/// MENU-34: hold ABC on the APRS slot opens the APRS quick page, the same page whatever holds C (beacons alone,
-/// APRS mode); it no longer says "Slot C held by" (APRS-19 still refuses the slot's own changes).
+/// MENU-34: hold ABC on the APRS slot opens the APRS quick page, the same page whatever holds C (KISS, APRS mode;
+/// beacons no longer hold it alone, APRS-29.1); it no longer says "Slot C held by" (APRS-19 still refuses the
+/// slot's own changes).
 #[test]
 fn hold_abc_on_the_aprs_slot_opens_its_quick_page() {
     use crate::screens::qgrid::Page;
     let mut a = A::new();
-    a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() });
+    a.app.set.bt = true;
+    a.app.set.kiss_port = 2; // KISS holds C
     a.tick();
     a.c_active();
     a.press(Key::Slot, 800);
     assert!(matches!(a.app.screen(), Screen::QGrid(g) if g.page == Page::Aprs), "{}", a.app.screen().name());
     a.press(Key::Exit, 100);
+    a.app.set.kiss_port = 0;
     assert_eq!(a.app.screen(), Screen::Home);
     a.app.set_aprs_mode(true);
     a.tick();

@@ -1001,8 +1001,8 @@ fn beacon_comment_edited() {
     assert_eq!(b.as_bytes(), b"Empty");
 }
 
-/// APRS-24.1 (ferrite#101): the APRS menu's Beacon row (0 5 6) shows the beacon mode, the one that holds slot C
-/// with APRS mode off (APRS-29); it read "Off" whatever the mode was.
+/// APRS-24.1 (ferrite#101): the APRS menu's Beacon row (0 5 6) shows the beacon mode; it read "Off" whatever the
+/// mode was. Beacons go out only with APRS mode on (APRS-29.1).
 #[test]
 fn the_beacon_row_shows_the_mode() {
     use crate::screens::groups::{change, wired};
@@ -1012,7 +1012,7 @@ fn the_beacon_row_shows_the_mode() {
     assert_eq!(wired(&t.app, &dev, &[5, 6], &mut b), Some(false));
     assert_eq!(b.as_bytes(), b"Off");
     change(&mut t.app, &[5, 6, 1], 4); // off, manual, 1, 2, 5 min
-    assert!(t.app.beacons_on() && !t.app.aprs_on(), "beacons alone hold C");
+    assert!(!t.app.beacons_on() && !t.app.aprs_on(), "set, but APRS mode is off: no beacons (APRS-29.1)");
     assert_eq!(wired(&t.app, &dev, &[5, 6], &mut b), Some(true), "and the dot: not the default");
     assert_eq!(b.as_bytes(), b"Every 5 min");
     let grp = crate::screens::groups::Group { g: 5, sub: 0, row: 255 };

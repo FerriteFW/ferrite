@@ -120,8 +120,8 @@ fn side2_up_is_a_big_step() {
     assert_eq!(t.screen().mockup(), Some("HomeA.png"));
 }
 
-/// APRS-17.2: APRS mode's large card shows both counts; KISS's shows its port; beacons alone, "Next beacon in"
-/// and the countdown.
+/// APRS-17.2: APRS mode's large card shows both counts; KISS's shows its port; APRS mode with timed beacons, the
+/// countdown (beacons need APRS mode, APRS-29.1).
 #[test]
 fn aprs_card_large_rows() {
     let mut t = T::ready();
@@ -134,6 +134,7 @@ fn aprs_card_large_rows() {
     t.wait(3500);
     t.shows("Bluetooth");
     t.app.set.kiss_port = 0;
+    t.app.set_aprs_mode(true);
     t.app.set_aprs(AprsCfg { beacon: 5, ..t.app.aprs_cfg() });
     t.s.aprs_tick(10, true, true);
     t.wait(100);

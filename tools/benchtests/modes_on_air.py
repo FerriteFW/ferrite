@@ -61,7 +61,7 @@ S = dict(
     vox="0 8 2 1", vox_level="0 8 2 2", vox_tail="0 8 2 3", dtmf_speed="0 8 5 3",
     dtmf_delay="0 8 5 5", aprs_mode="0 5 3", beacon_mode="0 5 6 1", after_voice="0 5 6 2",
     beacon_power="0 5 6 3", aprs_freq="0 5 4", tx_delay="0 5 9 3", pos_source="0 5 5 4", fixed="0 5 5 5",
-    kiss="0 5 8", watch="0 1 1", gps_rxtx="0 6 8", bluetooth="0 9 2 1", end_tone=B.END_TONE, gps="0 6 1",
+    kiss_port="0 5 8", watch="0 1 1", gps_rxtx="0 6 8", bluetooth="0 9 2 1", end_tone=B.END_TONE, gps="0 6 1",
     bsave="0 7 7",
 )
 
@@ -1426,7 +1426,8 @@ class Modes:
         call = self.ax25_call("KISS-2")
         self.aprs_freq_ready()
         self.setv(S["bluetooth"], "On")
-        self.setv(S["kiss"], "Bluetooth")
+        self.setv(S["kiss_port"], "Bluetooth")
+        self.setv(S["aprs_mode"], "KISS")  # APRS-29.2: KISS is one of 0 5 3's values; 0 5 8 its port
         port = self.kiss_port() if callable(self.kiss_port) else self.kiss_port
         frames = [ax25_frame("APZFER", call, ["WIDE1-1"], f">bench KISS {i}".encode()) for i in (1, 2)]
         txd = self.mc["kiss_txdelay_ms"]
@@ -1955,7 +1956,7 @@ class FakeModesRadio(B.FakeRadio):
                          S["dtmf_delay"]: "300 ms", S["aprs_mode"]: "Off",
                          S["beacon_mode"]: "Off", S["after_voice"]: "Off", S["beacon_power"]: "Low",
                          S["aprs_freq"]: "144.390", S["tx_delay"]: "300 ms", S["pos_source"]: "Fixed",
-                         S["fixed"]: "49.2827 -123.1207", S["kiss"]: "Off", S["watch"]: "Off", S["gps_rxtx"]: "Always on",
+                         S["fixed"]: "49.2827 -123.1207", S["kiss_port"]: "Bluetooth", S["watch"]: "Off", S["gps_rxtx"]: "Always on",
                          S["bluetooth"]: "Off", S["gps"]: "Off", S["bsave"]: "Level 1"})
         self.set0 = dict(self.set)
         self.screen, self.entry = ["Home"], ""
@@ -2103,10 +2104,10 @@ class FakeModesRadio(B.FakeRadio):
         (APRS-29), as the firmware's lock message names it; None when nothing does."""
         if self.set[S["aprs_mode"]] == "On":
             return "APRS mode (APRS-19)"
-        if self.set[S["kiss"]] != "Off":
+        if self.set[S["aprs_mode"]] == "KISS":
             return "KISS (KISS-9)"
-        if self.set[S["beacon_mode"]] not in ("Off", "Manual"):
-            return "beacons (APRS-29)"
+        if self.set[S["aprs_mode"]] == "Tracker" and self.set[S["beacon_mode"]] not in ("Off", "Manual"):
+            return "Tracker (APRS-29.2)"
         return None
 
     def slot(self, n):
@@ -2325,7 +2326,7 @@ class FakeModesRadio(B.FakeRadio):
             b = self.kiss_buf.index(b"\xc0", a + 1)
             body = self.kiss_buf[a + 1:b].replace(b"\xdb\xdc", b"\xc0").replace(b"\xdb\xdd", b"\xdb")
             self.kiss_buf = self.kiss_buf[b + 1:]
-            if not body or self.set[S["kiss"]] != "Bluetooth":
+            if not body or self.set[S["aprs_mode"]] != "KISS" or self.set[S["kiss_port"]] != "Bluetooth":
                 continue
             if body[0] == 1:
                 self.txd_kiss = body[1] * 10

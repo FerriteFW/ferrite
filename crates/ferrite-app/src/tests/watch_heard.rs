@@ -214,7 +214,7 @@ fn squelch_setting_from_a_0_9_4_record_is_chip() {
         full.load(&mut SliceSource(&v.0));
         assert!(full.sq_soft, "this build's record keeps Software");
         let mut b = crate::settings::Settings::DEFAULT;
-        b.load(&mut SliceSource(&v.0[..v.0.len() - 1]));
+        b.load(&mut SliceSource(&v.0[..v.0.len() - 3])); // less sq_soft, and 0.9.6's Tracker and KISS port after it
         assert!(!b.sq_soft, "0.9.4 with {}: Chip", if old_chip { "Chip" } else { "Software" });
         assert_eq!((b.sat_min_el, b.decode_log), (23, true), "the fields before it in place");
     }

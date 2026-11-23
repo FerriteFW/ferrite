@@ -202,7 +202,7 @@ impl App {
     fn aprs_held(&self) -> &'static str {
         match self.aprs_holder() {
             Some(crate::aprs::Holder::Kiss) => "slot C held by KISS (KISS-9)",
-            Some(crate::aprs::Holder::Beacon) => "slot C held by beacons (APRS-29)",
+            Some(crate::aprs::Holder::Beacon) => "slot C held by Tracker (APRS-29.2)",
             _ => "slot C held by APRS mode (APRS-19)",
         }
     }

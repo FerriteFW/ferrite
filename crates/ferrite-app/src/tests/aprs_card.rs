@@ -375,7 +375,8 @@ fn aprs_mode_mutes_c() {
 }
 
 /// KISS-10: KISS on suspends the radio's own APRS sending: APRS mode and automatic beacons wait (kept as set),
-/// KISS holds C, 0 5 3 and 0 5 6 1 are greyed with why, and Beacon now and sending a message are refused.
+/// KISS holds C, 0 5 6 1 is greyed with why (0 5 3 stays open: it is where KISS turns off, APRS-29.2), and Beacon
+/// now and sending a message are refused.
 #[test]
 fn kiss_suspends_the_radios_own_aprs() {
     let mut a = A::new();
@@ -388,7 +389,8 @@ fn kiss_suspends_the_radios_own_aprs() {
     assert!(!a.app.aprs_on() && !a.app.beacons_on(), "suspended");
     assert!(a.app.set.aprs_mode && a.app.aprs_cfg().beacons_on(), "the settings kept");
     assert_eq!(a.app.aprs_holder(), Some(Holder::Kiss));
-    assert_eq!(crate::screens::groups::greyed(&a.app, &[5, 3]), Some("KISS on: the app sends"));
+    assert_eq!(crate::screens::groups::greyed(&a.app, &[5, 3]), None, "0 5 3 turns KISS off");
+    assert_eq!(a.app.set.aprs_select(), 3, "0 5 3 shows KISS");
     assert_eq!(crate::screens::groups::greyed(&a.app, &[5, 6, 1]), Some("KISS on: the app sends"));
     a.app.set.kiss_port = 0;
     a.tick();

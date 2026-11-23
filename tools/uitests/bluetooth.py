@@ -294,12 +294,13 @@ def bt_paced_readback_arrives_whole(t):
 
 @test("KISS-6", needs=("bt",), where="sim", pages=())
 def kiss_on_the_bluetooth_port(t):
-    """KISS TNC on Bluetooth (0 5 8): that port carries raw KISS bytes, not link frames (a HELLO there gets no
+    """KISS on Bluetooth (0 5 3 KISS, 0 5 8 Bluetooth): that port carries raw KISS bytes, not link frames (a HELLO there gets no
     link answer) while the cable keeps the link; KISS off: Bluetooth speaks the link protocol again. Simulator only:
     KISS on is the owner's setting on the radio (it can transmit, KISS-7)."""
     t.owner_set("0 9 2 1", "On")
     try:
         t.cmd("set 0 5 8 Bluetooth")
+        t.cmd("set 0 5 3 KISS")
         try:
             t.bt_raw()
             t.fail("a HELLO over Bluetooth with KISS on was answered as a link frame")
@@ -308,6 +309,6 @@ def kiss_on_the_bluetooth_port(t):
         t.close_bt()
         t.check(t.cmd("get 0 7 1"), "the cable keeps the link", "")
     finally:
-        t.cmd("set 0 5 8 Off")
+        t.cmd("set 0 5 3 Off")
     raw = t.bt_raw()
     t.eq(raw.hello[0], 0, "KISS off: the link answers on Bluetooth")

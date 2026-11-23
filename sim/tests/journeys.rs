@@ -207,7 +207,7 @@ fn dtmf_dialer() {
 #[test]
 fn aprs_mode_compose() {
     let mut r = Radio::new();
-    r.run("menu 0 5 3; press OK; expect text \"APRS mode On\"");
+    r.run("menu 0 5 3; press OK; press OK; expect text \"APRS mode On\""); // APRS-29.2: Off, Tracker, On
     r.run("home; expect text \"APRS\"; press SLOT; press SLOT");
     assert_eq!(r.sim.app().active(), 2);
     r.run("down PTT; wait 300ms; up PTT; wait 300ms; expect screen \"Compose message\"");

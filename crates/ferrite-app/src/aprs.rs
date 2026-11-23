@@ -459,6 +459,9 @@ const LOADED: u8 = 1;
 const DIRTY: u8 = 2;
 /// A voice transmission ended (APRS-27); the next tick asks for the beacon.
 const AFTER_VOICE: u8 = 4;
+/// APRS-29.2: the beacon mode Tracker starts with when 0 5 6 1 is off or manual: every 10 min.
+pub const TRACKER_BEACON: u8 = 5;
+
 /// What held C at the last tick, [`Holder::bits`] (KISS-9, APRS-29: KISS or beacons turning on or off move it, from
 /// any path that sets them).
 const HELD: u8 = 0x30;
@@ -479,7 +482,7 @@ impl Holder {
         match self {
             Holder::Mode => "APRS mode",
             Holder::Kiss => "KISS",
-            Holder::Beacon => "Beacons",
+            Holder::Beacon => "Tracker",
         }
     }
 
@@ -488,7 +491,7 @@ impl Holder {
         match self {
             Holder::Mode => "mode",
             Holder::Kiss => "kiss",
-            Holder::Beacon => "beacon",
+            Holder::Beacon => "beacon", // Tracker (APRS-29.2); the word Console's Live View reads, kept
         }
     }
 
@@ -517,11 +520,11 @@ impl App {
         !self.set.aprs_mode && !self.low_power() && !s.vfo_mode && s.ch.is_some_and(|c| c.flags & crate::chan::FLAG_APRS != 0)
     }
 
-    /// Automatic beacons are on (0 5 6 1 timed or smart; APRS-24), and only with APRS mode on: APRS mode is the
-    /// master switch, so beacons never hold C or go out without it (APRS-29, retired by decision 436; Alex:
-    /// "if aprs is off dont beacon", ferrite#101). Manual ("Beacon now" only) doesn't count.
+    /// Automatic beacons are on (0 5 6 1 timed or smart; APRS-24), and only with 0 5 3 on On or Tracker: 0 5 3 is
+    /// the master switch, so beacons never hold C or go out with it Off (APRS-29.1, decision 436; Alex: "if aprs is
+    /// off dont beacon", ferrite#101). Manual ("Beacon now" only) doesn't count.
     pub fn beacons_on(&self) -> bool {
-        self.set.aprs_mode && self.aprs.beacons_on() && !self.low_power() && !self.set.kiss_on() // KISS-10
+        (self.set.aprs_mode || self.set.tracker) && self.aprs.beacons_on() && !self.low_power() && !self.set.kiss_on() // KISS-10
     }
 
     /// KISS-10: why the radio won't send APRS of its own now (KISS on: the app sends), if so.
@@ -538,8 +541,8 @@ impl App {
             Some(Holder::Kiss) // KISS-10: first, APRS mode and beacons wait while it is on
         } else if self.set.aprs_mode {
             Some(Holder::Mode)
-        } else if self.beacons_on() {
-            Some(Holder::Beacon)
+        } else if self.set.tracker && self.beacons_on() {
+            Some(Holder::Beacon) // APRS-29.2: Tracker
         } else {
             None
         }
@@ -590,7 +593,7 @@ impl App {
     pub(crate) fn aprs_holds(&self) -> &'static str {
         match self.aprs_holder() {
             Some(Holder::Kiss) => "Slot C held by KISS",
-            Some(Holder::Beacon) => "Slot C held by beacons",
+            Some(Holder::Beacon) => "Slot C held by Tracker",
             _ => "Slot C held by APRS mode",
         }
     }
@@ -696,6 +699,38 @@ impl App {
         }
     }
 
+    /// 0 5 3 set (APRS-29.2): Off, Tracker, On (APRS mode) or KISS, one at a time. Tracker with beacons off or manual
+    /// starts every 10 min (a tracker beacons); KISS uses 0 5 8's port. C follows, with a toast saying which.
+    pub(crate) fn set_aprs_select(&mut self, v: u8) {
+        let v = v % crate::settings::APRS_MODES.len() as u8;
+        // Leaving Tracker: the beacon mode it set itself goes back to what it was (off or manual).
+        if v != 1 {
+            if let Some(was) = self.tracker_was.take() {
+                if self.aprs.beacon == TRACKER_BEACON {
+                    self.set_aprs(AprsCfg { beacon: was, ..self.aprs });
+                }
+            }
+        }
+        let port = self.set.kiss_port_kept();
+        self.set.kiss_via = port;
+        self.set.tracker = v == 1;
+        self.set.kiss_port = if v == 3 { port } else { 0 };
+        if v == 1 && !self.aprs.beacons_on() {
+            self.tracker_was = Some(self.aprs.beacon);
+            self.set_aprs(AprsCfg { beacon: TRACKER_BEACON, ..self.aprs });
+        }
+        self.set_aprs_mode(v == 2);
+        match v {
+            1 => {
+                let mut b = Buf::<24>::new();
+                self.beacon_mode_text(&mut b);
+                self.show_toast(b"Tracker on", b.as_bytes(), false);
+            }
+            3 => self.show_toast(b"KISS on", crate::settings::KISS_VIA[(port as usize).saturating_sub(1) % 2].as_bytes(), false),
+            _ => {}
+        }
+    }
+
     /// New APRS settings: kept, written back at the next tick, and C retuned when it is the APRS slot.
     pub(crate) fn set_aprs(&mut self, c: AprsCfg) {
         self.aprs = c;
@@ -766,7 +801,12 @@ impl App {
     /// 0 5 6 1 by the knob.
     pub(crate) fn step_beacon(&mut self, d: i32) {
         let at = if self.aprs.smart() { DROPPED } else { self.aprs.mode() as usize };
-        let i = (at as i32 + d).rem_euclid(BEACON_STEPS as i32) as usize;
+        let mut i = (at as i32 + d).rem_euclid(BEACON_STEPS as i32) as usize;
+        // APRS-29.2: a tracker always beacons, so Tracker's steps skip off and manual
+        let dir = if d < 0 { -1 } else { 1 };
+        while self.set.aprs_select() == 1 && i < TIMED {
+            i = (i as i32 + dir).rem_euclid(BEACON_STEPS as i32) as usize;
+        }
         let m = if i == DROPPED { SMART } else { i };
         self.set_aprs(AprsCfg { beacon: m as u8, ..self.aprs });
     }

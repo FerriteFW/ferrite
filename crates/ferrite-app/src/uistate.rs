@@ -1314,8 +1314,10 @@ fn card<S: ChannelStore>(app: &App, cx: &Cx<S>, s: u8, d: &mut Desc) {
     l.push(b" freq=");
     mhz(l, app.shown_freq(s, cx.live));
     kq(l, "name", app.card_name(s, cx.live, cx.store).as_bytes());
-    if lv.hits > 0 {
-        kn(l, "hits", lv.hits as u32); // LINK-19.4: the scan's hits, as the card shows them ("4 hits")
+    if lv.hits > 0 && !app.aprs_slot(s) {
+        // LINK-19.4: the scan's hits, as the card shows them ("4 hits"); the APRS card shows none (APRS-17), and
+        // without them APRS-29.2's Tracker line fits Live View (LINE_ROOM)
+        kn(l, "hits", lv.hits as u32);
     }
     // LINK-19.4, HOME-4.1: the scan's last hit as the value line draws it ("last 119.500" or the channel's name)
     if lv.scanning && lv.hits > 0 && lv.last_hit != app.shown_freq(s, cx.live) {
@@ -1339,11 +1341,17 @@ fn card<S: ChannelStore>(app: &App, cx: &Cx<S>, s: u8, d: &mut Desc) {
         }
         let mut beacon = Buf::<28>::new();
         app.beacon_text(data, &mut beacon);
-        kq(l, "last", last.as_bytes());
+        // APRS-29.2: Tracker decodes nothing, so its card has no last heard and no counts (its rows are `line=`)
+        let tracker = app.aprs_holder() == Some(crate::aprs::Holder::Beacon);
+        if !tracker {
+            kq(l, "last", last.as_bytes());
+        }
         kq(l, "beacon", beacon.as_bytes());
-        let (boot, hour, _) = app.heard_counts(data);
-        kn(l, "heard", boot as u32); // APRS-17.2: the card's counts, since power-on and in the last hour
-        kn(l, "hour", hour as u32);
+        if !tracker {
+            let (boot, hour, _) = app.heard_counts(data);
+            kn(l, "heard", boot as u32); // APRS-17.2: the card's counts, since power-on and in the last hour
+            kn(l, "hour", hour as u32);
+        }
         let digi = data.beacon().digi;
         if !digi.is_empty() {
             kq(l, "digi", digi.as_bytes()); // APRS-36

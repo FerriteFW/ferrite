@@ -109,13 +109,13 @@ const G4: [Entry; 5] = [
 const G5: [Entry; 9] = [
     Entry(concat!("Heard||", txtc!("Stations heard, newest first."))),
     Entry(concat!("Messages||", txtc!("Messages sent to you and by you."))),
-    Entry(concat!("APRS mode|Off|", txtc!("Slot C becomes the APRS slot."))),
+    Entry(concat!("APRS mode|Off|", txtc!("Off, Tracker (beacons only), On or KISS."))),
     Entry(concat!("Frequency|144.390|", txtc!("OK types it; # the region's."))),
     Entry(concat!("My station|SSID 9|", txtc!("SSID, symbol, comment, position."))),
     Entry(concat!("Beacon|Off|", txtc!("When to beacon: manual, timed, smart."))),
     Entry(concat!("Digipeat|Off|", txtc!("Relay others' packets."))),
     // The KISS TNC (the mailbox beside it waits until it is built, decision 245).
-    Entry(concat!("KISS TNC|Off|", txtc!("Raw KISS on the cable or Bluetooth."))),
+    Entry(concat!("KISS port|Bluetooth|", txtc!("Where 0 5 3's KISS goes: cable or Bluetooth."))),
     Entry(concat!("Advanced||", txtc!("Path, TX delay and level, FX.25."))),
 ];
 const G6: [Entry; 9] = [
@@ -380,7 +380,7 @@ pub(crate) fn items(g: u8, sub: u8) -> &'static [Entry] {
 pub(crate) fn greyed(app: &App, p: &[u8]) -> Option<&'static str> {
     match p {
         [4, 5, ..] if !app.set.wx_region() => Some("US/CA only"), // WX-3
-        [5, 3] | [5, 6, 1] if app.set.kiss_on() => app.kiss_holds_aprs(), // KISS-10
+        [5, 6, 1] if app.set.kiss_on() => app.kiss_holds_aprs(), // KISS-10 (0 5 3 stays open: it turns KISS off)
         [8, 8, 5] if !app.radio.tx_built => Some("not in this build"), // TX-48
         [8, 8, 5] if app.remote_in => Some("on the radio only"), // TX-48: never the link's (LINK-19)
         _ => None,
@@ -517,7 +517,7 @@ static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
     field!([5, 7, 1], special),
     field!([5, 7, 2], special),
     field!([5, 7, 3], special),
-    field!([5, 8, 0], kiss_port: u8, Kind::Pick(&crate::settings::KISS_PORTS), Nothing),
+    field!([5, 8, 0], special), // KISS-6.1: the port; KISS itself is 0 5 3's
     field!([5, 9, 1], special),
     field!([5, 9, 2], special),
     field!([5, 9, 3], special), // APRS-48: TX delay
@@ -807,8 +807,14 @@ pub(crate) fn wired(app: &App, dev: &Device, p: &[u8], b: &mut Buf<24>) -> Optio
             s.scope_dwell != 100
         }
         [5, 3] => {
-            pick(b, &ON_OFF, s.aprs_mode as u8);
-            s.aprs_mode
+            // APRS-29.2: Off, Tracker, On or KISS
+            pick(b, &crate::settings::APRS_MODES, s.aprs_select());
+            s.aprs_select() != 0
+        }
+        [5, 8] => {
+            // KISS-6.1: the port 0 5 3's KISS uses
+            pick(b, &crate::settings::KISS_VIA, s.kiss_port_kept() - 1);
+            s.kiss_port_kept() != Settings::DEFAULT.kiss_via
         }
         // APRS-24.1: the Beacon row of the APRS menu shows the mode too, as Digipeat's shows its own (it said "Off"
         // whatever the mode was: ferrite#101, a radio held by timed beacons with every row reading Off)
@@ -1044,8 +1050,16 @@ pub(crate) fn change(app: &mut App, p: &[u8], d: i32) -> bool {
             s.scope_dwell = (v + d * step).clamp(1, 100) as u8;
         }
         [5, 3] => {
-            let on = !app.set.aprs_mode;
-            app.set_aprs_mode(on); // APRS-15
+            let v = cycle(app.set.aprs_select(), d, crate::settings::APRS_MODES.len());
+            app.set_aprs_select(v); // APRS-29.2
+        }
+        [5, 8] => {
+            // KISS-6.1: the other port; KISS on moves to it
+            let via = if app.set.kiss_port_kept() == 1 { 2 } else { 1 };
+            app.set.kiss_via = via;
+            if app.set.kiss_port != 0 {
+                app.set.kiss_port = via;
+            }
         }
         [5, 6, 1] => app.step_beacon(d),
         [5, 5, 1] => app.set_aprs(crate::aprs::AprsCfg { ssid: cycle(app.aprs_cfg().ssid, d, 16), ..app.aprs_cfg() }),
@@ -1161,7 +1175,13 @@ pub(crate) fn reset(app: &mut App, p: &[u8]) {
         [8, 8, 5] if !app.remote_in => app.set_dry_tx(false), // TX-48: # by the radio's own keys only
         [8, 8, 5] => {}
         [3, 1, 3] => s.scope_dwell = d.scope_dwell,
-        [5, 3] if s.aprs_mode != d.aprs_mode => app.set_aprs_mode(d.aprs_mode),
+        [5, 3] if s.aprs_select() != 0 => app.set_aprs_select(0),
+        [5, 8] => {
+            app.set.kiss_via = d.kiss_via;
+            if app.set.kiss_port != 0 {
+                app.set.kiss_port = d.kiss_via;
+            }
+        }
         [5, 6, 1] => app.set_aprs(crate::aprs::AprsCfg { beacon: 0, ..app.aprs_cfg() }),
         [5, 5, 1] => app.set_aprs(crate::aprs::AprsCfg { ssid: crate::aprs::SSID_DEFAULT, ..app.aprs_cfg() }),
         [5, 6, 3] => app.set_aprs(crate::aprs::AprsCfg { power: 0, ..app.aprs_cfg() }),

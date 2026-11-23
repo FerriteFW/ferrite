@@ -205,9 +205,11 @@ fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32
         let (n, h) = k.counts.unwrap_or_default();
         let mut hr = Buf::<16>::new();
         let mut cnt = Buf::<16>::new();
+        // APRS-29.2: Tracker decodes nothing, so no counts
+        let tracker = k.holder == Holder::Beacon;
         if k.holder == Holder::Kiss {
             cnt = k.right;
-        } else {
+        } else if !tracker {
             let _ = uwrite!(cnt, "{} heard", n);
             let _ = uwrite!(hr, " \u{b7} {} /hr", h);
         }
@@ -224,16 +226,17 @@ fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32
             });
         }
         // APRS-17.2.2 – 17.2.4: the newest station, then unread messages or the next station; KISS its frames.
-        let msg = k.unread > 0;
+        let msg = k.unread > 0 && !tracker;
         let mut mt = Buf::<32>::new();
         if msg {
             let _ = uwrite!(mt, "{} new from {}", k.unread, crate::screens::lists::Txt(k.unread_from.as_bytes()));
         }
         let kiss = k.holder == Holder::Kiss;
-        let first = if kiss { k.line.as_bytes() } else { app.nothing_heard(data).as_bytes() };
+        // KISS its frames; Tracker its interval and position source (APRS-29.2: no stations, it decodes nothing)
+        let first = if kiss || tracker { k.line.as_bytes() } else { app.nothing_heard(data).as_bytes() };
         if app.dirty(R_INFO + p, Mix::new().any(&k.rows[..2]).h(&k.rows_n.min(2)).h(&mt).h(&first).get()) {
             canvas::banded(lcd, 14, y + 52, 212, 34, SURFACE, |lcd| {
-                if k.rows_n == 0 || kiss {
+                if k.rows_n == 0 || kiss || tracker {
                     w::field(lcd, 15, 211, y + 52, y + 69, y + 65, first, const { &w::st(&UI_12, SUB, SURFACE, Align::Left) });
                 } else {
                     station_row(lcd, y + 52, &k.rows[0], true);
@@ -242,7 +245,7 @@ fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32
                     w::field(lcd, 15, 18, y + 69, y + 86, y + 82, b"", const { &w::st(&UI_12, SUB, SURFACE, Align::Left) });
                     w::envelope(lcd, 15, y + 73, VIOLET);
                     w::field(lcd, 33, 193, y + 69, y + 86, y + 82, w::fit(mt.as_bytes(), &UI_12, 193), const { &w::st(&UI_12, VIOLET, SURFACE, Align::Left) });
-                } else if k.rows_n > 1 && !kiss {
+                } else if k.rows_n > 1 && !kiss && !tracker {
                     station_row(lcd, y + 69, &k.rows[1], false);
                 }
             });
@@ -252,8 +255,6 @@ fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32
         let third = if msg { 1 } else { 2 };
         let (ft, fc) = if !k.fate.is_empty() && !kiss {
             (k.fate.as_bytes(), if k.fate_warn { AMBER } else { SUB })
-        } else if k.holder == Holder::Beacon {
-            (k.line.as_bytes(), if k.line_warn { AMBER } else { SUB })
         } else {
             (&b""[..], SUB)
         };

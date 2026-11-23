@@ -33,9 +33,9 @@ REGISTRY = []
 # Home's readback ids: home, and Low Power Mode's own home (PWR-24.7).
 HOMES = ("Home", "LowPower")
 
-# Settings a test never changes: they could transmit (VOX, beacon, digipeat, CW ID), take the cable away from the
+# Settings a test never changes: they could transmit (APRS mode's Tracker, On and KISS, VOX, beacon, digipeat, CW ID), take the cable away from the
 # link (cable port, KISS, cable log, terminal colour) or the radio off (auto power off), or need the radio's owner.
-UNSAFE = {"0 8 2 1", "0 5 6 1", "0 5 6 2", "0 5 7 1", "0 8 6 2", "0 9 2 3", "0 5 8", "0 9 9 5", "0 9 9 3",
+UNSAFE = {"0 5 3", "0 8 2 1", "0 5 6 1", "0 5 6 2", "0 5 7 1", "0 8 6 2", "0 9 2 3", "0 5 8", "0 9 9 5", "0 9 9 3",
           "0 7 8", "0 9 2 1", "0 9 3 1", "0 9 3 2"}
 
 

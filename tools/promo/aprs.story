@@ -19,7 +19,7 @@ script:
   wait 1000ms
   menu 0 5 3
   wait 900ms
-  knob 1
+  knob 2
   wait 900ms
   home
   wait 2500ms

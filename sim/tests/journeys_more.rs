@@ -141,8 +141,9 @@ fn gps_power_backoff_and_beacon_wake() {
     assert_eq!(r.sim.device().gps, GpsState::Fix, "a fix within the last minutes: solid");
     let n = r.sim.gps().unwrap().standbys().len();
     // APRS mode with a beacon every 10 minutes.
+    // APRS-29.2: Off, Tracker, On first (Tracker's own beacon mode is put back as it leaves), then the beacon mode
+    r.run("menu 0 5 3; press OK; press OK");
     r.sim.store().data().request(Op::AprsCfg(ferrite_app::aprs::AprsCfg { beacon: 5, ..ferrite_app::aprs::AprsCfg::DEFAULT }));
-    r.run("menu 0 5 3; press OK");
     r.home();
     assert!(r.sim.app().aprs_on());
     let (mut before, mut awake_before) = (0, 0);

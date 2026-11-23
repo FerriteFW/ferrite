@@ -288,6 +288,10 @@ impl Sink for Count {
     }
 }
 
+/// Settings and the slots' state from any bytes (ferrite-fuzzkit).
+#[cfg(test)]
+mod fuzz;
+
 #[cfg(test)]
 mod tests {
     use super::*;

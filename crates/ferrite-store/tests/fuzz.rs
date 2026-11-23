@@ -207,9 +207,24 @@ fn orphaned_channels_are_listed() {
     assert_eq!(listed, s.count(), "every channel is in some list");
 }
 
+/// The APRS record as mounted: every field the mount checks, in range (a damaged one reads as the default).
+fn aprs_in_range(c: &AprsCfg) {
+    use ferrite_app::aprs::*;
+    assert!(c.power <= 2 && c.tx_level <= 2 && c.ambiguity <= 4, "{:?}", (c.power, c.tx_level, c.ambiguity));
+    assert!(FX25_CHECKS.contains(&c.fx25) && (c.sound as usize) < ferrite_core::tonegen::CHIMES.len() && c.retries <= RETRIES_DEFAULT);
+    assert!((c.mic_e as usize) < MIC_E_NAMES.len() && (c.symbol as usize) < SYMBOLS.len());
+    assert!(c.txdelay == AprsCfg::DEFAULT.txdelay || (TXDELAY_MIN..=TXDELAY_MAX).contains(&c.txdelay));
+    let n = c.comment.iter().position(|&b| b == 0).unwrap_or(c.comment.len());
+    assert!(c.comment[..n].iter().all(|&b| (b' '..=b'~').contains(&b)), "comment {:?}", c.comment);
+}
+
 /// A chip address the simulated chip holds: mostly where the populated chip has data, else anywhere.
 fn addr(r: &mut Rng) -> u32 {
     let f = populated();
+    if r.one_in(6) {
+        // the APRS record's copies (their fields are each checked at mount)
+        return ferrite_core::layout::APRS.start + r.below(0x400) as u32 + if r.one_in(2) { 0x1000 } else { 0 };
+    }
     if r.one_in(3) {
         return match r.below(3) {
             0 => r.below(LOW) as u32,
@@ -309,6 +324,7 @@ fn run(input: &[u8]) {
         }
         let mut a = app();
         let _ = s.restore(&mut a);
+        aprs_in_range(&s.aprs_cfg());
     }
     while let Some(j) = s.next_job() {
         block(s.run(j));

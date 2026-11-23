@@ -78,7 +78,9 @@ impl Radio {
     #[inline(never)]
     pub(super) fn tune_start(&mut self, n: u8, want: Option<(u8, Freq10)>) -> Option<u32> {
         let asleep = self.maybe_awake & 1 << n == 0;
-        if !self.has(n) || self.tuned[n as usize] == want && (want.is_some() || asleep) {
+        // BCR-23.1: a chip kept receiving beside the broadcast stays so while the watch doesn't want it
+        let kept = self.rx_kept & 1 << n != 0 && self.rx_set[n as usize].is_some() && self.beside_bcast(n);
+        if !self.has(n) || self.tuned[n as usize] == want && (want.is_some() || asleep || kept) {
             return None;
         }
         // A probe on the slot this chip had, or gets, ends: tuning sets the slot's own detector (TSRCH-12).
@@ -89,11 +91,22 @@ impl Radio {
         }
         // SQL-18.10: light only from a receive tune this chip is still in (awake, tuned, not since used otherwise)
         let old = self.tuned[n as usize];
-        self.light[n as usize] = (old.is_some() && !asleep && self.rx_set[n as usize].is_some()).then(|| old.map(|o| o.0) == want.map(|w| w.0));
+        let from = old.is_some() || kept; // BCR-23.1: a kept chip returns light too
+        self.light[n as usize] = (from && !asleep && self.rx_set[n as usize].is_some()).then(|| old.map(|o| o.0) == want.map(|w| w.0));
         self.tuned[n as usize] = want;
         #[cfg(feature = "bench")]
         self.turns.tuned(now_ms() as u32, n, want); // WATCH-17.1, WATCH-17.4: what the chip actually did
         if want.is_none() {
+            // BCR-23.1: beside a broadcast the chip isn't slept (REG_30 = 0 turns its AF DAC off: a click in the
+            // broadcast) but kept receiving, muted; its set-up stays known for the light retune back
+            if self.rx_set[n as usize].is_some() && self.beside_bcast(n) {
+                self.chip(n).af_out(bk4829::AfOut::Mute);
+                self.rx_kept |= 1 << n;
+                self.ldo_kept |= 1 << n;
+                self.sq_key[n as usize] = None;
+                return Some(0);
+            }
+            self.rx_kept &= !(1 << n);
             self.maybe_awake &= !(1 << n);
             self.sq_regs[n as usize] = None; // written again on waking
             self.rx_set[n as usize] = None; // SQL-18.10: the full set-up again
@@ -110,6 +123,7 @@ impl Radio {
             return Some(self.settle.sleep_ms as u32);
         }
         self.ldo_kept &= !(1 << n);
+        self.rx_kept &= !(1 << n);
         self.maybe_awake |= 1 << n;
         let (settle, woke) = (self.settle, self.woke[n as usize]);
         let (at, left) = radio_chip::wake_start(&mut self.chip(n), settle, woke, now_ms() as u32);
@@ -201,12 +215,24 @@ impl Radio {
     /// (REG_37's supplies off; REG_30 went off when they slept).
     pub(super) fn ldo_release(&mut self) {
         for n in 0..2u8 {
+            // BCR-23.1: a chip kept receiving beside it now sleeps as any other
+            if self.rx_kept & 1 << n != 0 && self.tuned[n as usize].is_none() {
+                radio_chip::sleep_begin(&mut self.chip(n));
+                self.rx_set[n as usize] = None;
+                self.maybe_awake &= !(1 << n);
+            }
             if self.ldo_kept & 1 << n != 0 && self.tuned[n as usize].is_none() {
                 self.chip(n).ldo_sleep();
                 self.woke[n as usize] = None;
             }
         }
         self.ldo_kept = 0;
+        self.rx_kept = 0;
+    }
+
+    /// BCR-23.1: the broadcast plays beside chip `n` (the SI4732 on, not HF mode) and the chip has been awake.
+    pub(super) fn beside_bcast(&self, n: u8) -> bool {
+        BCAST_LDO_ON && self.woke[n as usize].is_some() && self.si.mode().is_some() && self.hf.is_none()
     }
 
     /// Battery Save's phase change: both chips sleep together (WATCH-8), but for one a kept slot has (APRS mode's

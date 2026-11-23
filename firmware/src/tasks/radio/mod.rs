@@ -215,6 +215,10 @@ struct Radio {
     /// each chip was last given (REG_78, REG_4F), so a retune writes them only when they change.
     sqcal: ferrite_core::sqcal::SqCal,
     sq_regs: [Option<(u16, u16)>; 2],
+    /// SQL-18.10: the receive set-up each chip has now (None once it slept, transmitted or was used by anything but
+    /// a receive tune), and whether this tune may be the light one: `Some(same_slot)`.
+    rx_set: [Option<radio_chip::RxSetup>; 2],
+    light: [Option<bool>; 2],
     /// SQL-18: each chip's software squelch, and the (slot, frequency) it is for (a retune starts it closed).
     soft_sq: [ferrite_core::softsq::SoftSq; 2],
     /// SQL-19: the APRS slot's squelch over the chip's, per chip.
@@ -798,6 +802,8 @@ pub async fn task() {
         bat_at: None,
         sqcal: ferrite_core::sqcal::SqCal::DEFAULT,
         sq_regs: [None; 2],
+        rx_set: [None; 2],
+        light: [None; 2],
         soft_sq: [ferrite_core::softsq::SoftSq::DEFAULT; 2],
         aprs_sq: [ferrite_core::aprssq::AprsSq::NEW; 2],
         aprs_open_sent: false,

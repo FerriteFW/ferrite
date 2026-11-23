@@ -87,12 +87,16 @@ impl Radio {
                 h.retuned();
             }
         }
+        // SQL-18.10: light only from a receive tune this chip is still in (awake, tuned, not since used otherwise)
+        let old = self.tuned[n as usize];
+        self.light[n as usize] = (old.is_some() && !asleep && self.rx_set[n as usize].is_some()).then(|| old.map(|o| o.0) == want.map(|w| w.0));
         self.tuned[n as usize] = want;
         #[cfg(feature = "bench")]
         self.turns.tuned(now_ms() as u32, n, want); // WATCH-17.1, WATCH-17.4: what the chip actually did
         if want.is_none() {
             self.maybe_awake &= !(1 << n);
             self.sq_regs[n as usize] = None; // written again on waking
+            self.rx_set[n as usize] = None; // SQL-18.10: the full set-up again
             self.sq_key[n as usize] = None; // SQL-18.6: and its soft squelch starts closed, not as it was before
             self.open_fast[n as usize] = None; // SQL-17: likewise
             self.data_rx[n as usize] = None; // APRS-55: likewise
@@ -144,7 +148,13 @@ impl Radio {
         let regs = self.sqcal.regs(f, slot.sq);
         let sq = (self.sq_regs[n as usize] != Some(regs)).then_some(regs);
         self.sq_regs[n as usize] = Some(regs);
-        radio_chip::tune_rest_sq(&mut self.chip(n), &setup, sq);
+        // SQL-18.10: only the frequency moved on a chip still receiving: no REG_30 off (the click)
+        let light = self.light[n as usize].take().filter(|_| self.rx_set[n as usize].is_some_and(|p| radio_chip::RxSetup { freq: setup.freq, ..p } == setup));
+        match light {
+            Some(same_slot) => radio_chip::retune_light(&mut self.chip(n), &setup, sq, !same_slot),
+            None => radio_chip::tune_rest_sq(&mut self.chip(n), &setup, sq),
+        }
+        self.rx_set[n as usize] = Some(setup);
         if self.data_rx[n as usize] != Some(data) {
             radio_chip::rx_data(&mut self.chip(n), data);
             self.data_rx[n as usize] = Some(data);

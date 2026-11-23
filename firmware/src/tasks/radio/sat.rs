@@ -117,7 +117,9 @@ impl Radio {
         let hear = open && !(keyed && r.hd) && !self.muted;
         self.chip(n).af_out(if hear { AfOut::Normal } else { AfOut::Mute });
         if keyed {
-            AMP_EN[0].write(true);
+            // SAT-11.1 (decision 433): PB8 on silences the radio's own mic (decision 431), so full duplex keeps it as
+            // any key-up has it (off, or held for a speaker mic, SND-12) and hears the downlink on PE4 alone.
+            super::pb8(false);
             AMP_EN[1].write(hear);
         } else {
             speaker(hear);
@@ -230,6 +232,7 @@ impl Radio {
         self.dtmf_key[n as usize] = None;
         let setup = self.tx_chip_setup(f, false, r.tone, false);
         radio_chip::tx_setup(&mut self.chip(n), &setup);
+        self.rx_set[n as usize] = None; // SQL-18.10: the next receive tune is the full one
         self.tx.pa = pa;
         self.tx.fault = false;
         (self.tx.data, self.tx.slot, self.tx.dialled) = (Some(r.power), SAT_SLOT, false);

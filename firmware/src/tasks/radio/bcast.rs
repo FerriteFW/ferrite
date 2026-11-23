@@ -67,13 +67,20 @@ impl Radio {
     }
 
     /// BCR-23: while FM broadcast plays no chip listens to the broadcast slot, nor to a slot needing the band relay,
-    /// which FM leaves released (BCR-15). In slow flash (memory.x): once a receive tick.
+    /// which FM leaves released (BCR-15). BCR-23.1 (decision 433): and the watch stops, as stock's broadcast mode
+    /// stops it (0x08010244): one slot keeps a chip, the active one (or the first watched if the active slot is the
+    /// broadcast's), with the APRS slot, so no chip hops (each hop slept one chip and moved the band select: clicks
+    /// in the broadcast, ferrite#70). In slow flash (memory.x): once a receive tick.
     #[inline(never)]
     pub(super) fn bcast_off(&self) -> u8 {
         if self.fm.is_none() {
             return 0;
         }
         let relay = (0..SLOTS).filter(|&i| Sel::rx(self.slots[i].freq).relay()).fold(0u8, |m, i| m | 1 << i);
-        relay | self.bcast_slot.map_or(0, |s| 1 << s)
+        let base = relay | self.bcast_slot.map_or(0, |s| 1 << s);
+        let a = self.active as usize;
+        let one = if base & 1 << a == 0 { Some(a) } else { (0..SLOTS).find(|&i| base & 1 << i == 0 && self.watch_set & 1 << i != 0) };
+        let all = (1u8 << SLOTS) - 1;
+        base | all & !(one.map_or(0, |i| 1 << i) | self.aprs_slots)
     }
 }

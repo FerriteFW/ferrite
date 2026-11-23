@@ -199,6 +199,7 @@ impl Radio {
         self.dtmf_key[n as usize] = None;
         let setup = self.tx_chip_setup(f, narrow, tone, data.is_some() || testing);
         radio_chip::tx_setup(&mut self.chip(n), &setup);
+        self.rx_set[n as usize] = None; // SQL-18.10: the next receive tune is the full one
         // APRS-14 (decision 135): an APRS burst (a data key-up) goes out with the `data` TX audio set-up, as
         // `txtest`'s `data`; a test with `flat` or `data` its own; both put back at the unkey. `afsk-bk` and `voice`
         // leave the chip's voice settings.

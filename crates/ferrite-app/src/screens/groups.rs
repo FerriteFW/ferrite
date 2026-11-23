@@ -810,7 +810,9 @@ pub(crate) fn wired(app: &App, dev: &Device, p: &[u8], b: &mut Buf<24>) -> Optio
             pick(b, &ON_OFF, s.aprs_mode as u8);
             s.aprs_mode
         }
-        [5, 6, 1] => {
+        // APRS-24.1: the Beacon row of the APRS menu shows the mode too, as Digipeat's shows its own (it said "Off"
+        // whatever the mode was: ferrite#101, a radio held by timed beacons with every row reading Off)
+        [5, 6] | [5, 6, 1] => {
             app.beacon_mode_text(b);
             app.aprs_cfg().beacon != 0
         }

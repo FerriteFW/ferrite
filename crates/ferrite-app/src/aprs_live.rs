@@ -1982,6 +1982,57 @@ mod tests {
         assert!(rx.inbound.is_some(), "and the reply is in the inbox");
     }
 
+    /// APRS-58 (ferrite#99): a service's answers as IGates sent them on the air (the third-party packets in
+    /// testdata's recordings, aprs/ref and wa8lmf/ref: APRS OTA's `OTA>APZ100,TCPIP,IGATE*`, a three-letter sender,
+    /// four-digit numbers, digipeated up to five times), to their addressee: the ack acks ours, each message is in
+    /// the inbox and acked to OTA by name. A sender that wasn't the addressee's contact changes nothing.
+    #[test]
+    fn a_service_s_answers_through_igates_as_recorded() {
+        let cfg = AprsCfg::DEFAULT;
+        let mut out = [0u8; FRAME_MAX];
+        let a = AprsLive::new();
+        let me = b"W9KPK-7";
+        assert!(a.send(b"OTA", b"PING"));
+        let t = a.tick(0, Sending::All, true, me, None, &cfg, &mut out);
+        assert_eq!(Frame::parse(&out[..t.len]).unwrap().info, b":OTA      :PING{1");
+        let path: [&[u8]; 5] = [b"JAMTWP*", b"CASCTY*", b"VE3KSR*", b"VE3RSB*", b"WIDE2*"];
+        let (f, n) = frame(b"BAYCTY", b"APRS", &path[1..], b"}OTA>APZ100,TCPIP,BAYCTY*::W9KPK-7  :ack1");
+        let rx = a.receive(&f[..n], 2, me, &cfg);
+        assert!(matches!(rx.state, Some((_, _, MsgState::Acked))), "ours is acked");
+        type Heard<'a> = (&'a [u8], &'a [u8], &'a [u8], &'a [u8]); // the IGate, its packet, the text and the number inside
+        let heard: [Heard; 4] = [
+            (b"BAYCTY", b"}OTA>APZ100,TCPIP,BAYCTY*::W9KPK-7  :Op complete: 10 QSOs, 27 pts, 3 unanswered. aprsota.org/W9KPK{3963", b"Op complete: 10 QSOs, 27 pts, 3 unanswered. aprsota.org/W9KPK", b"3963"),
+            (b"BAYCTY", b"}OTA>APZ100,TCPIP,BAYCTY*::W9KPK-7  :Now chasing KD3BNW-13 FM29kw. aprsota.org/KD3BNW/ops/146{5624", b"Now chasing KD3BNW-13 FM29kw. aprsota.org/KD3BNW/ops/146", b"5624"),
+            (b"FLINT", "}OTA>APZ100,TCPIP,FLINT*::W9KPK-7  :DE YO3SP-6 KN24xj greetings from Rom\u{e2}nia. 73 de Sergiu.{5620".as_bytes(), "DE YO3SP-6 KN24xj greetings from Rom\u{e2}nia. 73 de Sergiu.".as_bytes(), b"5620"),
+            (b"FLINT", b"}OTA>APZ100,TCPIP,FLINT*::W9KPK-7  :Now chasing LU2DGE-10 GF11fx. aprsota.org/LU2DGE/ops/151{5572", b"Now chasing LU2DGE-10 GF11fx. aprsota.org/LU2DGE/ops/151", b"5572"),
+        ];
+        for (i, (igate, info, text, id)) in heard.into_iter().enumerate() {
+            let now = 10 + 40 * i as u32;
+            let (f, n) = frame(igate, b"APRS", &path, info);
+            let rx = a.receive(&f[..n], now, me, &cfg);
+            let (from, got) = rx.inbound.expect("in the inbox");
+            assert_eq!((from.as_bytes(), got.as_bytes(), rx.inbound_id.as_bytes()), (&b"OTA"[..], text, id));
+            let t = a.tick(now, Sending::All, true, me, None, &cfg, &mut out);
+            let mut ack = std::vec::Vec::from(&b":OTA      :ack"[..]);
+            ack.extend_from_slice(id);
+            assert_eq!((t.what, Frame::parse(&out[..t.len]).unwrap().info), ("Ack", &ack[..]));
+        }
+        // the others recorded, to other stations (a plain message, one ending in a carriage return, WXBOT's ack):
+        // read as theirs, nothing of ours
+        for (igate, info, to) in [
+            (&b"K2ZRO-1"[..], &b"}YD6HMM-13>APWW11,TCPIP,K2ZRO-1*::KC3NDV   :N:HOTG 73"[..], &b"KC3NDV"[..]),
+            (b"KC6YRU", b"}KG6OWS-7>APK101,TCPIP,KC6YRU*::K6XTY    : o3{P\r", b"K6XTY"),
+            (b"VE3KPG", b"}WXBOT>APRS,TCPIP,VE3KPG*::KC1VMZ-2 :ack8", b"KC1VMZ-2"),
+        ] {
+            let (f, n) = frame(igate, b"APRS", &[], info);
+            let rx = a.receive(&f[..n], 300, me, &cfg);
+            assert!(rx.inbound.is_none() && rx.state.is_none());
+            let b = AprsLive::new();
+            let rx = b.receive(&f[..n], 300, to, &cfg);
+            assert!(rx.inbound.is_some() || info.ends_with(b"ack8"), "to its addressee it is a message");
+        }
+    }
+
     /// APRS-58: a third-party packet with a broken inner header is only heard (no panic, no message).
     #[test]
     fn a_broken_third_party_packet_is_only_heard() {

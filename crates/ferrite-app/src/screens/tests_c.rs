@@ -1001,6 +1001,25 @@ fn beacon_comment_edited() {
     assert_eq!(b.as_bytes(), b"Empty");
 }
 
+/// APRS-24.1 (ferrite#101): the APRS menu's Beacon row (0 5 6) shows the beacon mode, the one that holds slot C
+/// with APRS mode off (APRS-29); it read "Off" whatever the mode was.
+#[test]
+fn the_beacon_row_shows_the_mode() {
+    use crate::screens::groups::{change, wired};
+    let mut t = T::new();
+    let dev = Device::default();
+    let mut b = ferrite_ui::text::Buf::<24>::new();
+    assert_eq!(wired(&t.app, &dev, &[5, 6], &mut b), Some(false));
+    assert_eq!(b.as_bytes(), b"Off");
+    change(&mut t.app, &[5, 6, 1], 4); // off, manual, 1, 2, 5 min
+    assert!(t.app.beacons_on() && !t.app.aprs_on(), "beacons alone hold C");
+    assert_eq!(wired(&t.app, &dev, &[5, 6], &mut b), Some(true), "and the dot: not the default");
+    assert_eq!(b.as_bytes(), b"Every 5 min");
+    let grp = crate::screens::groups::Group { g: 5, sub: 0, row: 255 };
+    let (name, v, dot, _) = grp.row(&t.app, &dev, &t.s, 5);
+    assert_eq!((name, v.as_bytes(), dot), ("Beacon", &b"Every 5 min"[..], true), "the row as drawn");
+}
+
 /// APRS-51: 0 5 5 6 steps Exact, then 1 to 4 digits, stopping at the ends; # resets it.
 #[test]
 fn ambiguity_steps() {

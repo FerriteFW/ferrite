@@ -1168,6 +1168,14 @@ impl AprsLive {
 
     // ---- transmit ----
 
+    /// TX-51.2: a second while automatic transmissions are paused (HF mode, the scope, the counter, tone search,
+    /// the satellite screen): acks owed and a waiting digipeat are dropped, stale by the time the mode ends;
+    /// beacons and our messages wait (no [`AprsLive::tick`] meanwhile).
+    pub fn paused(&self) {
+        self.acks.iter().for_each(|a| a.set(None));
+        self.digi.set(None);
+    }
+
     /// A second of the APRS task. `send`: what may go (APRS mode: all, APRS-15; beacons alone: beacons, APRS-29;
     /// else nothing, APRS-22); `relay_ok`: slot C can transmit with the band relay
     /// where the active slot holds it (APRS-20); `me` our callsign (APRS-8); `fix` the GPS's (beacons, APRS-24).
@@ -1980,6 +1988,19 @@ mod tests {
         assert!(m(b"VE3KPW*", b"VE3KPW") && m(b"VE3KPW*", b"VE3KPW-15"));
         assert!(m(b"VE3KPW-9", b"VE3KPW-9") && !m(b"VE3KPW-9", b"VE3KPW-7") && !m(b"VE3KPW", b"VE3KPW-9"));
         assert!(m(b"VE3KPW", b"VE3KPW-0") && m(b"VE3KPW-0", b"VE3KPW") && m(b"ve3kpw", b"VE3KPW"));
+    }
+
+    /// TX-51.1, TX-51.2: while automatic transmissions are paused (HF mode, the scope, the counter, tone search,
+    /// the satellite screen) an ack owed is dropped, stale by the mode's end, and Beacon now waits for it.
+    #[test]
+    fn paused_drops_acks_and_keeps_the_beacon() {
+        let a = AprsLive::new();
+        let (f, n) = frame(b"VE3KPW-9", b"APRS", &[], b":VE3XYZ   :On my way{12");
+        assert!(a.receive(&f[..n], 100, b"VE3XYZ", &AprsCfg::DEFAULT).inbound.is_some());
+        a.beacon_now();
+        a.paused();
+        let mut out = [0u8; FRAME_MAX];
+        assert_eq!(a.tick(160, Sending::All, true, b"VE3XYZ", Some(fix()), &AprsCfg::DEFAULT, &mut out).what, "Beacon", "no ack first");
     }
 
     #[test]

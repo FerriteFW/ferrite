@@ -6,7 +6,7 @@
 
 use super::shared::ARROWS_UD;
 use super::{Cx, Hints, View};
-use crate::aprs::{AprsCfg, REPLY_DELAY_NAMES};
+use crate::aprs::REPLY_DELAY_NAMES;
 use crate::chan::ChannelStore;
 use crate::keys::{KeyEvent, Press};
 use crate::{App, Screen, MENU_TIMEOUT_MS};
@@ -42,7 +42,7 @@ impl AutoReply {
             }
             _ => return,
         };
-        app.set_aprs(AprsCfg { reply, ..c });
+        app.edit_aprs(reply as i32, |c, v| c.reply = v as u8);
     }
 }
 
@@ -88,7 +88,7 @@ impl View for AutoReply {
 
     fn render(self, app: &mut App, lcd: &mut impl Panel, _: &Cx<impl ChannelStore>) {
         app.page(lcd, 0u8);
-        let c = app.aprs_cfg();
+        let c = *app.aprs_cfg();
         app.list_head(lcd, b"Answers messages to you", b"");
         let to: &[u8] = match c.reply_to_text() {
             b"" | b"*" => b"Everyone (*)",

@@ -434,7 +434,7 @@ impl View for Entry {
             (Key::Exit, Press::Short) if s.n == 0 => return app.back(),
             // APRS-15.1: # with nothing typed puts the APRS frequency back on the region's (MENU-18's #, here too)
             (Key::Hash, Press::Short) if s.n == 0 && s.to == EntryFor::Setting(FreqSet::Aprs) => {
-                app.set_aprs(crate::aprs::AprsCfg { f5k: 0, ..app.aprs_cfg() });
+                app.edit_aprs(0, |c, _| c.f5k = 0);
                 let f = crate::slot::mhz3(app.aprs_freq());
                 app.show_toast(b"Region default", f.as_bytes(), false);
                 return app.back();

@@ -107,7 +107,7 @@ fn beacon_row_follows_the_mode() {
     let rows: std::vec::Vec<&str> = super::super::status::row_names().collect();
     let row = rows.iter().position(|n| *n == "Beacon").expect("a Beacon row") as u8;
     for (mode, want) in [(0u8, "Off"), (1, "Manual"), (5, "Every 10 min"), (crate::aprs::SMART as u8, "Smart")] {
-        let c = crate::aprs::AprsCfg { beacon: mode, ..t.app.aprs_cfg() };
+        let c = crate::aprs::AprsCfg { beacon: mode, ..*t.app.aprs_cfg() };
         t.app.set_aprs(c);
         let s = status(&mut t, row);
         has(&s, want);

@@ -61,7 +61,7 @@ fn rows_change_and_type() {
 #[test]
 fn menu_row() {
     let mut t = T::ready();
-    let mut c = t.app.aprs_cfg();
+    let mut c = *t.app.aprs_cfg();
     c.reply_text[..4].copy_from_slice(b"Away");
     t.app.set_aprs(c);
     assert!(!crate::screens::groups::change(&mut t.app, &[5, 9, 9], 1) || t.app.aprs_cfg().reply_on());

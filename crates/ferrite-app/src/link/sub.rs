@@ -658,7 +658,7 @@ pub(super) fn aprs_apply(app: &mut App, rec: &[u8], o: &mut Out) -> Status {
     if custom[n..].iter().any(|&b| b != 0) || n > 0 && !path_ok(&custom[..n]) {
         return invalid(o, "custom path: one or two entries like WIDE2-2");
     }
-    let mut c = AprsCfg { f5k: u16::from_le_bytes([rec[0], rec[1]]), beacon: rec[2], power: rec[3], path: rec[4], digi: rec[5], after_voice: rec[6] == 1, custom, ssid: rec[7], fx25: rec.get(8 + CUSTOM_LEN).copied().unwrap_or(app.aprs_cfg().fx25), ..app.aprs_cfg() };
+    let mut c = AprsCfg { f5k: u16::from_le_bytes([rec[0], rec[1]]), beacon: rec[2], power: rec[3], path: rec[4], digi: rec[5], after_voice: rec[6] == 1, custom, ssid: rec[7], fx25: rec.get(8 + CUSTOM_LEN).copied().unwrap_or(app.aprs_cfg().fx25), ..*app.aprs_cfg() };
     if rec.len() >= APRS_REPLY_AT {
         let t = &rec[APRS_V1..APRS_REPLY_AT];
         let (head, tail) = t.split_at(4);
@@ -745,7 +745,7 @@ pub(super) fn aprs_apply(app: &mut App, rec: &[u8], o: &mut Out) -> Status {
     if !crate::aprs::FX25_CHECKS.contains(&c.fx25) {
         return invalid(o, "FX.25: 0 (off), 16, 32 or 64 check bytes");
     }
-    if c != app.aprs_cfg() {
+    if c != *app.aprs_cfg() {
         app.set_aprs(c);
     }
     Status::Ok

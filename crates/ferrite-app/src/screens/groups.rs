@@ -1062,59 +1062,37 @@ pub(crate) fn change(app: &mut App, p: &[u8], d: i32) -> bool {
             }
         }
         [5, 6, 1] => app.step_beacon(d),
-        [5, 5, 1] => app.set_aprs(crate::aprs::AprsCfg { ssid: cycle(app.aprs_cfg().ssid, d, 16), ..app.aprs_cfg() }),
+        [5, 5, 1] => app.edit_aprs(d, |c, d| c.ssid = cycle(c.ssid, d, 16)),
         [5, 5, 4] => s.aprs_fixed = !s.aprs_fixed,
-        [5, 6, 3] => app.set_aprs(crate::aprs::AprsCfg { power: cycle(app.aprs_cfg().power, d, 3), ..app.aprs_cfg() }),
-        [5, 6, 2] => app.set_aprs(crate::aprs::AprsCfg { after_voice: !app.aprs_cfg().after_voice, ..app.aprs_cfg() }),
-        [5, 6, 4] => app.set_aprs(crate::aprs::AprsCfg { telemetry: !app.aprs_cfg().telemetry, ..app.aprs_cfg() }),
-        [5, 6, 5] => app.set_aprs(crate::aprs::AprsCfg { text_every: cycle(app.aprs_cfg().text_every, d, 4), ..app.aprs_cfg() }),
-        [5, 9, 1] => {
-            let c = app.aprs_cfg();
-            app.set_aprs(crate::aprs::AprsCfg { path: c.path_step(d), ..c });
-        }
-        [5, 7, 1] => app.set_aprs(crate::aprs::AprsCfg { digi: app.aprs_cfg().digi ^ crate::aprs::DIGI_ON, ..app.aprs_cfg() }),
-        [5, 7, 2] => app.set_aprs(crate::aprs::AprsCfg { digi: app.aprs_cfg().digi ^ crate::aprs::DIGI_MYCALL, ..app.aprs_cfg() }),
-        [5, 7, 3] => {
-            let c = app.aprs_cfg();
+        [5, 6, 3] => app.edit_aprs(d, |c, d| c.power = cycle(c.power, d, 3)),
+        [5, 6, 2] => app.edit_aprs(d, |c, _| c.after_voice = !c.after_voice),
+        [5, 6, 4] => app.edit_aprs(d, |c, _| c.telemetry = !c.telemetry),
+        [5, 6, 5] => app.edit_aprs(d, |c, d| c.text_every = cycle(c.text_every, d, 4)),
+        [5, 9, 1] => app.edit_aprs(d, |c, d| c.path = c.path_step(d)),
+        [5, 7, 1] => app.edit_aprs(d, |c, _| c.digi ^= crate::aprs::DIGI_ON),
+        [5, 7, 2] => app.edit_aprs(d, |c, _| c.digi ^= crate::aprs::DIGI_MYCALL),
+        [5, 7, 3] => app.edit_aprs(d, |c, d| {
             let w = cycle(c.digi_wait_s(), d, crate::aprs::DIGI_WAIT_MAX as usize + 1);
-            app.set_aprs(crate::aprs::AprsCfg { digi: c.digi & 0x0F | w << 4, ..c });
-        }
+            c.digi = c.digi & 0x0F | w << 4;
+        }),
         [5, 4] => app.step_aprs_freq(d),
         [7, 5, 5] => {
             // APRS-6.1: each choice plays as it is picked
-            let sound = cycle(app.aprs_cfg().sound, d, ferrite_core::tonegen::CHIMES.len());
-            app.set_aprs(crate::aprs::AprsCfg { sound, ..app.aprs_cfg() });
-            app.out.push(ferrite_core::msg::RadioCmd::Chime { sound, level: app.set.msg_level() });
+            app.edit_aprs(d, |c, d| c.sound = cycle(c.sound, d, ferrite_core::tonegen::CHIMES.len()));
+            app.out.push(ferrite_core::msg::RadioCmd::Chime { sound: app.aprs.sound, level: app.set.msg_level() });
         }
-        [5, 5, 2] => {
-            let symbol = cycle(app.aprs_cfg().symbol, d, crate::aprs::SYMBOLS.len());
-            app.set_aprs(crate::aprs::AprsCfg { symbol, ..app.aprs_cfg() })
-        }
+        [5, 5, 2] => app.edit_aprs(d, |c, d| c.symbol = cycle(c.symbol, d, crate::aprs::SYMBOLS.len())),
         // APRS-51: Exact, then 1-4 digits dropped, stopping at the ends
-        [5, 5, 6] => {
-            let ambiguity = (app.aprs_cfg().ambiguity as i32 + d).clamp(0, 4) as u8;
-            app.set_aprs(crate::aprs::AprsCfg { ambiguity, ..app.aprs_cfg() })
-        }
+        [5, 5, 6] => app.edit_aprs(d, |c, d| c.ambiguity = (c.ambiguity as i32 + d).clamp(0, 4) as u8),
         // APRS-52: Off, then the seven statuses, stopping at the ends
-        [5, 5, 7] => {
-            let mic_e = (app.aprs_cfg().mic_e as i32 + d).clamp(0, crate::aprs::MIC_E_NAMES.len() as i32 - 1) as u8;
-            app.set_aprs(crate::aprs::AprsCfg { mic_e, ..app.aprs_cfg() })
-        }
-        [5, 9, 3] => {
-            let c = app.aprs_cfg();
-            let txdelay = (c.txdelay_10ms() as i32 + d * 5).clamp(crate::aprs::TXDELAY_MIN as i32, crate::aprs::TXDELAY_MAX as i32) as u8;
-            app.set_aprs(crate::aprs::AprsCfg { txdelay, ..c })
-        }
-        [5, 9, 4] => {
-            let tx_level = (app.aprs_cfg().tx_level as i32 + d).clamp(0, 2) as u8;
-            app.set_aprs(crate::aprs::AprsCfg { tx_level, ..app.aprs_cfg() })
-        }
-        [5, 9, 5] => {
-            let i = cycle(app.aprs_cfg().fx25_index(), d, crate::aprs::FX25_CHECKS.len());
-            app.set_aprs(crate::aprs::AprsCfg { fx25: crate::aprs::FX25_CHECKS[i as usize], ..app.aprs_cfg() })
-        }
+        [5, 5, 7] => app.edit_aprs(d, |c, d| c.mic_e = (c.mic_e as i32 + d).clamp(0, crate::aprs::MIC_E_NAMES.len() as i32 - 1) as u8),
+        [5, 9, 3] => app.edit_aprs(d, |c, d| {
+            c.txdelay = (c.txdelay_10ms() as i32 + d * 5).clamp(crate::aprs::TXDELAY_MIN as i32, crate::aprs::TXDELAY_MAX as i32) as u8;
+        }),
+        [5, 9, 4] => app.edit_aprs(d, |c, d| c.tx_level = (c.tx_level as i32 + d).clamp(0, 2) as u8),
+        [5, 9, 5] => app.edit_aprs(d, |c, d| c.fx25 = crate::aprs::FX25_CHECKS[cycle(c.fx25_index(), d, crate::aprs::FX25_CHECKS.len()) as usize]),
         // APRS-57: the knob turns auto reply on and off; OK opens its page
-        [5, 9, 9] => app.set_aprs(crate::aprs::AprsCfg { reply: app.aprs_cfg().reply ^ 1, ..app.aprs_cfg() }),
+        [5, 9, 9] => app.edit_aprs(d, |c, _| c.reply ^= 1),
         // 6.25 kHz steps across the VHF and UHF pager bands.
         [4, 2, 2] => s.pocsag_freq = (s.pocsag_freq as i64 + d as i64 * 625).clamp(13_600_000, 52_000_000) as ferrite_core::freq::Freq10,
         [7, 4, 2] => *s.brightness_mut() = (s.brightness() as i32 + d).clamp(1, 10) as u8, // DISP-16, DISP-23
@@ -1182,34 +1160,35 @@ pub(crate) fn reset(app: &mut App, p: &[u8]) {
                 app.set.kiss_port = d.kiss_via;
             }
         }
-        [5, 6, 1] => app.set_aprs(crate::aprs::AprsCfg { beacon: 0, ..app.aprs_cfg() }),
-        [5, 5, 1] => app.set_aprs(crate::aprs::AprsCfg { ssid: crate::aprs::SSID_DEFAULT, ..app.aprs_cfg() }),
-        [5, 6, 3] => app.set_aprs(crate::aprs::AprsCfg { power: 0, ..app.aprs_cfg() }),
-        [5, 6, 2] => app.set_aprs(crate::aprs::AprsCfg { after_voice: false, ..app.aprs_cfg() }),
-        [5, 6, 4] => app.set_aprs(crate::aprs::AprsCfg { telemetry: false, ..app.aprs_cfg() }),
-        [5, 6, 5] => app.set_aprs(crate::aprs::AprsCfg { text_every: 0, ..app.aprs_cfg() }),
-        [5, 9, 1] => app.set_aprs(crate::aprs::AprsCfg { path: crate::aprs::PATH_DEFAULT, ..app.aprs_cfg() }),
-        [5, 7, 1] => app.set_aprs(crate::aprs::AprsCfg { digi: app.aprs_cfg().digi & !crate::aprs::DIGI_ON, ..app.aprs_cfg() }),
-        [5, 7, 2] => app.set_aprs(crate::aprs::AprsCfg { digi: app.aprs_cfg().digi & !crate::aprs::DIGI_MYCALL, ..app.aprs_cfg() }),
-        [5, 7, 3] => app.set_aprs(crate::aprs::AprsCfg { digi: app.aprs_cfg().digi & 0x0F, ..app.aprs_cfg() }),
-        [5, 4] => app.set_aprs(crate::aprs::AprsCfg { f5k: 0, ..app.aprs_cfg() }),
-        [7, 5, 5] => app.set_aprs(crate::aprs::AprsCfg { sound: ferrite_core::tonegen::CHIME_DEFAULT, ..app.aprs_cfg() }),
-        [5, 5, 2] => app.set_aprs(crate::aprs::AprsCfg { symbol: 0, ..app.aprs_cfg() }),
+        [5, 6, 1] => app.edit_aprs(0, |c, _| c.beacon = 0),
+        [5, 5, 1] => app.edit_aprs(0, |c, _| c.ssid = crate::aprs::SSID_DEFAULT),
+        [5, 6, 3] => app.edit_aprs(0, |c, _| c.power = 0),
+        [5, 6, 2] => app.edit_aprs(0, |c, _| c.after_voice = false),
+        [5, 6, 4] => app.edit_aprs(0, |c, _| c.telemetry = false),
+        [5, 6, 5] => app.edit_aprs(0, |c, _| c.text_every = 0),
+        [5, 9, 1] => app.edit_aprs(0, |c, _| c.path = crate::aprs::PATH_DEFAULT),
+        [5, 7, 1] => app.edit_aprs(0, |c, _| c.digi &= !crate::aprs::DIGI_ON),
+        [5, 7, 2] => app.edit_aprs(0, |c, _| c.digi &= !crate::aprs::DIGI_MYCALL),
+        [5, 7, 3] => app.edit_aprs(0, |c, _| c.digi &= 0x0F),
+        [5, 4] => app.edit_aprs(0, |c, _| c.f5k = 0),
+        [7, 5, 5] => app.edit_aprs(0, |c, _| c.sound = ferrite_core::tonegen::CHIME_DEFAULT),
+        [5, 5, 2] => app.edit_aprs(0, |c, _| c.symbol = 0),
         [5, 5, 3] => app.set_aprs_comment(b""),
-        [5, 5, 6] => app.set_aprs(crate::aprs::AprsCfg { ambiguity: 0, ..app.aprs_cfg() }),
-        [5, 5, 7] => app.set_aprs(crate::aprs::AprsCfg { mic_e: 0, ..app.aprs_cfg() }),
-        [5, 9, 3] => app.set_aprs(crate::aprs::AprsCfg { txdelay: crate::aprs::TXDELAY_DEFAULT, ..app.aprs_cfg() }),
-        [5, 9, 4] => app.set_aprs(crate::aprs::AprsCfg { tx_level: 1, ..app.aprs_cfg() }),
-        [5, 9, 5] => app.set_aprs(crate::aprs::AprsCfg { fx25: crate::aprs::FX25_DEFAULT, ..app.aprs_cfg() }),
-        [5, 9, 9] => app.set_aprs(crate::aprs::AprsCfg { reply: app.aprs_cfg().reply & !1, ..app.aprs_cfg() }), // APRS-57: off, the rest kept
+        [5, 5, 6] => app.edit_aprs(0, |c, _| c.ambiguity = 0),
+        [5, 5, 7] => app.edit_aprs(0, |c, _| c.mic_e = 0),
+        [5, 9, 3] => app.edit_aprs(0, |c, _| c.txdelay = crate::aprs::TXDELAY_DEFAULT),
+        [5, 9, 4] => app.edit_aprs(0, |c, _| c.tx_level = 1),
+        [5, 9, 5] => app.edit_aprs(0, |c, _| c.fx25 = crate::aprs::FX25_DEFAULT),
+        [5, 9, 9] => app.edit_aprs(0, |c, _| c.reply &= !1), // APRS-57: off, the rest kept
         [4, 2, 2] => s.pocsag_freq = d.pocsag_freq,
         [4, 2, 3] => s.pocsag_cap = d.pocsag_cap,
         // # forgets the custom path; a path set to it goes back to the default (APRS-26)
-        [5, 9, 2] => {
-            let c = app.aprs_cfg();
-            let path = if c.path == crate::aprs::PATH_CUSTOM { crate::aprs::PATH_DEFAULT } else { c.path };
-            app.set_aprs(crate::aprs::AprsCfg { custom: [0; crate::aprs::CUSTOM_LEN], path, ..c });
-        }
+        [5, 9, 2] => app.edit_aprs(0, |c, _| {
+            if c.path == crate::aprs::PATH_CUSTOM {
+                c.path = crate::aprs::PATH_DEFAULT;
+            }
+            c.custom = [0; crate::aprs::CUSTOM_LEN];
+        }),
         [7, 4, 2] => {
             let night = s.theme == NIGHT_RED;
             *s.brightness_mut() = if night { d.brightness_night } else { d.brightness };

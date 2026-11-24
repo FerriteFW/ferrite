@@ -1075,6 +1075,8 @@ mod wired;
 mod lpm;
 mod aprs;
 mod aprs_card;
+/// The APRS menu's arms, stepped and reset against a golden (size review, Nov 23, 2026).
+mod aprs_edit;
 mod d64;
 /// Decision 72: the nicFW gaps (HF channels, 1000-1300 MHz, the clarifier, grid entry).
 mod nicfw;

@@ -468,10 +468,10 @@ impl App {
         // frame draws home first, so what the shortcut changed shows at once.
         let popup_frozen = !cleared
             && !popup_gone
-            && self.screen == Screen::Home
+            && matches!(self.screen, Screen::Home)
             && self.drawn.popup != 0
             && self.toast.is_some_and(|t| t.center && t.head.as_bytes() != STUCK_HEAD);
-        if popup_gone && !cleared && self.screen == Screen::Home && home::uncover(self, lcd, w::POPUP_BOX) {
+        if popup_gone && !cleared && matches!(self.screen, Screen::Home) && home::uncover(self, lcd, w::POPUP_BOX) {
             // HOME-8: the popup went from home's cards: only the cards under it are drawn again (DISP-25)
             self.drawn.popup_gone = false;
         } else if popup_gone && !cleared {
@@ -516,10 +516,10 @@ impl App {
             let h = shared::Mix::new().b(t.head.as_bytes()).b(t.body.as_bytes()).get() | 1;
             // on home: once, then only when its text changes (home waits under it); elsewhere every time, as the
             // screen may have drawn under it
-            if self.screen != Screen::Home || self.drawn.popup != h || !popup_frozen {
+            if !matches!(self.screen, Screen::Home) || self.drawn.popup != h || !popup_frozen {
                 w::popup(lcd, t.head.as_bytes(), t.body.as_bytes());
             }
-            self.drawn.popup = if self.screen == Screen::Home { h } else { 0 };
+            self.drawn.popup = if matches!(self.screen, Screen::Home) { h } else { 0 };
         } else {
             self.drawn.popup = 0;
         }

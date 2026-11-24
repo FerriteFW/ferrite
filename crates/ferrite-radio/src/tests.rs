@@ -373,6 +373,19 @@ fn tune_writes_stocks_am_and_fm() {
     assert_eq!(bus.last(reg::FREQ_LO).map(|lo| lo as u32 | (bus.regs[reg::FREQ_HI as usize] as u32) << 16), Some(VHF));
 }
 
+/// VFO-4.2 (NAM, decision 447): AM with narrow set keeps the AM demodulator (REG_31 bit 0, the AM filters) and
+/// takes the narrow receive filter 0x4008, which the Nov 23, 2026 bench showed rejects an 8.33 kHz neighbour on
+/// both sides (stock's wide 0x3028 passes one side at full strength) and keeps the wanted AM signal within 1 dB.
+#[test]
+fn nam_is_am_through_the_narrow_filter() {
+    let mut b = bk();
+    chip::tune(&mut b, &RxSetup { freq: mhz(118) + 833, narrow: true, am: true, rx_tone: 0, rx_tail: false, data: false });
+    let bus = b.release();
+    assert_eq!(bus.last(reg::RF_FILTER), Some(0x4008), "narrow filter");
+    assert_eq!(bus.regs[reg::FUNC2 as usize] & 1, 1, "AM demodulator");
+    assert_eq!((bus.last(0x42), bus.last(0x2A), bus.last(reg::AF_FILTERS)), (Some(0x6F5C), Some(0x7434), Some(0x0500)), "AM's set-up");
+}
+
 /// SND-2, RX audio level: every receive setup writes stock's REG_48 0xB2BF (Gain2 -4.5 dB, AF DAC 15), FM wide,
 /// narrow and AM alike; the start-up 0xB3FF (+3.5 dB) distorted receive audio on the radio (Oct 12, 2026). The wide
 /// filter is stock's 0x3028, narrow 0x4008, and the AF route is written whole (0x6042 muted).

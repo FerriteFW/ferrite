@@ -277,7 +277,7 @@ impl RangePreset {
         if self.mode == 0 && self.narrow {
             self.mode = 1;
         }
-        self.narrow = self.mode == 1;
+        self.narrow = crate::slot::mode_narrow(self.mode);
     }
 }
 

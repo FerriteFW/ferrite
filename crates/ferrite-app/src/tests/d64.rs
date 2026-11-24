@@ -18,7 +18,7 @@ fn mode_follows_the_region() {
     assert_eq!(t.app.slot(0).cfg().mode, 1);
     t.app.set_region(Some(Region::Australia), false);
     assert_eq!(t.app.slot(0).cfg().mode, 0);
-    assert_eq!(crate::slot::band_mode(2, Some(Region::Uk)), 2, "airband stays AM");
+    assert_eq!(crate::slot::band_mode(2, Some(Region::Uk)), crate::slot::NAM, "airband is NAM (VFO-4.2)");
     for (r, m) in [(Region::Us, 0), (Region::Canada, 0), (Region::NewZealand, 0), (Region::Europe, 1), (Region::Japan, 1), (Region::Other, 1)] {
         assert_eq!(crate::slot::band_mode(3, Some(r)), m, "{r:?}");
     }

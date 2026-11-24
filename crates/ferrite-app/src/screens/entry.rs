@@ -334,7 +334,13 @@ impl Entry {
         let p = t.iter().position(|&c| c == b'.').filter(|_| self.freq_mode())?;
         let decimals = t.len() - p - 1;
         let f = self.freq()?;
-        (decimals >= 5 || decimals >= 3 && f % step_at(app, f) == 0).then_some(f)
+        let step = step_at(app, f);
+        // VFO-18.1: on the 8.33 kHz step, three decimals within 50 Hz of a channel (118.008, 118.017) are that
+        // channel; five decimals go in exactly as typed, as on any step
+        if step == 833 && (3..5).contains(&decimals) && f.abs_diff(crate::slot::on_833(f)) <= 50 {
+            return Some(crate::slot::on_833(f));
+        }
+        (decimals >= 5 || decimals >= 3 && f % step == 0).then_some(f)
     }
 
     /// The entry holding exactly f (5 decimals), so OK's path commits it.
@@ -524,7 +530,7 @@ pub(crate) fn tune_vfo(app: &mut App, slot: u8, f: Freq10) {
     s.mem[old] = s.vfo;
     if old != new {
         s.cfg.mode = crate::slot::band_mode(new, region);
-        s.cfg.narrow = s.cfg.mode == 1;
+        s.cfg.narrow = crate::slot::mode_narrow(s.cfg.mode);
         s.cfg.step = crate::slot::band_step(new, region);
         if s.cfg.offset != 0 && !s.cfg.split {
             s.cfg.offset = s.cfg.offset.signum() * crate::slot::band_shift(new, region);

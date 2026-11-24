@@ -336,7 +336,8 @@ impl Radio {
     pub(super) fn param(&mut self, slot: u8, param: Param, value: i32) {
         let Some(s) = self.slots.get_mut(slot as usize) else { return };
         match param {
-            Param::Mode => (s.narrow, s.am) = (value == 1, value == 2),
+            // NFM and NAM narrow, AM and NAM AM (VFO-4.2: NAM is AM through the narrow filter)
+            Param::Mode => (s.narrow, s.am) = (value == 1 || value == 7, value == 2 || value == 7),
             Param::Bandwidth => s.narrow = value == 1,
             Param::Squelch => {
                 // SQL-7.2: the new thresholds straight to the chip holding the slot, without a retune: the audio

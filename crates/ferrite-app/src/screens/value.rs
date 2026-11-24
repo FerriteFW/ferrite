@@ -85,6 +85,7 @@ pub(crate) fn mode_width(name: &[u8]) -> &'static str {
         b"FM" => " \u{b7} 25 kHz",
         b"NFM" => " \u{b7} 12.5 kHz",
         b"WFM" => " \u{b7} broadcast",
+        b"NAM" => " \u{b7} 8.33 kHz", // VFO-4.1, VFO-4.2: the narrow filter, for 8.33 kHz channels
         _ => "",
     }
 }

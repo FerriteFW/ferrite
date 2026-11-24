@@ -1064,7 +1064,13 @@ pub(crate) fn step(app: &mut App, d: i32, big: bool, store: &impl ChannelStore) 
         let step = if big { 100_000 } else { fm_step.unwrap_or(STEPS[s.cfg.step as usize % STEPS.len()].0 as i32) };
         // Plain steps from where it is (146.520 stays on its 5 kHz raster with a 12.5 kHz step); snapping to
         // the step is for typed entry (VFO-12). Kept inside what the chips tune.
-        let f = (s.vfo as i32 + d * step).clamp(mhz(1) as i32 + 80_000, mhz(1300) as i32) as Freq10;
+        // VFO-18.1: the 8.33 kHz step moves channel to channel on its grid (25 kHz / 3), not by a flat 8.330 kHz
+        let to = if !big && fm_step.is_none() && s.cfg.step == crate::slot::STEP_833 {
+            crate::slot::step_833(s.vfo, d) as i32
+        } else {
+            s.vfo as i32 + d * step
+        };
+        let f = to.clamp(mhz(1) as i32 + 80_000, mhz(1300) as i32) as Freq10;
         let from = s.vfo;
         (s.vfo, s.clar) = (f, 0); // VFO-22: a retune clears the clarifier
         s.mem[band_near(f)] = f;
@@ -1107,7 +1113,7 @@ pub(crate) fn group(app: &mut App, d: i32, store: &impl ChannelStore) {
         let nb = (b as i32 + d).rem_euclid(BANDS.len() as i32) as usize;
         s.vfo = s.mem[nb];
         s.cfg.mode = crate::slot::band_mode(nb, region);
-        s.cfg.narrow = s.cfg.mode == 1;
+        s.cfg.narrow = crate::slot::mode_narrow(s.cfg.mode);
         s.cfg.step = crate::slot::band_step(nb, region);
         if s.cfg.offset != 0 && !s.cfg.split {
             s.cfg.offset = s.cfg.offset.signum() * crate::slot::band_shift(nb, region); // a split's TX stays where it is

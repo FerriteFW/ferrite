@@ -361,7 +361,7 @@ fn wfm_mode_and_refusal_match_their_goldens() {
     r.home();
     r.press(Key::Menu).press(Key::Digit(3)).wait(500);
     failures.extend(check("wfm-mode-help", &r.sim.screen_rgb()));
-    r.knob(3).wait(300); // FM, NFM, AM, WFM
+    r.knob(4).wait(300); // FM, NFM, AM, NAM, WFM
     failures.extend(check("wfm-mode-set", &r.sim.screen_rgb()));
     r.home().wait(1500);
     r.sim.key(Key::Ptt(0), true);

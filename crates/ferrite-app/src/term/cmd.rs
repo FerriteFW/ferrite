@@ -783,7 +783,7 @@ fn field<S: ChannelStore>(c: &mut Channel, key: &[u8], v: Option<Tok>, st: &S, t
         17 => (g.split, g.offset) = (true, freq(v, "tx", t)? as i32),
         3 => {
             g.mode = pick(v, &MODES, "mode", t)?; // USB, LSB and CW: HF channels only (check)
-            g.narrow = g.mode == 1; // VFO-20
+            g.narrow = crate::slot::mode_narrow(g.mode); // VFO-20
         }
         // bw= from older dumps: FM and NFM follow it; AM stays AM (VFO-20)
         4 => {
@@ -791,7 +791,7 @@ fn field<S: ChannelStore>(c: &mut Channel, key: &[u8], v: Option<Tok>, st: &S, t
             if g.mode < 2 {
                 g.mode = narrow as u8;
             }
-            g.narrow = g.mode == 1;
+            g.narrow = crate::slot::mode_narrow(g.mode);
         }
         5 => (g.tx_tone, g.rx_tone) = {
             let t = tone(v, "tone", t)?;
@@ -1089,15 +1089,16 @@ fn preset<S: ChannelStore>(st: &S, t: &mut Toks) -> Result<Done, No> {
         if same(k, b"step") {
             p.step = step(v, t)?;
         } else if same(k, b"mode") {
-            p.mode = pick(v, &MODES[..3], "mode", t)?; // a range preset: FM, NFM or AM
-            p.narrow = p.mode == 1; // VFO-20
+            // a range preset: FM, NFM, AM or NAM
+            p.mode = crate::slot::PRESET_MODES[pick(v, &["FM", "NFM", "AM", "NAM"], "mode", t)? as usize];
+            p.narrow = crate::slot::mode_narrow(p.mode); // VFO-20
         } else if same(k, b"bw") {
             // older dumps: FM and NFM follow it
             let narrow = pick(v, &BW, "bw", t)? == 1;
             if p.mode < 2 {
                 p.mode = narrow as u8;
             }
-            p.narrow = p.mode == 1;
+            p.narrow = crate::slot::mode_narrow(p.mode);
         } else if same(k, b"resume") {
             p.resume = resume_val(v, t)?;
         } else {
@@ -2808,8 +2809,8 @@ fn slot<S: ChannelStore>(app: &mut App, st: &S, t: &mut Toks) -> Result<Done, No
     let mut c = crate::slotctl::SlotChange::default();
     while let Some(tok) = t.next()? {
         let Tok::Word(w) = tok else { return Err(t.say_t(USAGE)) };
-        if let Some(m) = ["fm", "nfm", "am", "wfm"].iter().position(|m| same(w, m.as_bytes())) {
-            c.mode = Some(crate::slot::SLOT_MODE_IDS[m]); // BCR-33: wfm is mode 6
+        if let Some(m) = ["fm", "nfm", "am", "nam", "wfm"].iter().position(|m| same(w, m.as_bytes())) {
+            c.mode = Some(crate::slot::SLOT_MODE_IDS[m]); // BCR-33: wfm is mode 6, NAM 7 (VFO-4.2)
         } else if let Some(p) = POWERS.iter().position(|p| same(w, p.as_bytes())) {
             c.power = Some(p as u8);
         } else if same(w, b"vfo") {

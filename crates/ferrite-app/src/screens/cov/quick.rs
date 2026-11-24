@@ -111,5 +111,7 @@ fn mode_editor_shows_widths() {
     t.knob(1);
     t.shows("AM");
     t.knob(1);
+    t.shows("NAM \u{b7} 8.33 kHz"); // VFO-4.1, VFO-4.2
+    t.knob(1);
     t.shows("WFM \u{b7} broadcast");
 }

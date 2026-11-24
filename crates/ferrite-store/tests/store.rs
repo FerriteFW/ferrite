@@ -671,7 +671,7 @@ fn power_cuts_during_the_first_format() {
         n
     };
     assert!(total > 10);
-    let used = [LAYOUT_HEADER, MIGRATE_MARK, SETTINGS, TRIMS, PRESETS, SATELLITES, CHANNELS, ZONES, APRS, CONTACTS, HEARD, MESSAGES, WAYPOINTS, EVENT_LOG, SCRATCH_RING];
+    let used = [LAYOUT_HEADER, MIGRATE_MARK, CRASH_LOG, SETTINGS, TRIMS, PRESETS, SATELLITES, CHANNELS, ZONES, APRS, CONTACTS, HEARD, MESSAGES, WAYPOINTS, EVENT_LOG, SCRATCH_RING];
     let addr = |i: usize| if i < ferrite_store::sim::LOW { i as u32 } else { ferrite_store::sim::HIGH.start + (i - ferrite_store::sim::LOW) as u32 };
     let kept = |i: usize| !used.iter().any(|r| r.contains(&addr(i)));
     assert!(kept(SSB_PATCH.start as usize) && kept(CALIBRATION.start as usize) && kept(MAILBOX.start as usize));

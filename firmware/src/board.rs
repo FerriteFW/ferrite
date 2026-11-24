@@ -179,7 +179,8 @@ pub fn init() {
 }
 
 /// Any fault, stray interrupt or panic: interrupts off first so nothing else runs, then the safe state,
-/// red LED on, and a restart (SAFE-8.1), or a stop after too many in a row.
+/// red LED on, and a restart (SAFE-8.1; one too many in a row is stopped at the start that follows, SAFE-8.3), or
+/// a stop when the stop itself faulted.
 pub fn fault() -> ! {
     fault_at(None)
 }
@@ -190,6 +191,9 @@ pub fn fault_at(pc: Option<u32>) -> ! {
     cortex_m::interrupt::disable();
     safe_state();
     LED_RED.output(LED_ACTIVE_HIGH, Mode::OutPp);
+    // SAFE-8.3: a restart, the third in a row too: the start that follows stops the radio after keeping the record
+    // in the SPI flash, which the fault path never touches (`crate::restart`). Stopped here only when the stop's own
+    // keeping faulted.
     let again = crate::restart::fault(pc);
     crate::bringup::fault(pc, again);
     if again {
@@ -199,11 +203,13 @@ pub fn fault_at(pc: Option<u32>) -> ! {
     stop()
 }
 
-/// SAFE-8.1: one restart too many in a row, found at start-up: the safe state, the red LED, stopped.
+/// SAFE-8.1: one restart too many in a row, found at start-up: the safe state, the red LED, the record kept in the
+/// SPI flash for the next start (SAFE-8.3), stopped.
 pub fn stopped() -> ! {
     cortex_m::interrupt::disable();
     safe_state();
     LED_RED.output(LED_ACTIVE_HIGH, Mode::OutPp);
+    crate::restart::keep();
     crate::bringup::fault(None, false);
     stop()
 }

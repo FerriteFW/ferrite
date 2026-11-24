@@ -17,6 +17,7 @@
 //! RAM: no copy of the channels; one zone byte per channel number (1,000 B) for the lists, built at mount.
 #![cfg_attr(not(feature = "std"), no_std)]
 
+pub mod crash;
 pub mod io;
 pub mod logs;
 pub mod members;

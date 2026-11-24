@@ -563,6 +563,13 @@ pub async fn task() {
     }
     // SAFE-8.2 (decision 364): a start after a fault or a hang says so, on the screen and the cable log.
     match crate::restart::RESTARTED.load(Relaxed) {
+        // SAFE-8.3: a record kept from before this power-on (a safety stop's above all), shown once
+        0 if crate::restart::SHOW_SAVED.load(Relaxed) => {
+            if let Some((_, r)) = crate::restart::SAVED.lock(|c| c.get()) {
+                let head: &[u8] = if r.stopped { b"Radio stopped earlier" } else { b"Radio restarted earlier" };
+                app.notice(head, if r.pcs[0] == crate::restart::HANG { b"after a hang" } else { b"after a fault" });
+            }
+        }
         0 => {}
         r => {
             app.notice(b"Radio restarted", if r == crate::restart::HANG { b"after a hang" } else { b"after a fault" });
@@ -837,6 +844,18 @@ pub async fn task() {
                 listening = listen;
             }
             dev.restart = [crate::restart::RESTARTED.load(Relaxed), crate::restart::IN_A_ROW.load(Relaxed)]; // SAFE-8.2
+            // SAFE-8.3: the record Console hasn't read; once its `restart` line has gone out (LINK-19.6), marked read
+            // in the flash, so the next start doesn't report it (this power-on's readback still shows it)
+            let saved = crate::restart::SAVED.lock(|c| c.get());
+            dev.crash = saved.map(|(_, r)| r);
+            if ferrite_app::uistate::RESTART_READ.swap(false, Relaxed) {
+                if let Some((at, r)) = saved.filter(|&(at, _)| at != 0) {
+                    if store.crash_read(at) {
+                        crate::restart::SAVED.lock(|c| c.set(Some((0, r))));
+                        store::wake(store);
+                    }
+                }
+            }
             // Decision 290: the DSP task frames and sends the audio itself; here only its counters, for the readback.
             {
                 use crate::tasks::dsp::{AUDIO_CLIPS, AUDIO_DROPS, AUDIO_GAIN, AUDIO_MADE, AUDIO_PEAK, AUDIO_WAITS};

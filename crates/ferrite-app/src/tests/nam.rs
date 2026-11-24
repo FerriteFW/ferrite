@@ -118,3 +118,19 @@ fn typed_833_channels_snap() {
         assert_eq!(t.app.slots[0].vfo, want, "{keys:?}");
     }
 }
+
+/// The terminal's and the link's slot change (`slot A nam`, `slot A wfm`) reach every mode: the change is made as
+/// knob steps, which count positions in the mode list, not stored numbers (NAM is 7, WFM 6).
+#[test]
+fn slot_change_reaches_every_mode() {
+    for from in SLOT_MODE_IDS {
+        for to in SLOT_MODE_IDS {
+            let mut t = T::new();
+            t.app.slots[0].vfo = if to == crate::slot::WFM || from == crate::slot::WFM { 9_810_000 } else { MHZ118 };
+            t.app.slots[0].cfg_mut().mode = from;
+            let c = crate::slotctl::SlotChange { mode: Some(to), ..Default::default() };
+            t.app.slot_apply(0, &c, &store()).unwrap();
+            assert_eq!(t.app.slots[0].cfg().mode, to, "from {from} to {to}");
+        }
+    }
+}

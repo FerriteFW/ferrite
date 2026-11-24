@@ -997,6 +997,31 @@ pub enum GpsState {
     Fix,
 }
 
+/// SAFE-8.3 (decision 448): the restarts in a row as the SPI flash keeps them across a power-off (`layout::CRASH_LOG`,
+/// ferrite-store `crash`): written at a restart's start and at a safety stop (SAFE-8.1), never in the fault path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CrashRec {
+    /// The restarts in a row, newest first: 1 a hang (the watchdog), else a fault's address (the high bit set when
+    /// unknown); 0 none. A count past three keeps the newest three.
+    pub pcs: [u32; 3],
+    /// The restarts in a row (SAFE-8.1).
+    pub n: u32,
+    /// Seconds the radio had run before the newest restart.
+    pub up_s: u32,
+    /// The radio stopped (SAFE-8.1) rather than restarted.
+    pub stopped: bool,
+    /// The build that restarted (SELF-5's commit, zero-padded).
+    pub build: [u8; 8],
+}
+
+impl CrashRec {
+    /// The build as text.
+    pub fn build(&self) -> &[u8] {
+        let n = self.build.iter().position(|&b| b == 0).unwrap_or(self.build.len());
+        &self.build[..n]
+    }
+}
+
 /// Radio-wide state the status bar and Status page show, gathered from the GPS, Link and power code.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Device {
@@ -1041,6 +1066,9 @@ pub struct Device {
     /// SAFE-8.2 (decision 364): what this start follows: 0 an ordinary start, 1 a hang (the watchdog), else the
     /// fault's address (the high bit set when unknown); and the restarts in a row. The readback's `restart` line.
     pub restart: [u32; 2],
+    /// SAFE-8.3 (decision 448): the restart record kept in the SPI flash that Console hasn't read yet: this start's,
+    /// or one from before a power-off (a safety stop's above all). The readback's `restart` line shows it.
+    pub crash: Option<CrashRec>,
     /// A speaker mic is in the side connector (SND-12, [`crate::acc`]): the Status page shows it.
     pub spkmic: bool,
     /// This build can transmit (`--features tx`).

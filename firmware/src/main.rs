@@ -224,6 +224,8 @@ fn main() -> ! {
     if !restart::at_start(hal::sys::reset_cause()) {
         board::stopped();
     }
+    restart::keep(); // SAFE-8.3: the record in the SPI flash, or the one from before this power-on found
+
     hal::time::us_init();
     // Transmit (in the tx build) also needs the expected MCU; receive runs regardless.
     let _mcu_ok = hal::sys::idcode() == chipid::EXPECTED_PID;
@@ -265,7 +267,9 @@ fn run_thread_executor(init: impl FnOnce(Spawner)) -> ! {
         unsafe { executor.poll() };
         THREAD_CYCLES.fetch_add(hal::time::cycles().wrapping_sub(c0), Relaxed); // SELF-9.4 (interrupts in it too)
         hal::wdt::feed();
-        if !settled && embassy_time::Instant::now().as_millis() >= restart::SETTLED_MS {
+        let now = embassy_time::Instant::now();
+        restart::alive(now.as_ticks() as u32); // SAFE-8.3: the uptime a hang's record gives
+        if !settled && now.as_millis() >= restart::SETTLED_MS {
             restart::settled();
             settled = true;
         }

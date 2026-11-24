@@ -276,15 +276,15 @@ def channel_edges_over_the_terminal(t):
 
 
 # VFO-2's band table as the UI shows it (slot.rs BANDS): a frequency in each band, its name and default mode
-# (wide FM in the Americas, AU and NZ; NFM elsewhere; AM on HF and airband).
-BAND_CASES = [("21.2", "HF", "AM"), ("28.4", "HF", "AM"), ("51.0", "6 m", "FM"), ("121.5", "Airband", "AM"),
+# (wide FM in the Americas, AU and NZ; NFM elsewhere; AM on HF, NAM on the airband, VFO-4.2).
+BAND_CASES = [("21.2", "HF", "AM"), ("28.4", "HF", "AM"), ("51.0", "6 m", "FM"), ("121.5", "Airband", "NAM"),
               ("146.52", "VHF", "FM"), ("156.8", "Marine", "FM"), ("223.5", "1.25 m", "FM"), ("446.0", "UHF", "FM")]
 
 
-@test("VFO-2", "VFO-4", "SETUP-7", pages=("Home", "Quick"))
+@test("VFO-2", "VFO-4", "VFO-4.2", "SETUP-7", pages=("Home", "Quick"))
 def band_follows_the_frequency(t):
     """The band comes from the frequency by a fixed table: tuning A into each band gives its name in the card's
-    header and its default mode (FM, NFM or AM only), and the power chip its level; the same frequency always gives
+    header and its default mode (FM, NFM, AM or NAM), and the power chip its level; the same frequency always gives
     the same band."""
     region = t.get("0 9 4")
     wide = region in ("USA", "Canada", "Americas", "Australia", "New Zealand", "US", "AU", "NZ")
@@ -293,7 +293,7 @@ def band_follows_the_frequency(t):
         u = t.ui()
         a = u.active
         t.eq(a["head"], f"VFO · {band}", f"{f} MHz: the band")
-        want = mode if mode == "AM" or wide else "NFM"
+        want = mode if mode in ("AM", "NAM") or wide else "NFM"
         t.eq(a["mode"], want, f"{f} MHz: the band's mode ({region})")
         want = "LOW"
         t.check(a["power"] in (want, "No TX"), f"{f} MHz: the power chip ({want}, or No TX where it can't transmit)",
@@ -305,8 +305,8 @@ def band_follows_the_frequency(t):
     u = t.keys("MENU 3")
     t.eq(u.sel and u.sel["name"], "Mode", "MENU 3")
     seen = []
-    for _ in range(5):
+    for _ in range(6):
         seen.append(u.sel["value"])
         u = t.knob(+1)
-    t.eq(sorted(set(seen)), ["AM", "FM", "NFM", "WFM"], f"the knob goes round FM, NFM, AM and WFM (BCR-33) ({seen})")
+    t.eq(sorted(set(seen)), ["AM", "FM", "NAM", "NFM", "WFM"], f"the knob goes round FM, NFM, AM, NAM and WFM (BCR-33, VFO-4.2) ({seen})")
     tune(t)

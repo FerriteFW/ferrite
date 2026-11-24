@@ -1621,3 +1621,33 @@ fn hash_on_a_range_scan_hit_skips_it_in_the_preset() {
     t.app.stop_scan(a, &t.s);
     assert_eq!(t.app.range_scan, None, "a stopped scan's hits go to no preset");
 }
+
+/// MENU-12.1 (ferrite#135): a group's row shows its setting's live value, not the menu table's text: changing the
+/// setting under it changes the row, and the dot follows.
+#[test]
+fn group_rows_show_live_values() {
+    use crate::screens::groups::{change, wired};
+    let mut t = T::new();
+    let dev = Device::default();
+    let val = |t: &T, p: &[u8]| {
+        let mut b = ferrite_ui::text::Buf::<24>::new(); // a fresh buffer per call, as the menu draws
+        let d = wired(&t.app, &dev, p, &mut b);
+        (d, b.as_bytes().to_vec())
+    };
+    for (g, item) in [([3u8, 1], [3u8, 1, 1]), ([4, 5], [4, 5, 1]), ([7, 3], [7, 3, 1]), ([7, 5], [7, 5, 1]), ([8, 5], [8, 5, 3])] {
+        let (d, before) = val(&t, &g);
+        assert_eq!(d, Some(false), "{g:?} at its default");
+        change(&mut t.app, &item, 1);
+        let (d, after) = val(&t, &g);
+        assert_eq!(d, Some(true), "{g:?}: the dot after a change");
+        assert_eq!(after, val(&t, &item).1, "{g:?} shows {item:?}'s value");
+        assert_ne!(after, before, "{g:?} changed with its setting");
+    }
+    // 0 1 5: the scan's skip count, from the store (the test store holds some)
+    let n = t.s.data().skips();
+    assert!(n > 1);
+    let grp = crate::screens::groups::Group { g: 1, sub: 0, row: 255 };
+    let (name, v, _, _) = grp.row(&t.app, &dev, &t.s, 4);
+    assert_eq!(name, "Skip list");
+    assert_eq!(v.as_bytes(), std::format!("{n} skipped").as_bytes());
+}

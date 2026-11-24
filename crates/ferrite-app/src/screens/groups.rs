@@ -927,6 +927,12 @@ pub(crate) fn wired(app: &App, dev: &Device, p: &[u8], b: &mut Buf<24>) -> Optio
         // A group's row shows its list's first setting.
         [7, 4] => return wired(app, dev, &[7, 4, 1], b),
         [8, 2] => return wired(app, dev, &[8, 2, 1], b),
+        // MENU-12.1 (ferrite#135): these showed the table's text whatever the setting
+        [3, 1] => return wired(app, dev, &[3, 1, 1], b),
+        [4, 5] => return wired(app, dev, &[4, 5, 1], b),
+        [7, 3] => return wired(app, dev, &[7, 3, 1], b),
+        [7, 5] => return wired(app, dev, &[7, 5, 1], b),
+        [8, 5] => return wired(app, dev, &[8, 5, 3], b), // Dialer and Memories have no value: the speed
         [7, 4, 2] => {
             let _ = uwrite!(b, "{}", s.brightness());
             let mut d = Settings::DEFAULT;
@@ -1410,6 +1416,13 @@ impl Group {
                         1 => v.set(b"1 preset"),
                         n => {
                             let _ = uwrite!(v, "{} presets", n);
+                        }
+                    },
+                    // MENU-12.1 (ferrite#135): the scan's skips, not the table's "Empty"
+                    [1, 5] => match store.data().skips() {
+                        0 => v.set(b"Empty"),
+                        n => {
+                            let _ = uwrite!(v, "{} skipped", n);
                         }
                     },
                     [4, 1] if app.log_unread > 0 => {

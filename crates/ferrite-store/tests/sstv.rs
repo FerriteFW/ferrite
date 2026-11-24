@@ -229,3 +229,96 @@ fn readback_says_what_the_sstv_screen_shows() {
     let t = sstv_line(&a, &st);
     assert!(t.contains("page=\"send\" send=\"Martin M1\""), "{t}");
 }
+
+/// The SSTV screen's three lines under the picture (SSTV-3), as text.
+fn info(a: &App, st: &Store) -> [String; 3] {
+    use ferrite_ui::text::Buf;
+    let (mut l1, mut l2, mut l3) = (Buf::<40>::new(), Buf::<40>::new(), Buf::<40>::new());
+    ferrite_app::screens::sstv::Sstv::info(a, st, None, &mut l1, &mut l2, &mut l3);
+    [l1, l2, l3].map(|l| String::from_utf8_lossy(l.as_bytes()).into_owned())
+}
+
+/// SSTV-2.5, SSTV-3, SSTV-3.1 (issue 181): # picks the receive mode and the screen says so: Robot 36, Martin M1,
+/// Scottie S1, PD90, PD120, then Auto, each press the next; the mode picked waits for its sync ("waiting for sync",
+/// no picture yet) and stays picked while it waits; a pick # leaves before its sync gives no toast and no picture
+/// (the older pictures stay); a picked mode's picture ends back on Auto. Every line fits the screen's 224 px.
+#[test]
+fn hash_picks_the_receive_mode() {
+    use ferrite_core::keys::Key;
+    use ferrite_ui::assets::{UI_12, UI_12B};
+    use ferrite_ui::gfx::text4_width;
+    let st = mount();
+    let mut a = app();
+    let mut t = 1000;
+    let mut press = |a: &mut App, k: Key| {
+        a.key_down(k, t, &st);
+        a.key_up(k, t + 50, &st);
+        t += 200;
+    };
+    for k in [Key::Menu, Key::Digit(0), Key::Digit(3), Key::Digit(7)] {
+        press(&mut a, k);
+    }
+    a.sstv_prepare(&st);
+    // a picture received first (slot 1), so a pick # leaves has one to keep
+    let c = decoded(8);
+    for (ev, px) in c.0.iter().zip(&c.1) {
+        a.sstv_event(*ev, px, &st);
+    }
+    assert_eq!(a.sstv.view, 1);
+    let fits = |l: &[String; 3]| {
+        assert!(text4_width(l[0].as_bytes(), &UI_12B) <= 216, "{l:?}");
+        assert!(text4_width(l[1].as_bytes(), &UI_12) <= 216 && text4_width(l[2].as_bytes(), &UI_12) <= 216, "{l:?}");
+    };
+    let l = info(&a, &st);
+    assert!(l[2].starts_with("Listening on A, "), "before # the slot listened on: {l:?}");
+    // # Robot 36: the decoder told (the UI task passes `force` on), the line says it; the decoder starts the
+    // picture waiting for its sync
+    press(&mut a, Key::Hash);
+    assert_eq!(a.sstv.force.take(), Some(8));
+    a.sstv_event(Event::Start(8), &[0; WIDTH], &st);
+    let l = info(&a, &st);
+    fits(&l);
+    assert_eq!(l[0], "Robot 36, waiting for sync", "{l:?}");
+    assert!(l[1].starts_with("Listening on A, "), "{l:?}");
+    assert_eq!(l[2], "Mode: Robot 36 (# next)");
+    assert!(sstv_line(&a, &st).contains(" forced=\"Robot 36\""));
+    // # again: Martin M1; the Robot 36 wait the decoder ends has no lines: no toast, no picture, the older one shown
+    press(&mut a, Key::Hash);
+    assert_eq!(a.sstv.force.take(), Some(44));
+    a.sstv_event(Event::End(false), &[0; WIDTH], &st);
+    let lost = |a: &App| readback(a, &st).iter().any(|l| l.contains("Signal lost"));
+    assert!(!lost(&a), "no \"Signal lost\" for a wait that never started");
+    assert_eq!(headers(&st)[2], None, "the wait's slot erased again");
+    assert_eq!(a.sstv.view, 1, "the picture received shown again");
+    a.sstv_event(Event::Start(44), &[0; WIDTH], &st);
+    let l = info(&a, &st);
+    assert_eq!((l[0].as_str(), l[2].as_str()), ("Martin M1, waiting for sync", "Mode: Martin M1 (# next)"));
+    assert_eq!(headers(&st)[1].map(|h| h.vis), Some(8), "the older picture kept");
+    // on through the others to Auto (the decoder stopped: VIS again)
+    for (vis, name) in [(60, "Scottie S1"), (99, "PD90"), (95, "PD120")] {
+        press(&mut a, Key::Hash);
+        assert_eq!(a.sstv.force.take(), Some(vis));
+        a.sstv_event(Event::End(false), &[0; WIDTH], &st);
+        a.sstv_event(Event::Start(vis), &[0; WIDTH], &st);
+        let l = info(&a, &st);
+        fits(&l);
+        assert_eq!(l[2], format!("Mode: {name} (# next)"));
+        assert_eq!(l[0], format!("{name}, waiting for sync"));
+    }
+    press(&mut a, Key::Hash);
+    assert_eq!(a.sstv.force.take(), Some(0), "Auto: the decoder stopped");
+    a.sstv_event(Event::End(false), &[0; WIDTH], &st);
+    assert!(!lost(&a));
+    let l = info(&a, &st);
+    assert_eq!(l[2], "Mode: Auto (# next)");
+    assert!(!sstv_line(&a, &st).contains("forced"));
+    // # Robot 36 and a picture in that mode: it ends back on Auto, saved with its toast
+    press(&mut a, Key::Hash);
+    assert_eq!(a.sstv.force.take(), Some(8));
+    for (ev, px) in c.0.iter().zip(&c.1) {
+        a.sstv_event(*ev, px, &st);
+    }
+    assert_eq!(a.sstv.forced_vis(), None);
+    assert_eq!(info(&a, &st)[2], "Mode: Auto (# next)");
+    assert!(readback(&a, &st).iter().any(|l| l == "toast \"Picture saved\" \"Robot 36\""), "{:?}", readback(&a, &st));
+}

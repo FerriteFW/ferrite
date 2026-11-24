@@ -184,3 +184,39 @@ fn toast_measure() {
     let long = b"Squelch level 9 now set";
     assert!(toast_fits(long, b"", false) || !toast_fits(long, b"", true));
 }
+
+/// HOME-9, SSTV-2.4, SSTV-2.5, SSTV-5.1: the SSTV toasts are built at run time (the mode's name, the seconds), so
+/// the scan above can't see them: every mode's, received (saved or the signal lost) and sent (or stopped), and every
+/// "Too long" a transmit timeout can give, fit one line and their buffers.
+#[test]
+fn sstv_toasts_fit_for_every_mode() {
+    use ferrite_app::sstv::{end_toast, mode_secs, sent_toast, too_long_body, FORCE_MODES, SEND_MODES};
+    let mut bad = Vec::new();
+    let mut check = |h: &[u8], b: &[u8]| {
+        if !toast_fits(h, b, false) || h.len() > HEAD_MAX || b.len() > BODY_MAX || b.is_empty() {
+            bad.push(format!("\"{}\" / \"{}\"", String::from_utf8_lossy(h), String::from_utf8_lossy(b)));
+        }
+    };
+    for &vis in FORCE_MODES.iter().chain(&SEND_MODES) {
+        for whole in [false, true] {
+            let (h, b) = end_toast(vis, whole);
+            check(h, b);
+            let (h, b) = sent_toast(vis, whole);
+            check(h, b);
+        }
+    }
+    for &vis in &SEND_MODES {
+        for limit in (1..=20).map(|k| k * 30) {
+            let secs = mode_secs(vis);
+            if secs > limit {
+                // the body as built, and as it would be had the Buf cut it (its length is the check)
+                let mut s = String::new();
+                use std::fmt::Write;
+                let _ = write!(s, "{} s, timeout {} s", secs, limit);
+                assert_eq!(s.as_bytes(), too_long_body(secs, limit).as_bytes(), "cut");
+                check(b"Too long", s.as_bytes());
+            }
+        }
+    }
+    assert!(bad.is_empty(), "SSTV toasts that don't fit one line (HOME-9):\n{}", bad.join("\n"));
+}

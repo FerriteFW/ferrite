@@ -133,15 +133,16 @@ pub(crate) fn render(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelSt
     let rssi = live.slots[a as usize].rssi;
     let lit = if rx { ((w::meter_level(rssi) as u32 * BLOCKS as u32).div_ceil(w::METER_SEGS as u32)) as i32 } else { 0 };
     let secs = if keyed { app.now.wrapping_sub(app.radio.t0) / 1000 } else { 0 };
-    if app.dirty(R_SUB, Mix::new().h(&keyed).h(&rx).h(&lit).h(&secs).get()) || drew {
+    // the S text as well as the blocks: S7 and S8 can light the same blocks
+    let st = if rx { w::s_text(rssi) } else { Buf::new() };
+    if app.dirty(R_SUB, Mix::new().h(&keyed).h(&rx).h(&lit).h(&secs).b(st.as_bytes()).get()) || drew {
         lcd.fill(SIDE_W, SUB.0, 240 - 2 * SIDE_W, SUB.1 - SUB.0, LP_BLACK);
         let mut t = Buf::<8>::new();
         let (text, c) = if keyed {
             super::activity::mmss(secs, &mut t);
             (t.as_bytes(), LP_RED)
         } else if rx {
-            t.set(w::s_text(rssi).as_bytes());
-            (t.as_bytes(), LP_GREEN)
+            (st.as_bytes(), LP_GREEN)
         } else {
             (b"Quiet".as_slice(), LP_DIM)
         };
@@ -191,8 +192,12 @@ pub(crate) fn render(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelSt
         _ => home,
     };
     let toast = app.toast_shown();
-    if app.dirty(R_LINE, Mix::new().any(&hints.as_slice()).h(&toast).get()) && !toast {
-        lcd.fill(0, BOTTOM_Y, 240, 320 - BOTTOM_Y, LP_AMBER);
+    let line = app.dirty(R_LINE, Mix::new().any(&hints.as_slice()).h(&toast).get());
+    if line {
+        // a toast covers the hint bar's rows only: the band's top rows stay amber above it
+        lcd.fill(0, BOTTOM_Y, 240, if toast { w::HINT_Y } else { 320 } - BOTTOM_Y, LP_AMBER);
+    }
+    if line && !toast {
         let items = hints.as_slice();
         let n = items.len();
         let colours = (LP_BLACK, LP_BLACK, LP_AMBER);

@@ -552,23 +552,30 @@ impl View for Transmit {
             }
         }
         // The other slots, one row each in their fixed places: watched ones pause while transmitting (TX-34).
-        if app.dirty(9, Mix::new().h(&s).h(&app.watch).get()) {
+        // Each row's text in the key too: a slot can retune while another transmits (broadcast FM's station).
+        fn row(app: &App, o: u8) -> Buf<40> {
+            let sl = app.slot(o);
+            let mut t = Buf::<40>::new();
+            t.push(w::freq3(sl.freq()).as_bytes());
+            t.push(" \u{b7} ".as_bytes());
+            match sl.ch.filter(|_| sl.on_channel()) {
+                Some(c) => t.push(c.name()),
+                None => t.push(band_name(sl.freq()).as_bytes()),
+            }
+            t
+        }
+        let mut key = Mix::new().h(&s).h(&app.watch_mask());
+        for o in (0..SLOTS as u8).filter(|&o| o != s) {
+            key = key.b(row(app, o).as_bytes());
+        }
+        if app.dirty(9, key.get()) {
             for o in (0..SLOTS as u8).filter(|&o| o != s) {
                 let (by, bh) = place(s, o);
                 ferrite_ui::canvas::banded(lcd, 6, by, 228, bh, BG, |lcd| {
                     lcd.frame_r(6, by, 228, bh, 3, LINE);
                     let ry = by + 3;
                     w::badge(lcd, 12, ry + 2, o, false, BG);
-                    let sl = app.slot(o);
-                    let mut t = Buf::<40>::new();
-                    t.push(w::freq3(sl.freq()).as_bytes());
-                    if let Some(c) = sl.ch.filter(|_| sl.on_channel()) {
-                        t.push(" \u{b7} ".as_bytes());
-                        t.push(c.name());
-                    } else {
-                        t.push(" \u{b7} ".as_bytes());
-                        t.push(band_name(sl.freq()).as_bytes());
-                    }
+                    let t = row(app, o);
                     // a long channel name cut on purpose, to the room the state leaves
                     w::field(lcd, 32, 152, ry, ry + 17, ry + 13, w::fit(t.as_bytes(), &UI_12, 152), const { &w::st(&UI_12, DIM, BG, Align::Left) });
                     let watched = app.watch_mask() & 1 << o != 0;
@@ -657,10 +664,6 @@ impl View for TxRefused {
     }
 
     fn render(self, app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
-        if !app.dirty(1, Mix::new().any(&self).get()) {
-            return;
-        }
-        lcd.fill(0, w::SBAR_H, 240, w::HINT_Y - w::SBAR_H, BG);
         let f = tx_freq(app, self.slot);
         let mut a = Buf::<96>::new();
         let mut more: &[u8] = b"";
@@ -751,10 +754,17 @@ impl View for TxRefused {
                 more = b"It transmits again in a few minutes. (TX-31)";
             }
         }
+        // Keyed on its text, not only the refusal: the frequency can move while it's up (broadcast FM's station).
+        let fx = fix(app, self.why);
+        let (path, name) = fx.map_or(("", ""), |(p, n, _)| (p, n));
+        if !app.dirty(1, Mix::new().any(&self).b(a.as_bytes()).b(more).b(path.as_bytes()).b(name.as_bytes()).get()) {
+            return;
+        }
+        lcd.fill(0, w::SBAR_H, 240, w::HINT_Y - w::SBAR_H, BG);
         // The dialog sized to its text: title, the reason, what fixes it, the path.
         let n = parts::lines(a.as_bytes(), &UI_12, 204, 4);
         let m = parts::lines(more, &UI_12, 204, 2);
-        let fixes = fix(app, self.why).is_some();
+        let fixes = fx.is_some();
         let h = 38 + 17 * n + if m > 0 { 15 * m + 4 } else { 0 } + if fixes { 26 } else { 0 };
         let y = 150 - h / 2;
         parts::dialog(lcd, y, h, b"Can't transmit", RED);
@@ -764,7 +774,7 @@ impl View for TxRefused {
             wrap(lcd, 19, 204, ty, 15, m, more, &UI_12, SUB, SURFACE);
             ty += 15 * m - 8;
         }
-        if let Some((path, name, _)) = fix(app, self.why) {
+        if fixes {
             let wd = parts::path_chip(lcd, 19, ty, path.as_bytes(), SURFACE);
             lcd.text4_rows(19 + wd + 6, ty + 13, name.as_bytes(), &UI_12, TEXT, SURFACE, ty, ty + 18);
         }

@@ -246,7 +246,7 @@ fn shrink(mut steps: Vec<Step>, want: &str) -> Vec<Step> {
 
 /// Seeds whose sessions found a bug not fixed yet: left out of the runs above (the bug would end the session before
 /// it reached anything else) and kept as the `found_*` tests below, ignored until fixed. Shrink this list.
-const FOUND: &[u64] = &[1002, 2001, 2002, 3001, 3004, 5002];
+const FOUND: &[u64] = &[];
 
 fn monkey(first: u64, count: u64) {
     let only: Option<u64> = std::env::var("FERRITE_MONKEY_SEED").ok().map(|s| s.parse().expect("a seed number"));
@@ -304,13 +304,11 @@ fn found(steps: &[Step]) {
 use Step::*;
 
 #[test]
-#[ignore = "found: DISP-31, the battery going low (Low Power Mode's Auto) leaves home stale: a card mark at x 23-31, y 198-209, later rows 294-299 (seeds 3004, 3001, 5002)"]
 fn found_home_stale_after_battery_low() {
     found(&[Tap(Key::Hash), Knob(3), Tap(Key::Left), Event(ferrite_sim::simcore::Event::Battery), Wait(100), Wait(4000)]);
 }
 
 #[test]
-#[ignore = "found: DISP-31, the transmit screen's header (x 39-73, y 32-40) stale when broadcast FM retunes under a PTT B key-up after a power cycle (seed 2001)"]
 fn found_transmit_header_after_fm_retune() {
     use ferrite_sim::simcore::Event as E;
     let d = |n| Tap(Key::Digit(n));
@@ -318,14 +316,12 @@ fn found_transmit_header_after_fm_retune() {
 }
 
 #[test]
-#[ignore = "found: DISP-31, the TX refused dialog (y 119-147) stale when broadcast FM retunes during a refused key-up (seed 2002)"]
 fn found_tx_refused_dialog_after_fm_retune() {
     use ferrite_sim::simcore::Event as E;
     found(&[Event(E::PowerSwitch), Hold(Key::Digit(1)), Knob(3), Event(E::PowerSwitch), Event(E::FmStation), Down(0), Event(E::FmStation)]);
 }
 
 #[test]
-#[ignore = "found: DISP-31, a home card's mark (x 23-31, y 198-209) stale after the crossband repeater and hold BACK, slot C on a weather channel (seed 1002)"]
 fn found_home_card_mark_after_crossband() {
     use ferrite_sim::simcore::Event as E;
     let k = Key::Digit;

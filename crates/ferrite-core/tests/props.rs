@@ -368,13 +368,12 @@ fn watch_random_streams_keep_the_rules() {
     assert!(checked > 100_000, "the sequences reach the turn check: {checked}");
 }
 
-/// SCAN-21 says an APRS priority slot keeps its turns beside the active slot's range scan, and WATCH-17.2 that C is
-/// never deaf longer than 70 ms beside the active slot. But the scan's 1 s turn of the receive path is skipped only
-/// while the other chip is on C itself (`scan_dwell`): when C shares that chip with a watched slot and the chip is
-/// on that slot, the scan keeps the path 1 s and C is deaf about 1.1 s, long enough to miss a packet. E.g. A on
-/// 146.52 and C (APRS mode) on chip 0, B active on 446.00 scanning on chip 1, nothing on the air.
+/// SCAN-21 and WATCH-17.2 (decision 450): an APRS priority slot keeps its turns beside the active slot's range
+/// scan, never deaf longer than its limit, whichever slot its chip is on now. Found here when the scan's 1 s turn
+/// was skipped only while the other chip was on C itself: C sharing its chip with a watched slot, the chip on that
+/// slot, was deaf about 1.1 s. E.g. A on 146.52 and C (APRS mode) on chip 0, B active on 446.00 scanning on chip 1,
+/// nothing on the air.
 #[test]
-#[ignore = "found: APRS C deaf ~1.1 s when it shares its chip with a watched slot beside the active slot's range scan (SCAN-21, WATCH-17.2)"]
 fn watch_priority_slot_keeps_its_turns_beside_a_scan() {
     use watch::Ev::*;
     let evs = [Aprs(2), Active(1), Scan(true), Wait(500)];

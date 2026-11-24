@@ -221,7 +221,8 @@ impl View for Tones {
             }
             (Key::Hash, Short) if self.row >= 2 => set_ch(app, self.row, 0), // Global
             (Key::Digit(d), Short) if self.row < 2 => {
-                if s.nt >= 4 || app.now.wrapping_sub(s.at) > TYPE_MS {
+                // nt 0: a new number (▲▼ and ◀▶ start one; the old digits stayed and overflowed: found by fuzzing)
+                if s.nt == 0 || s.nt >= 4 || app.now.wrapping_sub(s.at) > TYPE_MS {
                     (s.typed, s.nt) = (0, 0);
                 }
                 (s.typed, s.nt, s.at) = (s.typed * 10 + d as u16, s.nt + 1, app.now);

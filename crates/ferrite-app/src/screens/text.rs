@@ -458,6 +458,10 @@ fn keep(to: TextFor, app: &mut App, store: &impl ChannelStore) {
     app.back();
 }
 
+/// Any keys on text entry and Compose, and the word lookup (ferrite-fuzzkit).
+#[cfg(test)]
+mod fuzz;
+
 #[cfg(test)]
 mod tests {
     use super::*;

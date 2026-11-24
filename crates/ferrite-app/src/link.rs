@@ -1265,7 +1265,8 @@ fn data_write<S: ChannelStore>(st: &S, p: &[u8], o: &mut Out) -> (Status, bool) 
         [PROGRAM, a0, a1, a2, a3, bytes @ ..] => {
             let addr = le32(&[*a0, *a1, *a2, *a3]);
             let n = bytes.len();
-            if n == 0 || n > PROGRAM_MAX || addr / PAGE != (addr + n as u32 - 1) / PAGE {
+            // the last byte's address checked: near the top of the address space it overflowed (found by fuzzing)
+            if n == 0 || n > PROGRAM_MAX || addr.checked_add(n as u32 - 1).is_none_or(|end| addr / PAGE != end / PAGE) {
                 return (Status::BadArg, false);
             }
             if !allowed(addr, n as u32) || !ferrite_core::layout::writable(addr, n as u32) || stores_own(addr, n as u32) {

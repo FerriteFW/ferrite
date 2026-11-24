@@ -1,0 +1,2 @@
+# fuzz bk4829_readings, case 0: the frequency read back overflowed (bk4829 freq())
+9c

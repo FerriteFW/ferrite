@@ -866,3 +866,6 @@ pub(crate) fn digits(mut n: u32, d: &mut [u8; 10]) -> &[u8] {
 mod tests;
 #[cfg(test)]
 mod tests_line;
+/// The command line and the keystrokes fuzzed (ferrite-fuzzkit).
+#[cfg(test)]
+mod tests_fuzz;

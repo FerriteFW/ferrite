@@ -47,6 +47,25 @@ fn modes_and_kinds() {
     t.shows("No tone");
 }
 
+/// TONE-15: ▲▼ or ◀▶ between digits starts a new number: the digits typed before don't carry on into it (four
+/// typed, a row down and back, then one more overflowed: found by fuzzing).
+#[test]
+fn a_new_row_starts_a_new_number() {
+    let mut t = T::new();
+    open(&mut t);
+    t.tap(Key::Right); // CTCSS
+    for d in [9, 9, 9, 9] {
+        t.tap(Key::Digit(d));
+    }
+    t.tap(Key::Down);
+    t.tap(Key::Up);
+    t.tap(Key::Digit(1));
+    t.shows("Typed 1");
+    t.tap(Key::Right);
+    t.tap(Key::Digit(2));
+    t.shows("Typed 2");
+}
+
 /// TONE-15: typed digits on DCS are octal; past three, they start again.
 #[test]
 fn typed_dcs_limits() {

@@ -29,6 +29,9 @@ uaprs.workspace = true # smart beaconing (APRS-24)
 
 [dev-dependencies]
 ferrite-ui = { workspace = true, features = ["std", "clipcheck"] }
+ferrite-fuzzkit.workspace = true
+uafsk.workspace = true
+ufx25.workspace = true
 
 [lints]
 workspace = true

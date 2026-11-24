@@ -302,6 +302,20 @@ pub fn mic_amp_percent(amp: u16) -> u8 {
     MIC_AMP_STEPS.iter().take_while(|&&t| amp >= t).count() as u8 * 5
 }
 
+/// TX-12.5 (ferrite#180): the mic meter with the gain applied. REG_64 reads the mic before the gain stages (black
+/// with a speaker mic, Nov 24, 2026: 108-112 silent at Mic gain 1, 8 and 12 while the noise on air rose 22 dB), so
+/// the meter adds the key-up's gain against the scale's own (decision 431's calibration, Mic gain 9: REG_7D 0x3F,
+/// REG_2C [`crate::vox::PRE_STOCK`]): half a dB a REG_7D count, about 1 dB a REG_2C count. Silence stays empty: a
+/// reading at the floor shows nothing at any gain (else a high gain lit half the bar with no one speaking).
+pub fn mic_meter(amp: u16, mic: u8, pre: u8) -> u8 {
+    let steps = MIC_AMP_STEPS.iter().take_while(|&&t| amp >= t).count() as i32;
+    if steps == 0 {
+        return 0;
+    }
+    let half_db = (mic as i32 - 0x3F) + 2 * (pre as i32 - crate::vox::PRE_STOCK as i32);
+    ((2 * steps + half_db).div_euclid(2).clamp(0, 20) * 5) as u8
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -390,6 +404,21 @@ mod tests {
         assert_eq!(mic_amp_percent(263), 35, "normal speech's median: 7 dB");
         assert_eq!(mic_amp_percent(1100), 100);
         assert_eq!(mic_amp_percent(0xFFFF), 100, "past full scale: full");
+        // TX-12.5: the gain applied moves it; Mic gain 9 (0x3F, 34) is the scale's own; silence stays empty
+        use crate::vox::{mic_reg_for, PRE_STOCK};
+        let at = |amp, g| {
+            let (m, p) = mic_reg_for(g, false);
+            super::mic_meter(amp, m, p)
+        };
+        assert_eq!(at(263, 9), mic_amp_percent(263), "at 9 as before");
+        assert_eq!(at(263, 12), 35 + 8 * 5, "12: 8 dB more (REG_7D at its top, REG_2C 42 against 34)");
+        assert_eq!(at(263, 8), 35 - 15, "8: 2.5 dB less, rounded down");
+        assert_eq!(at(263, 1), 0, "1: 20 dB less, empty");
+        for g in [1, 8, 9, 12] {
+            assert_eq!(at(112, g), 0, "the quiet floor stays empty at gain {g}");
+        }
+        assert_eq!(at(1100, 12), 100, "full stays full");
+        assert_eq!(super::mic_meter(263, 0x3F, PRE_STOCK), 35);
     }
 
     /// TONE-18: tail elimination as stock: 55 Hz with no sub-tone, the phase shift on CTCSS, the DCS turn-off

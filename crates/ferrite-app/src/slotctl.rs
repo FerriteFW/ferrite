@@ -26,7 +26,7 @@ use ferrite_core::msg::{RadioCmd, SLOTS};
 pub struct SlotChange {
     /// The VFO's frequency (10 Hz).
     pub freq: Option<Freq10>,
-    /// FM, NFM, AM (0-2).
+    /// FM, NFM, AM, WFM, NAM (0, 1, 2, 6, 7: CHAN-23).
     pub mode: Option<u8>,
     /// Low, mid, high (0-2).
     pub power: Option<u8>,
@@ -114,7 +114,7 @@ impl App {
             return Err("no such slot: A, B or C");
         }
         if ch.mode.is_some_and(|m| !crate::slot::slot_mode_ok(m)) {
-            return Err("mode: fm, nfm, am or wfm");
+            return Err("mode: fm, nfm, am, nam or wfm");
         }
         if ch.power.is_some_and(|p| p > 2) {
             return Err("power: low, mid or high");
@@ -172,7 +172,9 @@ impl App {
             entry::tune_vfo(self, s, f);
         }
         if let Some(m) = ch.mode {
-            let d = m as i32 - self.slots[s as usize].cfg().mode as i32;
+            // the knob's steps are positions in SLOT_MODE_IDS, not stored numbers (WFM is 6, NAM 7)
+            let at = |m: u8| crate::slot::SLOT_MODE_IDS.iter().position(|&x| x == m).unwrap_or(0) as i32;
+            let d = at(m) - at(self.slots[s as usize].cfg().mode);
             self.change(Item::Mode, d);
         }
         if let Some(p) = ch.power {

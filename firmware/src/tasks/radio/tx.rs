@@ -217,6 +217,15 @@ impl Radio {
             let dev = (t.eq != ferrite_core::txeq::Eq::Off).then(|| t.eq.deviation());
             self.tx.test_extra = Some((n, radio_chip::tx_test_extra(&mut self.chip(n), t.bypass, t.eq.mic_steps(), dev)));
         }
+        // TERM-42.3: the bench's held registers over the transmit set-up too, last, so a transmit-side register can
+        // be pinned for a whole key-up (the mic boost search, Nov 23, 2026); the unkey's retune writes them again.
+        #[cfg(feature = "bench")]
+        {
+            let holds = self.holds;
+            for (r, v) in holds.into_iter().filter(|h| h.0 != 0) {
+                self.chip(n).write(r, v);
+            }
+        }
         self.tx.pa = pa;
         self.tx.fault = false;
         let mic_src = self.mic_route(); // SND-12.7: the PTT pressed picks the mic

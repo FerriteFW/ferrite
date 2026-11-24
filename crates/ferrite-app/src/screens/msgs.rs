@@ -32,6 +32,16 @@ pub struct Msgs {
 
 const ALL: fn(u16) -> bool = |_| true;
 
+/// The stored message at list row `sel`: the messages to everyone come first (APRS-6.4), then the stored ones.
+fn msg_index(sel: u16, d: &dyn crate::data::Data) -> Option<u16> {
+    sel.checked_sub(d.notices())
+}
+
+/// The message to everyone at list row `sel`, when it is one (APRS-6.4).
+fn notice_at(sel: u16, d: &dyn crate::data::Data) -> Option<crate::data::Notice> {
+    (sel < d.notices()).then(|| d.notice(sel)).flatten()
+}
+
 /// `tries`: how often a message is tried in all now (APRS-13.6), for "try 2/5".
 fn state_text(m: &Message, tries: u8, b: &mut Buf<16>) -> u16 {
     b.clear();
@@ -95,9 +105,10 @@ fn compose(app: &mut App, store: &impl ChannelStore, to: &[u8]) {
 pub(crate) fn stop_or_resend(app: &mut App, store: &impl ChannelStore, stop: bool) {
     let Screen::Msgs(s) = app.screen else { return };
     let data = store.data();
-    let Some(m) = data.message(s.cur.sel) else { return };
+    let Some(k) = msg_index(s.cur.sel, data) else { return };
+    let Some(m) = data.message(k) else { return };
     if stop {
-        let ok = data.request(Op::StopMessage(s.cur.sel));
+        let ok = data.request(Op::StopMessage(k));
         return app.show_toast(if ok { b"Sending stopped" } else { b"Not sending" }, m.peer.as_bytes(), false);
     }
     if app.remote_tx_refused() {
@@ -112,7 +123,7 @@ pub(crate) fn stop_or_resend(app: &mut App, store: &impl ChannelStore, stop: boo
     if !data.send_room() {
         return app.show_toast(b"Not sent", b"4 messages sending", false);
     }
-    if data.request(Op::ResendMessage(s.cur.sel)) {
+    if data.request(Op::ResendMessage(k)) {
         // the new one is the newest: the list's first row
         app.screen = Screen::Msgs(Msgs { cur: Cursor::default(), ..s });
         app.show_toast(b"Message queued", m.peer.as_bytes(), false);
@@ -125,14 +136,15 @@ pub(crate) fn stop_or_resend(app: &mut App, store: &impl ChannelStore, stop: boo
 pub(crate) fn delete(app: &mut App, store: &impl ChannelStore) {
     let Screen::Msgs(s) = app.screen else { return };
     let data = store.data();
-    let Some(m) = data.message(s.cur.sel) else { return };
-    if !data.request(Op::DeleteMessage(s.cur.sel)) {
+    let Some(k) = msg_index(s.cur.sel, data) else { return };
+    let Some(m) = data.message(k) else { return };
+    if !data.request(Op::DeleteMessage(k)) {
         return app.show_toast(b"Not deleted", b"try again", false);
     }
     if m.inbound && m.state == MsgState::Unread {
         app.inbox = app.inbox.saturating_sub(1); // INBOX-3.1: one unread fewer
     }
-    let n = data.messages();
+    let n = data.notices() + data.messages();
     let mut cur = s.cur;
     cur.sel = cur.sel.min(n.saturating_sub(1));
     cur.top = cur.top.min(cur.sel);
@@ -157,7 +169,9 @@ impl View for Msgs {
     fn key(self, app: &mut App, e: KeyEvent, store: &impl ChannelStore) {
         use Press::*;
         let d = store.data();
-        let m = d.message(self.cur.sel);
+        let k = msg_index(self.cur.sel, d);
+        let m = k.and_then(|k| d.message(k));
+        let note = notice_at(self.cur.sel, d);
         match (e.key, e.press) {
             (Key::Up | Key::Down, Short | Repeat) => self.knob(app, if e.key == Key::Up { -1 } else { 1 }, store),
             (Key::Menu, Long) => {
@@ -169,9 +183,13 @@ impl View for Msgs {
                 };
                 app.open_screen(of.screen());
             }
+            (Key::Menu, Short) if !self.open && note.is_some() => {
+                d.notice_read(self.cur.sel); // APRS-6.4: not in the envelope's count, so nothing to take off
+                app.screen = Screen::Msgs(Msgs { open: true, ..self });
+            }
             (Key::Menu, Short) if !self.open && m.is_some() => {
                 let unread = m.is_some_and(|m| m.inbound && m.state == MsgState::Unread);
-                if d.request(Op::MessageRead(self.cur.sel)) && unread {
+                if k.is_some_and(|k| d.request(Op::MessageRead(k))) && unread {
                     // INBOX-3.1: one message fewer; INBOX-7.1: its log entry read with it.
                     (app.inbox, app.log_unread) = (app.inbox.saturating_sub(1), app.log_unread.saturating_sub(1));
                 }
@@ -180,6 +198,8 @@ impl View for Msgs {
             (Key::Menu, Short) => {
                 if let Some(m) = m {
                     compose(app, store, m.peer.as_bytes()); // reply
+                } else if let Some(n) = note {
+                    compose(app, store, n.from.as_bytes()); // APRS-6.4: a reply goes to its sender
                 }
             }
             (Key::Hash, Short) if !self.open => compose(app, store, b""),
@@ -190,10 +210,13 @@ impl View for Msgs {
     }
 
     fn knob(self, app: &mut App, d: i32, store: &impl ChannelStore) {
-        let cur = self.cur.step(d, store.data().messages(), ROWS2, &ALL);
-        if self.open && cur.sel != self.cur.sel {
-            let unread = store.data().message(cur.sel).is_some_and(|m| m.inbound && m.state == MsgState::Unread);
-            if store.data().request(Op::MessageRead(cur.sel)) && unread {
+        let data = store.data();
+        let cur = self.cur.step(d, data.notices() + data.messages(), ROWS2, &ALL);
+        if self.open && cur.sel != self.cur.sel && notice_at(cur.sel, data).is_some() {
+            data.notice_read(cur.sel);
+        } else if let Some(k) = msg_index(cur.sel, data).filter(|_| self.open && cur.sel != self.cur.sel) {
+            let unread = data.message(k).is_some_and(|m| m.inbound && m.state == MsgState::Unread);
+            if data.request(Op::MessageRead(k)) && unread {
                 (app.inbox, app.log_unread) = (app.inbox.saturating_sub(1), app.log_unread.saturating_sub(1)); // INBOX-3.1, INBOX-7.1
             }
         }
@@ -212,14 +235,26 @@ impl View for Msgs {
             state_text(m, tries, st)
         };
         if self.open {
-            if data.message(self.cur.sel).is_none() {
+            let k = msg_index(self.cur.sel, data);
+            if let Some(n) = notice_at(self.cur.sel, data) {
+                return notice_page(app, lcd, cx.dev.clock_min, &n);
+            }
+            if k.and_then(|k| data.message(k)).is_none() {
                 app.empty(lcd, b"No such message", b"");
             }
-            if let Some(m) = data.message(self.cur.sel) {
+            if let Some(m) = k.and_then(|k| data.message(k)) {
                 let (mut time, mut st, mut age) = (Buf::<12>::new(), Buf::<16>::new(), Buf::<12>::new());
                 let c = row(&m, &mut time, &mut st);
                 age_text(m.ago_s, &mut age);
-                let top = Row2 { tag: if m.inbound { b"From" } else { b"To" }, title: m.peer.as_bytes(), big: true, right: time.as_bytes(), sub: if m.inbound { b"Received" } else { b"Sent" }, ..Row2::default() };
+                // APRS-6.5: a message to us says which of our addresses it was sent to (with or without the SSID)
+                let mut to = Buf::<16>::new();
+                if m.inbound && !m.to.is_empty() {
+                    to.push(b"To ");
+                    to.push(m.to.as_bytes());
+                } else {
+                    to.push(if m.inbound { b"Received" } else { b"Sent" });
+                }
+                let top = Row2 { tag: if m.inbound { b"From" } else { b"To" }, title: m.peer.as_bytes(), big: true, right: time.as_bytes(), sub: to.as_bytes(), ..Row2::default() };
                 if app.dirty(R_TOP, Mix::new().any(&top).get()) {
                     row2(lcd, 22, &top, w::Cue::default());
                 }
@@ -236,8 +271,10 @@ impl View for Msgs {
             }
             return;
         }
-        let n = data.messages();
-        let new = (0..n).filter(|&i| data.message(i).is_some_and(|m| m.state == MsgState::Unread)).count();
+        let g = data.notices();
+        let n = g + data.messages();
+        let new = (0..data.messages()).filter(|&i| data.message(i).is_some_and(|m| m.state == MsgState::Unread)).count()
+            + (0..g).filter(|&i| data.notice(i).is_some_and(|m| m.unread)).count();
         let mut l = Buf::<24>::new();
         let _ = uwrite!(l, "{} {}", n, if n == 1 { "message" } else { "messages" });
         if new > 0 {
@@ -245,7 +282,14 @@ impl View for Msgs {
         }
         app.list_head(lcd, l.as_bytes(), b"");
         let rows = self.cur.rows(n, ROWS2, &ALL, |r, i| {
-            if let Some(m) = data.message(i) {
+            if let Some(m) = notice_at(i, data) {
+                // APRS-6.4: a message to everyone: its addressee as the tag, the sender, how long ago
+                let mut time = Buf::<12>::new();
+                clock_text(cx.dev.clock_min, m.ago_s, &mut time);
+                let r2 = Row2 { tag: m.to.as_bytes(), title: m.from.as_bytes(), big: true, right: time.as_bytes(), sub: m.text.as_bytes(), dot: m.unread, selected: i == self.cur.sel, ..Row2::default() };
+                return app.row2(lcd, r, &r2);
+            }
+            if let Some(m) = msg_index(i, data).and_then(|k| data.message(k)) {
                 let (mut time, mut st) = (Buf::<12>::new(), Buf::<16>::new());
                 let c = row(&m, &mut time, &mut st);
                 // APRS-43: a saved contact's name leads the line
@@ -283,6 +327,28 @@ impl View for Msgs {
         } else {
             Hints::new(&[("OK", "Open"), ("#", "New"), ("Hold MENU", "More")])
         }
+    }
+}
+
+/// APRS-6.4: a message to everyone, opened: as a message to us, its addressee (CQ, QST or ALL) under the sender.
+fn notice_page(app: &mut App, lcd: &mut impl Panel, clock_min: Option<u16>, n: &crate::data::Notice) {
+    let (mut time, mut age) = (Buf::<12>::new(), Buf::<12>::new());
+    clock_text(clock_min, n.ago_s, &mut time);
+    age_text(n.ago_s, &mut age);
+    let mut sub = Buf::<16>::new();
+    sub.push(b"To ");
+    sub.push(n.to.as_bytes());
+    let top = Row2 { tag: b"From", title: n.from.as_bytes(), big: true, right: time.as_bytes(), sub: sub.as_bytes(), ..Row2::default() };
+    if app.dirty(R_TOP, Mix::new().any(&top).get()) {
+        row2(lcd, 22, &top, w::Cue::default());
+    }
+    let mut b = Buf::<40>::new();
+    let y = app.kv(lcd, 0, 58, 0, &w::KV_DETAIL, b"Age", ferrite_ui::v!(b, "{} ago", Txt(age.as_bytes())), TEXT, false);
+    app.kv(lcd, 1, y, 0, &w::KV_DETAIL, b"", b"", TEXT, false);
+    if app.dirty(R_NOTE, Mix::new().h(&n.text).get()) {
+        ferrite_ui::canvas::banded(lcd, 0, 100, 240, 196, BG, |b| {
+            wrap(b, 8, 104, 224, 296, n.text.as_bytes(), TEXT);
+        });
     }
 }
 

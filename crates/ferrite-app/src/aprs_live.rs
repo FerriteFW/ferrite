@@ -204,6 +204,8 @@ pub struct Rx {
     pub inbound: Option<(Buf<10>, Buf<67>)>,
     /// Its message number (empty: none), for the store's check after a power cycle (APRS-32).
     pub inbound_id: Buf<5>,
+    /// The addressee it was sent to, as heard (APRS-6.5: our callsign with or without the SSID).
+    pub inbound_to: Buf<10>,
     /// One of ours moved on: acked or rejected (APRS-34), for the store.
     pub state: Option<(Buf<10>, Buf<67>, MsgState)>,
     /// The heard list changed.
@@ -212,6 +214,8 @@ pub struct Rx {
     pub row: bool,
     /// APRS-36: our own frame, heard back for the first time since we sent it, and the digipeater that sent it.
     pub echo: Option<Buf<10>>,
+    /// APRS-6.4: a new message to everyone (CQ, QST, ALL): who sent it and its text, for a quiet toast and the log.
+    pub notice: Option<(Buf<10>, Buf<9>, Buf<67>)>,
 }
 
 /// What the APRS task may send (APRS-22, APRS-29).
@@ -430,6 +434,32 @@ pub struct AprsLive {
     /// APRS-54: what our position reports' values come from: the battery (mV, 0 not read yet), the MCU's
     /// temperature (whole degrees C) and the APRS frequency (for the beacon power's watts).
     readings: Cell<Readings>,
+    /// APRS-6.4: messages to everyone (CQ, QST, ALL) heard lately, newest first.
+    notices: [Cell<Option<NoticeRec>>; NOTICES],
+}
+
+/// APRS-6.4: how many messages to everyone are kept, and for how long they show.
+pub const NOTICES: usize = 4;
+pub const NOTICE_S: u32 = 30 * 60;
+
+#[derive(Clone, Copy)]
+struct NoticeRec {
+    from: Buf<10>,
+    to: Buf<9>,
+    text: Buf<67>,
+    at_s: u32,
+    unread: bool,
+}
+
+/// APRS-6.4: the addressees that mean everyone listening (APRS 1.0.1 has no such list; these are what radios send).
+pub fn to_everyone(addressee: &[u8]) -> bool {
+    [&b"CQ"[..], b"QST", b"ALL"].iter().any(|g| addressee.eq_ignore_ascii_case(g))
+}
+
+/// APRS-6, APRS-6.3: a message addressed to us: our callsign and SSID, or our callsign without one (a sender who
+/// left the SSID off: Discord, Nov 23, 2026, messages to the plain callsign were lost).
+pub fn to_me(addressee: &[u8], me: &Address) -> bool {
+    Address::from_text(addressee).is_some_and(|a| a.same(me) || (a.ssid == 0 && !addressee.contains(&b'-') && a.call() == me.call()))
 }
 
 impl Default for AprsLive {
@@ -474,7 +504,49 @@ impl AprsLive {
             sent_key: Cell::new(0),
             sending: Cell::new(Sending::Nothing),
             readings: Cell::new((0, None, 0)),
+            notices: [const { Cell::new(None) }; NOTICES],
         }
+    }
+
+    // ---- messages to everyone (APRS-6.4) ----
+
+    /// A message to everyone heard: kept at the front, unless the same sender's same text is kept already (its
+    /// retries and the digipeaters' copies). Whether it is new.
+    fn notice(&self, from: &Buf<10>, to: &[u8], text: &[u8], now_s: u32) -> bool {
+        let text = Buf::<67>::from(&text[..text.len().min(67)]);
+        if self.notices.iter().any(|n| n.get().is_some_and(|n| n.from == *from && n.text == text && now_s.wrapping_sub(n.at_s) < NOTICE_S)) {
+            return false;
+        }
+        for i in (1..NOTICES).rev() {
+            self.notices[i].set(self.notices[i - 1].get());
+        }
+        self.notices[0].set(Some(NoticeRec { from: *from, to: Buf::from(&to[..to.len().min(9)]), text, at_s: now_s, unread: true }));
+        true
+    }
+
+    fn notice_live(&self) -> impl Iterator<Item = (usize, NoticeRec)> + '_ {
+        let now = self.now_s.get();
+        self.notices.iter().enumerate().filter_map(move |(k, n)| n.get().filter(|n| now.wrapping_sub(n.at_s) < NOTICE_S).map(|n| (k, n)))
+    }
+
+    /// The messages to everyone still shown (heard in the last [`NOTICE_S`]).
+    pub fn notices(&self) -> u16 {
+        self.notice_live().count() as u16
+    }
+
+    /// The `i`th shown, newest first.
+    pub fn notice_at(&self, i: u16) -> Option<crate::data::Notice> {
+        let (_, n) = self.notice_live().nth(i as usize)?;
+        Some(crate::data::Notice { from: n.from, to: n.to, text: n.text, ago_s: self.now_s.get().wrapping_sub(n.at_s), unread: n.unread })
+    }
+
+    /// The `i`th shown read; whether it was unread.
+    pub fn notice_read(&self, i: u16) -> bool {
+        let Some((k, mut n)) = self.notice_live().nth(i as usize) else { return false };
+        let was = n.unread;
+        n.unread = false;
+        self.notices[k].set(Some(n));
+        was
     }
 
     // ---- the heard list (APRS-3, APRS-4) ----
@@ -810,11 +882,13 @@ impl AprsLive {
             Ok(Packet::Message(m)) => {
                 rx.row = self.hear(h, d);
                 rx.changed = true;
-                if my.is_some_and(|me| Address::from_text(m.addressee).is_some_and(|a| a.same(&me))) {
+                if my.is_some_and(|me| to_me(m.addressee, &me)) {
                     self.to_us(&call, m, &f, dupe, now_s, &mut rx);
                     if rx.inbound.is_some() {
                         self.auto_reply(&call, me, now_s, cfg); // APRS-57
                     }
+                } else if m.kind == MessageKind::Message && to_everyone(m.addressee) && self.notice(&call, m.addressee, m.text, now_s) {
+                    rx.notice = Some((call, Buf::from(m.addressee), Buf::from(&m.text[..m.text.len().min(67)]))); // APRS-6.4
                 }
             }
             Ok(Packet::Other { kind: b'?', data }) => {
@@ -833,7 +907,7 @@ impl AprsLive {
                 rx.changed = true;
                 let inner = third_party_call(t.src);
                 if let (Some(mine), Some(from), Ok(Packet::Message(m))) = (my, inner, parse::parse(t.dest, t.info)) {
-                    if Address::from_text(m.addressee).is_some_and(|a| a.same(&mine)) {
+                    if to_me(m.addressee, &mine) {
                         self.to_us(&from, m, &f, dupe, now_s, &mut rx);
                         if rx.inbound.is_some() {
                             self.auto_reply(&from, me, now_s, cfg); // APRS-57
@@ -903,6 +977,7 @@ impl AprsLive {
                 if !self.seen_before(from, m.id, &text, now_s) {
                     rx.inbound = Some((*from, text));
                     rx.inbound_id = Buf::from(m.id.unwrap_or(b""));
+                    rx.inbound_to = Buf::from(m.addressee);
                 }
             }
             MessageKind::Ack => {
@@ -1025,9 +1100,17 @@ impl AprsLive {
         self.general.set(Some(General { due_s: now_s + GENERAL_WAIT_S + h % GENERAL_SPREAD_S, foot }));
     }
 
+    /// An ack or reject from `from` for our message numbered `id`. APRS-13.7: a message we sent to a callsign without
+    /// an SSID is answered by that station with its own (we sent to VE7GPL, VE7GPL-7 acks), so that counts too
+    /// (black and clear, Nov 23, 2026: the sender kept retrying a message the other radio had acked).
     fn acked(&self, from: &Buf<10>, id: &[u8], state: MsgState, rx: &mut Rx) {
+        let base = |c: &[u8]| -> Buf<10> { Buf::from(c.split(|&b| b == b'-').next().unwrap_or(c)) };
+        let ours = |peer: &Buf<10>| {
+            peer.as_bytes().eq_ignore_ascii_case(from.as_bytes())
+                || (!peer.as_bytes().contains(&b'-') && base(from.as_bytes()).as_bytes().eq_ignore_ascii_case(peer.as_bytes()))
+        };
         for c in &self.out {
-            if let Some(o) = c.get().filter(|o| o.peer.as_bytes().eq_ignore_ascii_case(from.as_bytes()) && num(o.id).as_bytes() == id) {
+            if let Some(o) = c.get().filter(|o| ours(&o.peer) && num(o.id).as_bytes() == id) {
                 c.set(None);
                 rx.state = Some((o.peer, o.text, state));
             }
@@ -1917,6 +2000,108 @@ mod tests {
         // Not to us: nothing.
         let (f, n) = frame(b"VE3KPW-9", b"APRS", &[], b":VA3ABC   :Hi{3");
         assert!(a.receive(&f[..n], 140, b"VE3XYZ", &AprsCfg::DEFAULT).inbound.is_none());
+    }
+
+    /// APRS-6.3: a message to our callsign without its SSID is ours (inbox, acked); one to another SSID of ours, or
+    /// another station, isn't (Discord, Nov 23, 2026: the plain callsign's were lost). The addressee stays padded
+    /// to 9 characters, as the spec and Dire Wolf want: an unpadded one isn't read as a message.
+    #[test]
+    fn message_to_our_plain_callsign_is_ours() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let mut out = [0u8; FRAME_MAX];
+        let (f, n) = frame(b"VE7GPL-7", b"APRS", &[], b":VA7IF    :no ssid{5");
+        let rx = a.receive(&f[..n], 100, b"VA7IF-7", &cfg);
+        assert_eq!(rx.inbound.expect("in the inbox").1.as_bytes(), b"no ssid");
+        assert_eq!(rx.inbound_to.as_bytes(), b"VA7IF", "APRS-6.5: the address it was sent to");
+        let t = a.tick(100, Sending::All, true, b"VA7IF-7", None, &cfg, &mut out);
+        assert_eq!(t.what, "Ack");
+        let g = Frame::parse(&out[..t.len]).unwrap();
+        assert_eq!(g.info, b":VE7GPL-7 :ack5");
+        // not padded (`:VA7IF:`): not a message (APRS 1.0.1, as Dire Wolf)
+        let (f, n) = frame(b"VE7GPL-7", b"APRS", &[], b":VA7IF:unpadded{6");
+        assert!(a.receive(&f[..n], 200, b"VA7IF-7", &cfg).inbound.is_none());
+        // another SSID of ours, an explicit -0, a longer call that starts with ours, or another station: not ours
+        for to in [&b":VA7IF-9  :x{7"[..], b":VA7IF-0  :x{8", b":VA7IFX   :x{9", b":VE7ABC   :x{10"] {
+            let (f, n) = frame(b"VE7GPL-7", b"APRS", &[], to);
+            assert!(a.receive(&f[..n], 300, b"VA7IF-7", &cfg).inbound.is_none(), "{:?}", core::str::from_utf8(to));
+        }
+        // with no SSID of our own, the plain callsign is the exact one, as before
+        let (f, n) = frame(b"VE7GPL-7", b"APRS", &[], b":VA7IF    :exact{11");
+        assert!(a.receive(&f[..n], 400, b"VA7IF", &cfg).inbound.is_some());
+    }
+
+    /// APRS-13.7: ours to a callsign without an SSID is acked by that station with its SSID; ours to a callsign with
+    /// one needs that exact one.
+    #[test]
+    fn ack_from_the_plain_callsigns_station() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let mut out = [0u8; FRAME_MAX];
+        let me = b"VA7IF-7";
+        assert!(a.send(b"VE7GPL", b"to the plain call"));
+        let t = a.tick(100, Sending::All, true, me, None, &cfg, &mut out);
+        let g = Frame::parse(&out[..t.len]).unwrap();
+        let id = g.info.rsplit(|&c| c == b'{').next().unwrap().to_vec();
+        // an ack from another station with that base call but for another of our numbers: nothing
+        let (f, n) = frame(b"VE7GPL-7", b"APRS", &[], b":VA7IF-7  :ack99");
+        assert!(a.receive(&f[..n], 105, me, &cfg).state.is_none());
+        let mut ack = b":VA7IF-7  :ack".to_vec();
+        ack.extend_from_slice(&id);
+        let (f, n) = frame(b"VE7GPL-7", b"APRS", &[], &ack);
+        let (peer, _, st) = a.receive(&f[..n], 110, me, &cfg).state.expect("acked");
+        assert_eq!((peer.as_bytes(), st), (&b"VE7GPL"[..], MsgState::Acked));
+        // to a callsign with an SSID: another SSID's ack doesn't count
+        assert!(a.send(b"VE7GPL-9", b"to one SSID"));
+        let t = a.tick(200, Sending::All, true, me, None, &cfg, &mut out);
+        let g = Frame::parse(&out[..t.len]).unwrap();
+        let mut ack = b":VA7IF-7  :ack".to_vec();
+        ack.extend_from_slice(g.info.rsplit(|&c| c == b'{').next().unwrap());
+        let (f, n) = frame(b"VE7GPL-7", b"APRS", &[], &ack);
+        assert!(a.receive(&f[..n], 205, me, &cfg).state.is_none());
+        let (f, n) = frame(b"VE7GPL-9", b"APRS", &[], &ack);
+        assert!(a.receive(&f[..n], 206, me, &cfg).state.is_some());
+    }
+
+    /// APRS-6.4: a message to everyone (CQ, QST, ALL; any case) is kept above the inbox: once for its
+    /// copies, newest first, at most NOTICES, for NOTICE_S; never acked, never in the inbox.
+    #[test]
+    fn messages_to_everyone_are_notices() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let mut out = [0u8; FRAME_MAX];
+        let (f, n) = frame(b"VE7GPL-7", b"APRS", &[], b":CQ       :anyone on?{3");
+        let rx = a.receive(&f[..n], 100, b"VA7IF-7", &cfg);
+        assert!(rx.inbound.is_none(), "not in the inbox");
+        let (from, to, text) = rx.notice.expect("a notice");
+        assert_eq!((from.as_bytes(), to.as_bytes(), text.as_bytes()), (&b"VE7GPL-7"[..], &b"CQ"[..], &b"anyone on?"[..]));
+        assert_ne!(a.tick(100, Sending::All, true, b"VA7IF-7", None, &cfg, &mut out).what, "Ack", "never acked");
+        assert_eq!(a.notices(), 1);
+        let n0 = a.notice_at(0).unwrap();
+        assert!(n0.unread && n0.text.as_bytes() == b"anyone on?" && n0.to.as_bytes() == b"CQ");
+        // its retry, or a digipeater's copy: no second notice
+        assert!(a.receive(&f[..n], 130, b"VA7IF-7", &cfg).notice.is_none());
+        assert_eq!(a.notices(), 1);
+        // read
+        assert!(a.notice_read(0));
+        assert!(!a.notice_at(0).unwrap().unread);
+        assert!(!a.notice_read(0));
+        // QST, ALL, lower case: notices too, newest first, the oldest dropped past NOTICES
+        for (k, info) in [&b":QST      :net tonight"[..], b":all      :hello", b":cq       :one", b":CQ       :two"].iter().enumerate() {
+            let (f, n) = frame(b"VE7ABC", b"APRS", &[], info);
+            assert!(a.receive(&f[..n], 200 + k as u32, b"VA7IF-7", &cfg).notice.is_some(), "{:?}", core::str::from_utf8(info));
+        }
+        assert_eq!(a.notices(), NOTICES as u16);
+        assert_eq!(a.notice_at(0).unwrap().text.as_bytes(), b"two");
+        assert_eq!(a.notice_at(NOTICES as u16 - 1).unwrap().text.as_bytes(), b"net tonight");
+        // a message to someone else isn't one
+        let (f, n) = frame(b"VE7ABC", b"APRS", &[], b":VE7XYZ   :private");
+        assert!(a.receive(&f[..n], 300, b"VA7IF-7", &cfg).notice.is_none());
+        // gone after NOTICE_S
+        let (f, n) = frame(b"VE7ABC", b"APRS", &[], b">status");
+        a.receive(&f[..n], 203 + NOTICE_S, b"VA7IF-7", &cfg);
+        assert_eq!(a.notices(), 0);
+        assert!(a.notice_at(0).is_none());
     }
 
     /// APRS-58: third-party traffic (an IGate relaying from the internet): a message inside to us is taken as from

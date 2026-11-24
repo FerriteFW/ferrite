@@ -152,7 +152,7 @@ impl AprsSim {
 
     /// Our message (Op::Send): pending, its first try at the next tick.
     pub fn send(&self, to: &[u8], text: Buf<67>) {
-        let msg = Message { inbound: false, peer: Buf::from(to), text, ago_s: 0, state: MsgState::Pending };
+        let msg = Message { inbound: false, peer: Buf::from(to), text, ago_s: 0, state: MsgState::Pending, to: Buf::new() };
         self.push(Live { msg, at_s: self.now_s(), tries: 0, next_s: self.now_s(), ack_s: None });
     }
 
@@ -275,7 +275,7 @@ impl AprsSim {
         let k = self.inbound.get();
         if up >= IN_FIRST_S + k as u32 * IN_EVERY_S {
             let (from, text) = INBOUND[k as usize % INBOUND.len()];
-            let msg = Message { inbound: true, peer: Buf::from(from.as_bytes()), text: Buf::from(text.as_bytes()), ago_s: 0, state: MsgState::Unread };
+            let msg = Message { inbound: true, peer: Buf::from(from.as_bytes()), text: Buf::from(text.as_bytes()), ago_s: 0, state: MsgState::Unread, to: Buf::new() };
             self.push(Live { msg, at_s: now_s, tries: 0, next_s: 0, ack_s: None });
             self.inbound.set(k + 1);
             self.acks_due.set(self.acks_due.get() + 1);

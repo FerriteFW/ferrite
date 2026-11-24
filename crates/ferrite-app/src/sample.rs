@@ -197,6 +197,8 @@ pub struct Sample {
     logged: Cell<u16>,
     events_cleared: Cell<bool>,
     msgs_read: Cell<u32>,
+    /// APRS-6.4: messages to everyone, put here by tests (none in the simulators' sample data).
+    notes: Cell<[Option<crate::data::Notice>; crate::aprs_live::NOTICES]>,
     /// APRS-46.1: sample messages deleted one by one, a bit each (by their place in `MESSAGES`).
     msgs_del: Cell<u32>,
     /// The reset (Op::Wipe) took the sample messages.
@@ -235,6 +237,14 @@ fn txt<const N: usize>(s: &str) -> Buf<N> {
 }
 
 impl Sample {
+    /// APRS-6.4, tests: a message to everyone heard, at the front.
+    pub fn add_notice(&self, n: crate::data::Notice) {
+        let mut a = self.notes.get();
+        a.rotate_right(1);
+        a[0] = Some(n);
+        self.notes.set(a);
+    }
+
     /// A beacon asked for (tests: APRS-17.8).
     #[cfg(test)]
     pub(crate) fn beacon_asked(&self) -> bool {
@@ -263,6 +273,7 @@ impl Sample {
             logged: Cell::new(0),
             events_cleared: Cell::new(false),
             msgs_read: Cell::new(0),
+            notes: Cell::new([None; crate::aprs_live::NOTICES]),
             msgs_del: Cell::new(0),
             msgs_gone: Cell::new(false),
             aprs: aprs::AprsSim::new(),
@@ -548,7 +559,20 @@ impl Data for Sample {
         let &(inbound, peer, text, ago_s, state) = MESSAGES.get(k)?;
         let ago_s = ago_s + self.aprs.now_s();
         let state = if state == MsgState::Unread && self.msgs_read.get() & 1 << k != 0 { MsgState::Read } else { state };
-        Some(Message { inbound, peer: txt(peer), text: txt(text), ago_s, state })
+        Some(Message { inbound, peer: txt(peer), text: txt(text), ago_s, state, to: Buf::new() })
+    }
+    fn notices(&self) -> u16 {
+        self.notes.get().iter().flatten().count() as u16
+    }
+    fn notice(&self, i: u16) -> Option<crate::data::Notice> {
+        self.notes.get().iter().flatten().nth(i as usize).copied()
+    }
+    fn notice_read(&self, i: u16) -> bool {
+        let mut n = self.notes.get();
+        let Some(m) = n.iter_mut().flatten().nth(i as usize) else { return false };
+        let was = core::mem::replace(&mut m.unread, false);
+        self.notes.set(n);
+        was
     }
     fn draft(&self) -> Draft {
         self.draft.get()

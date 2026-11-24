@@ -328,13 +328,15 @@ pub fn event_decode(b: &[u8; REC as usize], ago_s: u32) -> Event {
 /// Where a message's body ends; 96 (tries, one bit cleared per try) and 97 (bit 0 cleared: acked, bit 1:
 /// failed, bit 2: rejected, APRS-34, bit 3: cancelled, APRS-13.1, bit 4: deleted, APRS-46.1, either way) are
 /// programmed later. A message to us keeps its sender's message number at
-/// 89..94 (zero-padded; all zero without one, as in records from before APRS-32).
+/// 89..94 (zero-padded; all zero without one, as in records from before APRS-32), and the addressee it was sent to
+/// at 98..108 (APRS-6.5: outside the CRC, so records from before it stay valid and read it as unknown, erased).
 pub const MSG_END: usize = 96;
+const TO: core::ops::Range<usize> = 98..108;
 const TRIES: usize = 96;
 const FINAL: usize = 97;
 const NUMBER: core::ops::Range<usize> = 89..94;
 
-pub fn msg_rec(inbound: bool, peer: &Buf<10>, txt: &Buf<67>, id: &Buf<5>, t: u32, utc: bool) -> [u8; REC as usize] {
+pub fn msg_rec(inbound: bool, peer: &Buf<10>, txt: &Buf<67>, id: &Buf<5>, to: &Buf<10>, t: u32, utc: bool) -> [u8; REC as usize] {
     let mut r = [0xFFu8; REC as usize];
     r[4..8].copy_from_slice(&t.to_le_bytes());
     r[CLOCK] = if utc { 0 } else { 0xFF };
@@ -343,6 +345,10 @@ pub fn msg_rec(inbound: bool, peer: &Buf<10>, txt: &Buf<67>, id: &Buf<5>, t: u32
     put(&mut r[12..22], peer);
     put(&mut r[22..89], txt);
     put(&mut r[NUMBER], id);
+    if !to.is_empty() {
+        r[TO].fill(0);
+        put(&mut r[TO], to);
+    }
     r
 }
 
@@ -371,7 +377,7 @@ pub fn msg_decode(b: &[u8; REC as usize], ago_s: u32) -> Message {
     } else {
         MsgState::Pending
     };
-    Message { inbound, peer: text(&b[12..22]), text: text(&b[22..89]), ago_s, state }
+    Message { inbound, peer: text(&b[12..22]), text: text(&b[22..89]), ago_s, state, to: if inbound { text(&b[TO]) } else { Buf::new() } }
 }
 
 /// The byte and value that move an outgoing message to `state` (bits only cleared).

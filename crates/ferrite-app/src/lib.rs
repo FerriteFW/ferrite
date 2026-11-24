@@ -985,6 +985,16 @@ impl App {
         }
     }
 
+    /// APRS-6.4: a message to everyone (`to`: CQ, QST or ALL) from `from`: logged like any decode (a toast and the
+    /// log's count), without the message sound or the envelope's count: it waits above the inbox for a while.
+    pub fn notify_notice(&mut self, from: &[u8], to: &[u8], text: &[u8]) {
+        let mut head = ferrite_ui::text::Buf::<24>::new();
+        head.push(to);
+        head.push(b" from ");
+        head.push(from);
+        self.notify(head.as_bytes(), text, false);
+    }
+
     /// A decode, arrival or alert was logged: a toast and the log's unread count (SBAR-6); an alert also opens the
     /// alert screen, with `body` as its event and `head` as its originator.
     pub fn notify(&mut self, head: &[u8], body: &[u8], alert: bool) {

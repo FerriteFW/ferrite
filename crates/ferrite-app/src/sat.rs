@@ -62,11 +62,16 @@ pub struct SatUi {
     /// What the Radio task has: downlink, uplink, tone, half duplex, power; and the UTC second of the last retune.
     pub sent: (Freq10, Freq10, u16, bool, u8),
     pub sent_s: u32,
+    /// SAT-24: the display stays lit until this UTC second (a near pass's set + [`AWAKE_S`]; 0 none, and
+    /// cleared when the satellite screen closes), so a pass that has left the list still holds it.
+    ///
+    /// [`AWAKE_S`]: crate::screens::sat::AWAKE_S
+    pub awake_until: u32,
 }
 
 impl SatUi {
     pub const fn new() -> SatUi {
-        SatUi { utc: None, by_gps: false, here: None, lead: LEAD_START, alarm_lead: 0, fired: false, toast_at: 0, cur: None, armed: 0, arm_until: 0, sent: (0, 0, 0, false, 0), sent_s: 0 }
+        SatUi { utc: None, by_gps: false, here: None, lead: LEAD_START, alarm_lead: 0, fired: false, toast_at: 0, cur: None, armed: 0, arm_until: 0, sent: (0, 0, 0, false, 0), sent_s: 0, awake_until: 0 }
     }
 }
 

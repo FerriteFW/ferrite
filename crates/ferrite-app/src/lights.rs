@@ -239,7 +239,8 @@ impl App {
         let voice = live.slots.iter().enumerate().any(|(i, s)| {
             s.squelch_open && !self.aprs_slot(i as u8) && !(i < crate::aprs::APRS_SLOT as usize && self.defers_to_c(i as u8))
         });
-        if voice && self.set.wake_on >= 1 || tx && (self.set.wake_on >= 2 || self.set.tx_light && !self.dark()) {
+        // SAT-24: the satellite screen around a pass holds it lit (and wakes it as the window opens)
+        if voice && self.set.wake_on >= 1 || tx && (self.set.wake_on >= 2 || self.set.tx_light && !self.dark()) || self.sat_awake() {
             self.seen = now;
         }
         if tx && !self.set.tx_light {

@@ -160,7 +160,41 @@ fn tone(t: u16, b: &mut Buf<12>) {
     let _ = uwrite!(b, "{}.{}", t / 10, t % 10);
 }
 
+/// SAT-24: how long before a pass's rise and after its set the satellite screen keeps the display lit (s).
+pub const AWAKE_S: u32 = 300;
+
 impl App {
+    /// SAT-24: the satellite screen is open and a pass it shows is up or within [`AWAKE_S`] of its rise or set:
+    /// the display doesn't sleep. The list: any pass listed (its filter); the other pages: the open satellite's
+    /// passes. The window's end is kept ([`SatUi::awake_until`]): the pass page moves on to the next pass 30 s
+    /// after the set, and a prediction after the set (a clock change, a move) drops the pass.
+    ///
+    /// [`SatUi::awake_until`]: crate::sat::SatUi::awake_until
+    #[inline(never)]
+    pub(crate) fn sat_awake(&mut self) -> bool {
+        let Screen::Sat(s) = self.screen else {
+            self.sat.awake_until = 0;
+            return false;
+        };
+        let Some(now) = self.sat_now() else { return false };
+        let near = |p: &Pass| now.saturating_add(AWAKE_S) >= p.aos && now <= p.los().saturating_add(AWAKE_S);
+        let d = self.sat_data();
+        let p = if s.page() == LIST {
+            shown(self, s.filter).find(near)
+        } else {
+            self.sat.cur.filter(near).or_else(|| (0..d.passes()).filter_map(|i| d.pass(i)).find(|p| p.sat == s.sat && near(p)))
+        };
+        if let Some(p) = p {
+            self.sat.awake_until = p.los() + AWAKE_S;
+        }
+        // none far ahead: a pass is up 20 minutes at most, so a clock set back lets it go
+        let on = now <= self.sat.awake_until && self.sat.awake_until - now <= 3600;
+        if !on {
+            self.sat.awake_until = 0;
+        }
+        on
+    }
+
     /// The satellite screen's pass, kept current: the selected pass from the list, refreshed from the source
     /// (its rise refined), and the same satellite's next pass once it has set.
     fn sat_follow(&mut self, s: SatScr) {

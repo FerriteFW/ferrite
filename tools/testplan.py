@@ -347,6 +347,7 @@ def main():
     ap.add_argument("--docs", type=pathlib.Path, default=DOCS)
     ap.add_argument("--init", action="store_true", help="add draft entries for rules without one")
     ap.add_argument("--coverage", action="store_true", help="short report; exit 1 on gaps or stale tags")
+    ap.add_argument("--parents", action="store_true", help="with --coverage: list the tests still naming a split parent")
     a = ap.parse_args()
 
     rules, chapters, status = parse_manual(a.docs / "manual.md")
@@ -429,8 +430,10 @@ def main():
         if kids:
             print(f"split rules: {len(kids)} parents with {sum(len(v) for v in kids.values())} sub-rules")
         if parent_cites:
-            print(f"tests that still name a split parent ({len(parent_cites)}; name the sub-rules instead): "
-                  + " ".join(f"{i} ({f.split('/')[-1]}:{n} {t})" for i, f, n, t in parent_cites))
+            # the count only (the list is 30 KB and long-standing): --parents lists them
+            print(f"tests that still name a split parent: {len(parent_cites)} (name the sub-rules instead; --parents lists them)")
+            if a.parents:
+                print(" ".join(f"{i} ({f.split('/')[-1]}:{n} {t})" for i, f, n, t in parent_cites))
         sys.exit(1 if none or stale or dups else 0)
 
     checks = [r for r in live if needs_radio(entries.get(r["id"], {}))]

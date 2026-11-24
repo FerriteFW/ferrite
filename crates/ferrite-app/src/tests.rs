@@ -1075,6 +1075,8 @@ mod wired;
 mod lpm;
 mod aprs;
 mod aprs_card;
+/// Narrow AM and the 8.33 kHz grid (VFO-4.2, VFO-18.1).
+mod nam;
 /// The APRS menu's arms, stepped and reset against a golden (size review, Nov 23, 2026).
 mod aprs_edit;
 mod d64;
@@ -1172,18 +1174,18 @@ fn back_is_one_level_hold_back_is_home() {
     assert_eq!(t.app.screen(), Screen::Home);
 }
 
-/// CHAN-23, VFO-4, BCR-33: a channel's or home VFO's mode is FM, NFM, AM or WFM; USB, LSB and CW are HF mode's
-/// only.
+/// CHAN-23, VFO-4, VFO-4.2, BCR-33: a channel's or home VFO's mode is FM, NFM, AM, NAM or WFM; USB, LSB and CW
+/// are HF mode's only.
 #[test]
-fn slot_modes_are_fm_nfm_am_wfm() {
+fn slot_modes_are_fm_nfm_am_nam_wfm() {
     let mut c = DEFAULT_CFG;
-    let mut seen = [false; 7];
+    let mut seen = [false; 8];
     for _ in 0..9 {
         let v = Item::Mode.get(&c).0 + 1;
         Item::Mode.set(&mut c, v, 0);
         seen[c.mode as usize] = true;
     }
-    assert_eq!(seen, [true, true, true, false, false, false, true]);
+    assert_eq!(seen, [true, true, true, false, false, false, true, true]);
     let mut t = T::new();
     for on_channel in [false, true] {
         if on_channel {

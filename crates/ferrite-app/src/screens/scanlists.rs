@@ -162,8 +162,10 @@ impl View for ScanLists {
                     2 => p.end = (p.end as i32 + d * khz100).clamp(p.start as i32 + khz100, mhz(1300) as i32) as Freq10,
                     3 => p.step = (p.step as i32 + d).rem_euclid(STEPS.len() as i32) as u8,
                     4 => {
-                        p.mode = (p.mode as i32 + d).rem_euclid(3) as u8; // FM, NFM, AM (CHAN-23)
-                        p.narrow = p.mode == 1; // VFO-20
+                        // FM, NFM, AM, NAM (CHAN-23)
+                        let i = crate::slot::PRESET_MODES.iter().position(|&m| m == p.mode).unwrap_or(0) as i32;
+                        p.mode = crate::slot::PRESET_MODES[(i + d).rem_euclid(crate::slot::PRESET_MODES.len() as i32) as usize];
+                        p.narrow = crate::slot::mode_narrow(p.mode); // VFO-20
                     }
                     5 => p.resume = (p.resume as i32 + d).rem_euclid(13) as u8, // SCAN-24
                     _ => return,

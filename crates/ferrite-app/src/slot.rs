@@ -35,12 +35,12 @@ pub struct SlotCfg {
 
 impl SlotCfg {
     /// VFO-20: the mode carries the bandwidth. A record or saved state from before has FM with its narrow flag
-    /// set for narrow FM: that reads as NFM. Afterwards narrow means NFM; AM keeps the wide filter.
+    /// set for narrow FM: that reads as NFM. Afterwards narrow means NFM or NAM; AM keeps the wide filter.
     pub fn fold_bw(&mut self) {
         if self.mode == 0 && self.narrow {
             self.mode = 1;
         }
-        self.narrow = self.mode == 1;
+        self.narrow = mode_narrow(self.mode);
     }
 
     /// The frequency this config transmits on with RX at `rx`: the split TX, or RX plus the shift; reverse
@@ -93,15 +93,31 @@ impl Default for SlotCfg {
     }
 }
 
-pub const MODES: [&str; 7] = ["FM", "NFM", "AM", "USB", "LSB", "CW", "WFM"];
-/// Channels and home VFOs use FM, NFM, AM and WFM (CHAN-23, VFO-4, BCR-33); USB, LSB and CW are HF mode's.
-pub const SLOT_MODES: usize = 4;
+pub const MODES: [&str; 8] = ["FM", "NFM", "AM", "USB", "LSB", "CW", "WFM", "NAM"];
+/// Channels and home VFOs use FM, NFM, AM, NAM and WFM (CHAN-23, VFO-4, BCR-33); USB, LSB and CW are HF mode's.
+pub const SLOT_MODES: usize = 5;
 /// BCR-33 (decision 353, as nicFW's tuner channels): wide FM on the SI4732, a broadcast slot anywhere 64-108 MHz.
 pub const WFM: u8 = 6;
-/// The slot modes in the order the knob steps through them (their stored numbers: WFM after HF's three).
-pub const SLOT_MODE_IDS: [u8; SLOT_MODES] = [0, 1, 2, WFM];
+/// Narrow AM (VFO-4.2, decision 447): AM through the narrow receive filter (REG_43 0x4008, as NFM), for 8.33 kHz
+/// airband channels; the airband's default mode. Stored as 7, after WFM; CHIRP calls it NAM too.
+pub const NAM: u8 = 7;
+/// The slot modes in the order the knob steps through them (their stored numbers: WFM after HF's three, NAM last).
+pub const SLOT_MODE_IDS: [u8; SLOT_MODES] = [0, 1, 2, NAM, WFM];
 
-/// A mode a slot or channel may have (FM, NFM, AM, WFM).
+/// A range preset's modes, in the order the editor steps them (CHAN-23).
+pub const PRESET_MODES: [u8; 4] = [0, 1, 2, NAM];
+
+/// A mode that receives through the narrow filter: NFM and NAM (VFO-20).
+pub fn mode_narrow(m: u8) -> bool {
+    m == 1 || m == NAM
+}
+
+/// A mode that demodulates AM: AM and NAM (receive only, TX-20).
+pub fn mode_am(m: u8) -> bool {
+    m == 2 || m == NAM
+}
+
+/// A mode a slot or channel may have (FM, NFM, AM, NAM, WFM).
 pub fn slot_mode_ok(m: u8) -> bool {
     SLOT_MODE_IDS.contains(&m)
 }
@@ -124,6 +140,30 @@ pub const STEPS: [(u32, &str); 14] = [
     (10000, "100 kHz"),
 ];
 pub const STEP_12K5: u8 = 10;
+/// The 8.33 kHz step: 25 kHz / 3, not a flat 8.330 kHz (VFO-18.1).
+pub const STEP_833: u8 = 8;
+
+/// The 8.33 kHz channel grid (VFO-18.1): each 25 kHz block at +0, +8.333 and +16.667 kHz, in 10 Hz.
+const GRID_833: [Freq10; 3] = [0, 833, 1667];
+
+/// The 8.33 kHz channel nearest f.
+pub fn on_833(f: Freq10) -> Freq10 {
+    let (block, r) = (f / 2500 * 2500, f % 2500);
+    match r {
+        0..=416 => block,
+        417..=1249 => block + 833,
+        1250..=2083 => block + 1667,
+        _ => block + 2500,
+    }
+}
+
+/// f moved d 8.33 kHz channels from the channel nearest it, so steps land on the grid however f was reached.
+pub fn step_833(f: Freq10, d: i32) -> Freq10 {
+    let g = on_833(f);
+    let n = (g / 2500) as i64 * 3 + GRID_833.iter().position(|&o| o == g % 2500).unwrap_or(0) as i64 + d as i64;
+    let n = n.max(0);
+    ((n / 3) as Freq10) * 2500 + GRID_833[(n % 3) as usize]
+}
 pub const STEP_5K: u8 = 6;
 /// A channel's squelch "Global": it uses the slot's level (the VFO's), not its own (SQL-6, CHAN-14).
 pub const SQ_GLOBAL: u8 = 10;
@@ -296,6 +336,7 @@ pub const BANDS: [BandDef; 7] = [
     BandDef { name: "UHF", lo: mhz(400), hi: mhz(520), start: mhz(446), mode: 0, step: STEP_12K5, shift: 500_000 },
 ];
 pub const BAND_125M: usize = 5;
+pub const BAND_AIR: usize = 2;
 pub const BAND_VHF: usize = 3;
 pub const BAND_UHF: usize = 6;
 
@@ -318,11 +359,13 @@ pub fn usual_shift(f: Freq10, r: Option<ferrite_core::txplan::Region>) -> i32 {
 }
 
 /// A band's default mode in a region (SETUP-7): its FM is wide FM in the Americas, Australia and New Zealand,
-/// NFM in the UK, Europe, Japan and Other; AM bands stay AM. No region chosen yet: wide.
+/// NFM in the UK, Europe, Japan and Other; the airband is NAM everywhere (VFO-4.2), HF stays AM. No region
+/// chosen yet: wide.
 pub fn band_mode(b: usize, r: Option<ferrite_core::txplan::Region>) -> u8 {
     use ferrite_core::txplan::Region::{Europe, Japan, Other, Uk};
     match BANDS[b].mode {
         0 if matches!(r, Some(Uk | Europe | Japan | Other)) => 1,
+        _ if b == BAND_AIR => NAM,
         m => m,
     }
 }
@@ -446,7 +489,7 @@ impl Item {
             Item::Channel => txt!("Edit this channel: name, zone, number, flags."),
             Item::BatterySave => txt!("Receiver sleep: deeper saves more, hears later."),
             Item::Advanced => txt!("Everything else, in nine groups."),
-            Item::Mode => txt!("FM 25 kHz, NFM 12.5 kHz, AM. WFM: broadcast RX."),
+            Item::Mode => txt!("FM, NFM, AM, NAM (8.33 kHz). WFM: broadcast RX."),
             Item::BusyLock => txt!("Refuse transmit while the channel is busy."),
             Item::Reverse => txt!("Listen on the repeater's input. Hold *, PTT A."),
         }
@@ -499,13 +542,18 @@ impl Item {
                 (c.offset, c.split) = ([0, shift, -shift][v as usize], false);
                 (Param::Offset, c.offset)
             }
+            // VFO-4.2: the 8.33 kHz step on AM goes to NAM, the filter 8.33 kHz channels need
+            Item::Step if v as u8 == STEP_833 && c.mode == 2 => {
+                (c.step, c.mode, c.narrow) = (STEP_833, NAM, true);
+                (Param::Mode, NAM as i32)
+            }
             Item::Step => {
                 c.step = v as u8;
                 return None; // the UI's own: the radio only sees frequencies
             }
             Item::Mode => {
                 c.mode = SLOT_MODE_IDS[v as usize % SLOT_MODES];
-                c.narrow = c.mode == 1; // VFO-20: the App sends the bandwidth with it
+                c.narrow = mode_narrow(c.mode); // VFO-20: the App sends the bandwidth with it
                 (Param::Mode, c.mode as i32)
             }
             Item::BusyLock => {

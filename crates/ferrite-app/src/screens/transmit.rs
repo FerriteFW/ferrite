@@ -330,7 +330,7 @@ pub fn tx_block(app: &App, slot: u8) -> Option<Refusal> {
         return Some(Refusal::RxOnlyChannel);
     }
     // TX-20: the BK4829 has no AM modulator; BCR-33: WFM is broadcast listening, receive only.
-    if slot < SLOTS as u8 && app.tuned_cfg(slot).mode == 2 {
+    if slot < SLOTS as u8 && crate::slot::mode_am(app.tuned_cfg(slot).mode) {
         return Some(Refusal::AmRxOnly);
     }
     if slot < SLOTS as u8 && app.tuned_cfg(slot).mode == crate::slot::WFM {

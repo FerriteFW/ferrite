@@ -50,7 +50,7 @@ fn editor_rows() {
     for _ in 0..3 {
         t.knob(1);
         let p = t.s.preset(0).unwrap();
-        assert_eq!(p.narrow, p.mode == 1);
+        assert_eq!(p.narrow, crate::slot::mode_narrow(p.mode)); // NFM and NAM (VFO-4.2)
     }
     t.tap(Key::Down); // resume
     for (n, name) in [(11, "Carrier drop"), (1, "Stop on hit"), (4, "After 3 s")] {

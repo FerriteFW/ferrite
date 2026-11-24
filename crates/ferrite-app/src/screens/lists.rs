@@ -73,8 +73,8 @@ impl App {
             // SETUP-7: a VFO still on its band's FM default follows the region's (wide or NFM)
             if BANDS[b].mode == 0 && s.cfg.mode <= 1 {
                 s.cfg.mode = crate::slot::band_mode(b, region);
-                s.cfg.narrow = s.cfg.mode == 1;
-                s.cfg.narrow = s.cfg.mode == 1;
+                s.cfg.narrow = crate::slot::mode_narrow(s.cfg.mode);
+                s.cfg.narrow = crate::slot::mode_narrow(s.cfg.mode);
             }
             if s.cfg != was && s.vfo_mode {
                 self.send_slot(i as u8);
@@ -91,7 +91,7 @@ impl App {
         let b = band_near(f);
         if band_near(s.vfo) != b || !s.vfo_mode {
             s.cfg.mode = crate::slot::band_mode(b, region);
-                s.cfg.narrow = s.cfg.mode == 1;
+                s.cfg.narrow = crate::slot::mode_narrow(s.cfg.mode);
             s.cfg.step = band_step(b, region);
             (s.cfg.offset, s.cfg.split) = (0, false);
         }

@@ -1870,7 +1870,7 @@ fn hf_channels_in_ssb_are_written() {
     };
     for (rx, mode) in [(817_600u32, 3u8), (714_000, 4), (1_405_000, 5), (2_807_400, 3)] {
         let r = rec(base, rx, mode);
-        let (s, a) = pc.write_many(what::CHANNEL, &[r.clone()]);
+        let (s, a) = pc.write_many(what::CHANNEL, core::slice::from_ref(&r));
         assert_eq!((s, a.as_slice()), (0, &[1u8][..]), "{rx} mode {mode} accepted");
         let back = pc.read(what::CHANNEL, base).unwrap();
         assert_eq!((&back[4..8], back[24]), (&r.1[4..8], mode), "{rx}: frequency and mode read back (the step is the radio's for HF)");

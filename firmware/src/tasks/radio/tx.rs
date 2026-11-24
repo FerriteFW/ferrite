@@ -295,6 +295,7 @@ impl Radio {
         let spk = ferrite_radio::ptt::mic_src(acc_plugged(), ptt_pressed()) == ferrite_core::msg::MIC_SRC_SPK;
         // VOX-15.3: Mic gain 10 to 12 go on through the pre-emphasis gain; a data key-up keeps stock's
         let (mic, pre) = if data { (ferrite_core::vox::MIC_DATA, ferrite_core::vox::PRE_STOCK) } else { ferrite_core::vox::mic_reg_for(self.tx.mic, spk) };
+        self.tx.meter_gain = (mic, pre); // TX-12.5
         let freq = self.tx.cal.map_or(freq, |c| c.tx_word(freq)); // CAL-12: the factory crystal trim
         radio_chip::TxSetup { freq, narrow, tone, tone_dev, mic, pre }
     }
@@ -307,7 +308,9 @@ impl Radio {
         // TX-12's mic meter: the keyed chip's voice amplitude (REG_64), whichever mic is in use (decision 430; PA0,
         // decision 76's tap, never hears the speaker mic).
         if let Some(n) = self.tx.chip.filter(|&n| self.has(n)) {
-            self.live.tx.mic = tonegen::mic_amp_percent(self.chip(n).read(tonegen::REG_VOICE_AMP));
+            // TX-12.5 (ferrite#180): with the gain applied, as REG_64 reads before it
+            let (mic, pre) = self.tx.meter_gain;
+            self.live.tx.mic = tonegen::mic_meter(self.chip(n).read(tonegen::REG_VOICE_AMP), mic, pre);
         }
         let mut st = Steps::default();
         let cfg = self.tx_cfg();

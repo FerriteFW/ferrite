@@ -535,6 +535,8 @@ struct Tx {
     mic: u8,
     /// VOX-15.3: the chip whose pre-emphasis gain this key-up raised, put back to stock's at the unkey.
     pre_raised: Option<u8>,
+    /// TX-12.5: this key-up's REG_7D[5:0] and REG_2C[5:0], for the mic meter (REG_64 reads before them).
+    meter_gain: (u8, u8),
     /// TX-30: 0 8 1's timeout (s); the sequencer's backstop is [`TX_BACKSTOP_S`] after it.
     timeout_s: u16,
     /// The keyed slot's bandwidth: stock keys through REG_30 0x0200 when wide (TX audit F3).
@@ -924,6 +926,7 @@ pub async fn task() {
             region: None,
             mic: 5,
             pre_raised: None,
+            meter_gain: (0x3F, ferrite_core::vox::PRE_STOCK),
             timeout_s: 120,
             narrow: false,
             #[cfg(feature = "bench")]

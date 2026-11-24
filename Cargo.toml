@@ -50,8 +50,18 @@ inherits = "release"
 debug = false
 strip = true
 
+# Host builds (tests, tools, the simulator) keep line numbers for backtraces but not full debug info, and the
+# dependencies none: full debug info everywhere grew target/debug to 211 GB (Nov 23, 2026; macOS keeps it in the
+# object files). A debugger still steps our code by line; set `debug = true` locally for variables.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.test]
 opt-level = 1
+debug = "line-tables-only"
 
 [workspace.lints.clippy]
 # The drawing calls take position, text, font and two colours; register constants spell out bit 0 shifts; the

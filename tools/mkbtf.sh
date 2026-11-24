@@ -24,6 +24,7 @@
 # templates), unsigned. Flash with: python3 tools/flash.py PORT target/ferrite-tx.ffw --backup flash.bin --dev-unsigned
 set -e
 cd "$(dirname "$0")/.."
+tools/target-trim.sh # the host build cache, capped (it grew to 211 GB)
 name=ferrite
 build="fw"
 elf=ferrite

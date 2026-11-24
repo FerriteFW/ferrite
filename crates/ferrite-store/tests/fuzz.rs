@@ -194,17 +194,21 @@ fn index_agrees(s: &Store) {
     assert_eq!(s.count(), real);
 }
 
-/// Found by fuzzing: zone records damaged (here erased) leave their channels in no list at all, neither a zone's
-/// nor "no zone"'s, while `count` still counts them: browsing never shows them. Input: the populated chip with
-/// 672 bytes erased from 0x050021 (zones 1 and 2 gone; channels 2, 9, 63, 64, 130 and 500 were in them).
+/// CHAN-12.2 (ferrite#170), found by fuzzing: zone records damaged (here erased) left their channels in no list
+/// at all, neither a zone's nor "no zone"'s, while `count` still counted them. Input: the populated chip with 672
+/// bytes erased from 0x050021 (zones 1 and 2 gone; channels 2, 9, 63, 64, 130 and 500 were in them). Now their
+/// zones are still there, unnamed, and list them.
 #[test]
-#[ignore = "found: channels whose zone record is damaged are in no zone list (not even no zone's) but still counted"]
 fn orphaned_channels_are_listed() {
     let mut f = populated().clone();
     edit(&mut f, &[0x21, 0x00, 0x05, 0x00, 2, 0x2A, 0, 0]);
     let s = mount(f);
     let listed: u16 = (0..s.zones()).chain([NO_ZONE]).map(|z| s.zone_len(z)).sum();
     assert_eq!(listed, s.count(), "every channel is in some list");
+    for num in [2, 9, 63, 64, 130, 500] {
+        let (c, _) = s.by_num(num).expect("still there");
+        assert!(c.zone < s.zones() && s.zone_name(c.zone).is_some(), "channel {num}'s zone {} is listed", c.zone);
+    }
 }
 
 /// The APRS record as mounted: every field the mount checks, in range (a damaged one reads as the default).

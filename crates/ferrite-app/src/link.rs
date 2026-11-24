@@ -1789,6 +1789,10 @@ fn apply<S: ChannelStore>(app: &mut App, st: &S, w: u8, idx: u16, rec: &[u8], o:
             if c.resume > 12 {
                 return invalid(o, "resume out of range".as_bytes());
             }
+            // LINK-41.3 (ferrite#148): a priority channel is a channel number (0-3999), as the zone editor picks it
+            if c.pri.iter().flatten().any(|&n| n >= crate::chan::MAX_CHANNELS) {
+                return invalid(o, "priority channel out of range".as_bytes());
+            }
             request(st, Op::PutZone(idx, nm, c))
         }
         what::PRESET if idx <= st.data().presets() as u16 && idx < 16 => {

@@ -101,7 +101,7 @@ const G3: [Entry; 7] = [
 ];
 const G4: [Entry; 5] = [
     Entry(concat!("Event log||", txtc!("Every decode and alert."))),
-    Entry(concat!("POCSAG|439.9875|", txtc!("Pager frequency, baud, capcodes."))),
+    Entry(concat!("POCSAG|439.9875|", txtc!("Pager frequency and capcode filter."))),
     Entry(concat!("DTMF decode|On|", txtc!("DTMF digits heard, on the slot's card."))),
     Entry(concat!("Popups|On|", txtc!("A 3 s toast for each decode."))),
     Entry(concat!("Weather alerts|On|", txtc!("SAME and your location codes."))),
@@ -159,7 +159,7 @@ const G9: [Entry; 9] = [
     Entry(concat!("SSB patch||", txtc!("USB, LSB and CW in HF mode."))),
     Entry(concat!("Setup and reset||", txtc!("Run setup again, reset settings."))),
     Entry(concat!("About||", txtc!("Version, identity, checks, battery."))),
-    Entry(concat!("Advanced||", txtc!("Squelch, calibration, cable log, MCU clock."))),
+    Entry(concat!("Advanced||", txtc!("Squelch, calibration, terminal colour, MCU clock."))),
 ];
 /// The nine groups' items (MENU 0 1 to MENU 0 9).
 pub(crate) const GROUP_ITEMS: [&[Entry]; 9] = [&G1, &G2, &G3, &G4, &G5, &G6, &G7, &G8, &G9];

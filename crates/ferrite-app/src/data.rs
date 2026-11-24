@@ -22,6 +22,14 @@ pub struct Pos {
     pub lon: i32,
 }
 
+impl Pos {
+    /// GPS-3.2: on the globe: latitude within ±90°, longitude within ±180° (degrees x 1e7). A position from a damaged
+    /// store or over the link can be past either (ferrite#149: the grid square overflowed).
+    pub fn on_globe(self) -> Pos {
+        Pos { lat: self.lat.clamp(-900_000_000, 900_000_000), lon: self.lon.clamp(-1_800_000_000, 1_800_000_000) }
+    }
+}
+
 /// Where an event came from (INBOX-9: the log counts and filters by source).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Src {

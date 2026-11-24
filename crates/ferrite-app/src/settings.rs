@@ -614,6 +614,7 @@ impl Settings {
     }
 
     pub fn sanitize(&mut self) {
+        self.fixed = self.fixed.on_globe(); // GPS-3.2: a damaged or remote record's position kept on the globe
         // Decision 386: 0 9 2 3's KISS (3) did what 0 5 8 on Cable does: a radio saved with it keeps KISS on the cable
         if self.cable_port == 3 {
             (self.cable_port, self.kiss_port) = (0, 1);

@@ -677,10 +677,12 @@ pub(crate) fn z(v: u32) -> &'static str {
     if v < 10 { "0" } else { "" }
 }
 
-/// The Maidenhead grid square, six characters ("FN25dk").
+/// The Maidenhead grid square, six characters ("FN25dk"). GPS-3.2: a position off the globe is taken at its edge, and
+/// the poles and the date line themselves fall in the last square (RR99xx), not past it (ferrite#149).
 pub fn grid(p: Pos) -> [u8; 6] {
-    let lon = p.lon as i64 + 1_800_000_000; // 0..360 degrees, x 1e7
-    let lat = p.lat as i64 + 900_000_000;
+    let p = p.on_globe();
+    let lon = (p.lon as i64 + 1_800_000_000).min(3_599_999_999); // 0..360 degrees, x 1e7
+    let lat = (p.lat as i64 + 900_000_000).min(1_799_999_999);
     let d = 10_000_000i64;
     [
         b'A' + (lon / (20 * d)) as u8,
@@ -732,6 +734,25 @@ pub fn mhz_text(f: u32, b: &mut Buf<16>) {
 
 #[cfg(test)]
 mod tests {
+    /// GPS-3.2 (ferrite#149): a position off the globe (a damaged record, the link) gives the edge's square, never
+    /// a panic or letters past R; the poles and the date line fall in the last square.
+    #[test]
+    fn grid_off_the_globe() {
+        use crate::data::Pos;
+        let g = |lat: i32, lon: i32| std::string::String::from_utf8(grid(Pos { lat, lon }).to_vec()).unwrap();
+        assert_eq!(g(900_000_000, 1_800_000_000), "RR99xx", "the north pole on the date line");
+        assert_eq!(g(-900_000_000, -1_800_000_000), "AA00aa", "the south pole, the other side");
+        assert_eq!(g(i32::MAX, i32::MAX), "RR99xx");
+        assert_eq!(g(i32::MIN, i32::MIN), "AA00aa");
+        assert_eq!(g(950_000_000, 0), g(900_000_000, 0), "past the pole: the pole");
+        let p = Pos { lat: -950_000_000, lon: 2_000_000_000 }.on_globe();
+        assert_eq!((p.lat, p.lon), (-900_000_000, 1_800_000_000));
+        let mut s = crate::settings::Settings::DEFAULT;
+        s.fixed = Pos { lat: i32::MAX, lon: i32::MIN };
+        s.sanitize();
+        assert_eq!((s.fixed.lat, s.fixed.lon), (900_000_000, -1_800_000_000), "a loaded record's position kept on the globe");
+    }
+
     /// DISP-24: more above or below, with and without a filter.
     #[test]
     fn more_rows() {

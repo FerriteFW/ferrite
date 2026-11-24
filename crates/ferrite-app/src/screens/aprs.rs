@@ -355,6 +355,10 @@ const ROWS: [(&str, Val<Station>); 8] = [
         if let Some(m) = s.msg_min {
             clock_text(Some(m), 0, &mut clock);
         }
+        // APRS-28.1: who it was addressed to, first
+        if !s.msg_to.is_empty() {
+            let _ = uwrite!(b, "to {}: ", Txt(s.msg_to.as_bytes()));
+        }
         let _ = uwrite!(b, "\"{}\" {}", Txt(s.msg.as_bytes()), Txt(clock.as_bytes()));
         TEXT
     }),
@@ -366,11 +370,25 @@ pub(crate) fn last_message(s: &mut crate::data::Station, data: &dyn crate::data:
     if !s.msg.is_empty() {
         return;
     }
+    let min_of = |ago_s: u32| clock_min.filter(|_| ago_s != crate::data::AGO_UNKNOWN).map(|c| (c as i32 - (ago_s / 60) as i32).rem_euclid(1440) as u16);
+    // APRS-28.1: a message to everyone it sent lately (APRS-6.4) counts too, when it's newer than its last to us
+    let note = (0..data.notices()).filter_map(|i| data.notice(i)).find(|n| n.from.as_bytes().eq_ignore_ascii_case(s.call.as_bytes()));
     let n = data.messages().min(MSG_LOOK);
-    if let Some(m) = (0..n).filter_map(|i| data.message(i)).find(|m| m.inbound && m.peer.as_bytes().eq_ignore_ascii_case(s.call.as_bytes())) {
-        let t = m.text.as_bytes();
-        s.msg = Buf::from(&t[..t.len().min(32)]);
-        s.msg_min = clock_min.filter(|_| m.ago_s != crate::data::AGO_UNKNOWN).map(|c| (c as i32 - (m.ago_s / 60) as i32).rem_euclid(1440) as u16);
+    let msg = (0..n).filter_map(|i| data.message(i)).find(|m| m.inbound && m.peer.as_bytes().eq_ignore_ascii_case(s.call.as_bytes()));
+    match (msg, note) {
+        (Some(m), n) if n.is_none_or(|n| m.ago_s <= n.ago_s) => {
+            let t = m.text.as_bytes();
+            s.msg = Buf::from(&t[..t.len().min(32)]);
+            s.msg_min = min_of(m.ago_s);
+            s.msg_to = m.to;
+        }
+        (_, Some(n)) => {
+            let t = n.text.as_bytes();
+            s.msg = Buf::from(&t[..t.len().min(32)]);
+            s.msg_min = min_of(n.ago_s);
+            s.msg_to = Buf::from(n.to.as_bytes());
+        }
+        _ => {}
     }
 }
 

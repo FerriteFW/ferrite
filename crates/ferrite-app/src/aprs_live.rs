@@ -578,6 +578,7 @@ impl AprsLive {
             comment: d.filter(|_| known & DET_COMMENT != 0).map_or(Buf::new(), |d| d.comment),
             msg: Buf::new(),
             msg_min: None,
+            msg_to: Default::default(),
             fx25: d.filter(|_| known & DET_FX25 != 0).and_then(|d| d.fx25.checked_sub(1)),
             device: d.filter(|_| known & DET_COURSE != 0).and_then(|d| d.device),
         })
@@ -3013,6 +3014,7 @@ mod tests {
             comment: Buf::from(b"Home".as_slice()),
             msg: Buf::new(),
             msg_min: None,
+            msg_to: Default::default(),
             fx25: None,
             device: None,
         };

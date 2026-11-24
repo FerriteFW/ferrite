@@ -202,7 +202,8 @@ type SsbAt = Option<(u16, bool)>;
 struct HfOn {
     freq: Freq10,
     mode: u8,
-    /// The SI4732 (below 18 MHz, and AM up to 30 MHz: HF-10); otherwise chip 1 through the energised relay.
+    /// The SI4732 (below 18 MHz, and USB, LSB and CW up to 30 MHz: HF-10, HF-10.1); otherwise chip 1 through the
+    /// energised relay.
     si: bool,
 }
 

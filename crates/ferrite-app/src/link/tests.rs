@@ -1850,6 +1850,38 @@ fn write_many_channels() {
     assert_eq!(pc.ask(msg::WRITE_MANY, &[what::CHANNEL]).0, Status::BadArg as u8);
 }
 
+/// LINK-41, CHAN-26 (Console#50): a channel written over the link takes what the radio's editor takes: an HF channel
+/// in USB, LSB or CW (8.176 MHz USB, as a CHIRP CSV or Console's own export has it), but not USB on 2 m, nor past
+/// 30 MHz where HF mode offers no SSB.
+#[test]
+fn hf_channels_in_ssb_are_written() {
+    let mut pc = Pc::new(true);
+    let base = pc.st.free_num(600).unwrap();
+    let rec = |n: u16, rx: u32, mode: u8| {
+        let mut c = Channel { num: n, zone: NO_ZONE, rx, name: [0; 16], cfg: SlotCfg::default(), flags: 0, tones: 0 };
+        c.set_name(b"HF");
+        c.cfg.mode = mode;
+        let mut out = std::vec![0u8; 64];
+        let mut w = Window { b: &mut out, from: 0, n: 0 };
+        channel_save(&c, &mut w);
+        let k = w.n;
+        out.truncate(k);
+        (n, out)
+    };
+    for (rx, mode) in [(817_600u32, 3u8), (714_000, 4), (1_405_000, 5), (2_807_400, 3)] {
+        let r = rec(base, rx, mode);
+        let (s, a) = pc.write_many(what::CHANNEL, core::slice::from_ref(&r));
+        assert_eq!((s, a.as_slice()), (0, &[1u8][..]), "{rx} mode {mode} accepted");
+        let back = pc.read(what::CHANNEL, base).unwrap();
+        assert_eq!((&back[4..8], back[24]), (&r.1[4..8], mode), "{rx}: frequency and mode read back (the step is the radio's for HF)");
+    }
+    for (rx, mode) in [(14_652_000u32, 3u8), (5_012_500, 3)] {
+        let (s, a) = pc.write_many(what::CHANNEL, &[rec(base + 1, rx, mode)]);
+        assert_eq!(s, Status::Invalid as u8, "{rx} mode {mode} refused");
+        assert_eq!(std::str::from_utf8(&a[1..]).unwrap(), "mode or step out of range");
+    }
+}
+
 /// LINK-41.1: a store that takes queued writes gets a `WRITE_MANY` frame's records in one pass, straight into its
 /// queue (the App's own write slot stays free), and the answer goes at once.
 #[test]

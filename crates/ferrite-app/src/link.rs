@@ -1733,7 +1733,11 @@ fn apply<S: ChannelStore>(app: &mut App, st: &S, w: u8, idx: u16, rec: &[u8], o:
             if !st.zone_room(c.zone, idx) {
                 return invalid(o, crate::text::load(crate::term::cmd::ZONE_FULL).or(b"zone: full")); // CHAN-35
             }
-            if !crate::slot::slot_mode_ok(c.cfg.mode) || c.cfg.step as usize >= STEPS.len() {
+            // LINK-41: the radio's editors' checks: an HF channel (below 64 MHz) takes the modes HF mode has there,
+            // USB, LSB and CW included (CHAN-26; Console#50: a CHIRP CSV's SSB channels, even Console's own export,
+            // were refused)
+            let mode_ok = crate::slot::slot_mode_ok(c.cfg.mode) || c.is_hf() && crate::screens::hf::channel_mode_ok(c.rx, c.cfg.mode);
+            if !mode_ok || c.cfg.step as usize >= STEPS.len() {
                 return invalid(o, "mode or step out of range".as_bytes());
             }
             if let Err(m) = crate::term::cmd::check(&c) {

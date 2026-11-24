@@ -128,6 +128,7 @@ pub fn at_start(cause: u32) -> bool {
 /// SAFE-8.3: at start-up, before the tasks (a restart), or at a stop in the safe state (SAFE-8.1): this start's
 /// record written to the SPI flash; at any other start the newest record Console hasn't read found, for the notice
 /// (once) and the readback. Busy-waited: a written record is a program of 64 bytes, a sector erase every 64.
+#[inline(never)] // in the slow flash (memory.x): start-up only
 pub fn keep() {
     if cfg!(feature = "bringup") {
         return; // the bring-up build writes nothing to the chip

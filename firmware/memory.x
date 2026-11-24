@@ -137,6 +137,9 @@ SECTIONS
     /* The tone hint (TSRCH-12, -13): the Radio task's step for it and the heard-tone decode, at most once a
      * receive tick, never from an interrupt. */
     *(.text.*8tonehint*);
+    /* SAFE-8.3: the restart record's flash work, once at start-up or at a stop (thread mode, interrupts off), never
+     * from the fault path. */
+    *(.text.*7ferrite7restart4keep*);
     /* The GPS task and its NMEA parser (thread mode, below every interrupt): the UART interrupt (fast) fills a ring,
      * and NMEA at 9600 bd is under 1 KB/s, far from what parsing from the slow flash can do. With it the power
      * manager (GPS-26 to GPS-33) and the GGA copy for the terminal's `gps` (TERM-30). */

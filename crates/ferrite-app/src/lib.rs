@@ -1557,11 +1557,11 @@ impl App {
     /// Opens a screen by where it is in the manual ([`Dest`]), remembering this one for BACK. Screens not built
     /// yet open as a "coming" placeholder ([`screens::nav::enter`]).
     pub fn open(&mut self, dest: Dest) {
-        // PWR-24.4: Low Power Mode has no scan, band scope, counter, broadcast, HF mode, crossband (two VFOs) or
-        // satellite mode (both chips awake, and no GPS: ferrite#133): nothing that keeps a receiver sweeping or
-        // listening; menus, editing and tone search stay.
+        // PWR-24.4: Low Power Mode has no scan, band scope, counter, tone search (its chip awake throughout, as the
+        // counter's: ferrite#142), broadcast, HF mode, crossband (two VFOs) or satellite mode (both chips awake, and
+        // no GPS: ferrite#133): nothing that keeps a receiver sweeping or listening; menus and editing stay.
         if self.low_power()
-            && matches!(dest, Dest::Scan | Dest::BandScope | Dest::Counter | Dest::HfMode | Dest::Crossband | Dest::Satellites)
+            && matches!(dest, Dest::Scan | Dest::BandScope | Dest::Counter | Dest::ToneSearch | Dest::HfMode | Dest::Crossband | Dest::Satellites)
         {
             return self.lpm_refuse();
         }

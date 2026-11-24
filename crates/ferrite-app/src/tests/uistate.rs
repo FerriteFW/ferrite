@@ -375,6 +375,7 @@ fn refused_names_the_fix() {
 }
 
 /// LINK-19: the state line's `keyed` names HF when the HF transmitter is keyed, and the strip mode by name.
+/// LINK-19.7: SAT when the satellite uplink is.
 #[test]
 fn keyed_hf_and_strip() {
     use crate::screens::activity::Mode;
@@ -383,6 +384,10 @@ fn keyed_hf_and_strip() {
     t.app.radio.mode = Mode::Strip;
     let s = find(&ui(&t), "state").to_owned();
     assert!(s.contains(" keyed=HF") && s.contains(" mode=strip"), "{s}");
+    // LINK-19.7 (ferrite#146): the satellite uplink is SAT, not HF
+    t.app.radio.keyed = Some(crate::sat::SAT_SLOT);
+    let s = find(&ui(&t), "state").to_owned();
+    assert!(s.contains(" keyed=SAT"), "{s}");
 }
 
 /// GPS (LINK-19): the position page with a fix reads back the position, its tiles and the nearest waypoint.

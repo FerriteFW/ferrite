@@ -314,7 +314,8 @@ fn letter(s: u8) -> u8 {
     b'A' + s
 }
 
-/// ` keyed=A remote=0 mode=off`: the slot transmitting (`-` none), remote PTT and the exclusive mode (MODE-1).
+/// ` keyed=A remote=0 mode=off`: the slot transmitting (`-` none; HF for HF mode's transmitter, SAT for the satellite
+/// uplink, LINK-19.7), remote PTT and the exclusive mode (MODE-1).
 /// A data key-up (APRS, KISS: the UI's own `keyed` is voice only) counts too, from the Radio task's live state
 /// (LINK-19), so a test sees and times every transmission.
 fn keyed_remote_mode(app: &App, live: &LiveAll, l: &mut Line) {
@@ -323,6 +324,7 @@ fn keyed_remote_mode(app: &App, live: &LiveAll, l: &mut Line) {
         Some(s) if (s as usize) < SLOTS => {
             let _ = uwrite!(l, " keyed={}", letter(s) as char);
         }
+        Some(crate::sat::SAT_SLOT) => l.push(b" keyed=SAT"), // LINK-19.7 (ferrite#146): the satellite uplink
         Some(_) => l.push(b" keyed=HF"),
         None => l.push(b" keyed=-"),
     }

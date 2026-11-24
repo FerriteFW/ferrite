@@ -534,6 +534,7 @@ fn aprs_flag_decodes_on_its_slot() {
 }
 
 /// APRS-28: the station screen's Message line comes from the newest stored message the station sent us.
+/// APRS-28.1: or a newer message to everyone it sent, and either says who it was addressed to.
 #[test]
 fn station_shows_its_last_message() {
     let a = A::new();
@@ -545,6 +546,19 @@ fn station_shows_its_last_message() {
     crate::screens::aprs::last_message(&mut s, &a.s, Some(10 * 60));
     assert_eq!(s.msg.as_bytes(), b"On my way");
     assert_eq!(s.msg_min, Some(10 * 60 - 2));
+    assert!(s.msg_to.is_empty(), "APRS-28.1: a message stored without its address shows none");
+    // APRS-28.1 (ferrite#184): a CQ it sent since is the newer one, shown with its addressee
+    a.s.add_notice(crate::data::Notice { from: Buf::from(b"VE3KPW-9"), to: Buf::from(b"CQ"), text: Buf::from(b"Net at 8"), ago_s: 30, unread: true });
+    s.msg = Buf::new();
+    crate::screens::aprs::last_message(&mut s, &a.s, Some(10 * 60));
+    assert_eq!((s.msg.as_bytes(), s.msg_to.as_bytes(), s.msg_min), (&b"Net at 8"[..], &b"CQ"[..], Some(10 * 60)));
+    // an older CQ than the message to us: the message
+    let a = A::new();
+    a.s.add_notice(crate::data::Notice { from: Buf::from(b"VE3KPW-9"), to: Buf::from(b"CQ"), text: Buf::from(b"old"), ago_s: 3600, unread: false });
+    let mut s = a.s.station(0).unwrap();
+    s.msg = Buf::new();
+    crate::screens::aprs::last_message(&mut s, &a.s, Some(10 * 60));
+    assert_eq!(s.msg.as_bytes(), b"On my way");
     // A station that sent us nothing keeps its dash.
     let mut s = a.s.station(2).unwrap();
     s.msg = Buf::new();

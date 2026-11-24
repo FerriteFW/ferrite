@@ -115,6 +115,9 @@ pub struct Station {
     /// The last message it sent us and the clock minute it came.
     pub msg: Buf<32>,
     pub msg_min: Option<u16>,
+    /// APRS-28.1 (ferrite#184): who that message was addressed to (our callsign with or without the SSID, or CQ,
+    /// QST, ALL); empty when not known (a message stored before 0.9.7).
+    pub msg_to: Buf<10>,
     /// APRS-44: its last frame came as FX.25, with this many bytes corrected.
     pub fx25: Option<u8>,
     /// APRS-5.2: the radio its Mic-E device codes named, an index into `uaprs::parse::MIC_E_DEVICES`.

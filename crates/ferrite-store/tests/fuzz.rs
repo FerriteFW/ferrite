@@ -63,6 +63,7 @@ fn station(call: &[u8]) -> Station {
         comment: Buf::from(b"QRV"),
         msg: Buf::new(),
         msg_min: None,
+        msg_to: Default::default(),
         fx25: None,
     }
 }

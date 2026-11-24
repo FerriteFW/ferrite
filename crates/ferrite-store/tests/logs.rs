@@ -38,6 +38,7 @@ impl Data for Tasks {
             comment: Buf::new(),
             msg: Buf::new(),
             msg_min: None,
+            msg_to: Default::default(),
             fx25: None,
             device: None,
         })
@@ -631,6 +632,7 @@ fn st(call: &[u8], comment: &[u8], times: u16) -> Station {
         comment: Buf::from(comment),
         msg: Buf::new(),
         msg_min: None,
+        msg_to: Default::default(),
         fx25: Some(4),
         device: Some(31),
     }

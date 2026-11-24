@@ -828,7 +828,6 @@ pub fn device_at(secs: u64) -> Device {
         audio: [0; 6],
         decode: [0; 18],
         restart: [0; 2],
-        crash: None,
         spkmic: false,
         tx_built: true, // the fake radio transmits (into nothing)
         bench: cfg!(feature = "bench"),

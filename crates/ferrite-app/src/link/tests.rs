@@ -1596,40 +1596,6 @@ fn ui_radio_report() {
     assert_eq!(s, Status::Ok as u8);
 }
 
-/// SAFE-8.3, LINK-19.6: a restart record kept from before this power-on (a safety stop) is in the readback's and the
-/// radio report's `restart` line, in the keys Console already reads (`after=`, `pc=`, `in_a_row=`) and more; the line
-/// going out asks for the record to be marked read. Without one, the line is as before.
-#[test]
-fn restart_record_in_readback() {
-    use ferrite_core::msg::CrashRec;
-    let pc = Pc::new(true);
-    let live = LiveAll::default();
-    let lines = |dev: &Device, radio: bool| {
-        let mut all = std::string::String::new();
-        let mut l = crate::term::cmd::Line::new();
-        let mut i = 0;
-        while if radio { crate::uistate::radio_line(&pc.app, &pc.st, dev, i, &mut l) } else { crate::uistate::line(&pc.app, &pc.st, dev, &live, i, &mut l) } {
-            all.push_str(core::str::from_utf8(l.as_bytes()).unwrap());
-            all.push('\n');
-            i += 1;
-        }
-        all
-    };
-    let mut dev = Device::default();
-    crate::uistate::RESTART_READ.store(false, core::sync::atomic::Ordering::Relaxed);
-    assert!(!lines(&dev, false).contains("restart"));
-    assert!(!crate::uistate::RESTART_READ.load(core::sync::atomic::Ordering::Relaxed));
-    dev.crash = Some(CrashRec { pcs: [0x0802_3abc, 1, 0x0802_3abc], n: 3, up_s: 75, stopped: true, build: *b"f28d3d6\0" });
-    let want = "restart after=fault pc=0x8023abc in_a_row=3 stopped=1 up_s=75 build=f28d3d6 pcs=0x8023abc,hang,0x8023abc saved=1";
-    assert!(lines(&dev, false).contains(want), "{}", lines(&dev, false));
-    assert!(lines(&dev, true).contains(want), "{}", lines(&dev, true));
-    assert!(crate::uistate::RESTART_READ.load(core::sync::atomic::Ordering::Relaxed));
-    // this start's own restart (a hang) with its record: no saved=1
-    dev.restart = [1, 1];
-    dev.crash = Some(CrashRec { pcs: [1, 0, 0], n: 1, up_s: 3_600, stopped: false, build: *b"f28d3d6+" });
-    assert!(lines(&dev, false).contains("restart after=hang in_a_row=1 stopped=0 up_s=3600 build=f28d3d6+ pcs=hang\n"), "{}", lines(&dev, false));
-}
-
 /// LINK-19, APRS-17.4: the APRS card's readback gives what the card shows (the last heard line, the beacon line, the
 /// stations heard), not the mode, tone and shift of C's own VFO put aside (it read mode="AM", Oct 15, 2026).
 #[test]

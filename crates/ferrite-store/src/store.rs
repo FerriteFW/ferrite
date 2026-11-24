@@ -33,7 +33,7 @@ use ferrite_app::persist::{Persist, Sink, Source};
 use ferrite_app::settings::Settings;
 use ferrite_app::App;
 use ferrite_core::freq::{mhz, Freq10};
-use ferrite_core::layout::{APRS, CHANNELS, CONTACTS, CRASH_LOG, EVENT_LOG, HEARD, LAYOUT_HEADER, LAYOUT_MOVING, MESSAGES, MIGRATE_MARK, PRESETS, SATELLITES, SETTINGS, TRIMS, V2_HEADER, WAYPOINTS, ZONES};
+use ferrite_core::layout::{APRS, CHANNELS, CONTACTS, EVENT_LOG, HEARD, LAYOUT_HEADER, LAYOUT_MOVING, MESSAGES, MIGRATE_MARK, PRESETS, SATELLITES, SETTINGS, TRIMS, V2_HEADER, WAYPOINTS, ZONES};
 use ferrite_core::txplan::Region;
 use ferrite_ui::text::Buf;
 
@@ -132,8 +132,6 @@ pub enum Job {
     PicRow { addr: u32, i: u8 },
     /// SSTV-4: a picture slot's 41 sectors erased, ready for the next picture.
     PicErase(u8),
-    /// SAFE-8.3: the restart record at this address read by Console: its read mark programmed.
-    CrashRead(u32),
 }
 
 /// SSTV-4: received rows waiting to be written (a row comes every 75 ms at the most, Robot 36's pairs).
@@ -614,7 +612,7 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
     /// skipped; never calibration, the SSB patch or the update area), then the header (a cut before it formats
     /// again next time). Stock's old codeplug, record and voice prompts are in the install's backup (decision 333).
     async fn format(&self) -> Result {
-        for r in [LAYOUT_HEADER, MIGRATE_MARK, CRASH_LOG, SETTINGS, TRIMS, PRESETS, SATELLITES, CHANNELS, ZONES, APRS, CONTACTS, HEARD, MESSAGES, WAYPOINTS, EVENT_LOG] {
+        for r in [LAYOUT_HEADER, MIGRATE_MARK, SETTINGS, TRIMS, PRESETS, SATELLITES, CHANNELS, ZONES, APRS, CONTACTS, HEARD, MESSAGES, WAYPOINTS, EVENT_LOG] {
             for s in r.step_by(SECTOR as usize) {
                 if !self.f.blank(s, SECTOR)? {
                     self.f.erase(s).await?;
@@ -828,12 +826,6 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         j
     }
 
-    /// SAFE-8.3: Console has read the restart record at `at` (LINK-19.6): marked read, so the next start doesn't
-    /// report it again.
-    pub fn crash_read(&self, at: u32) -> bool {
-        self.ok() && self.submit(Job::CrashRead(at))
-    }
-
     /// Writes are waiting.
     pub fn has_jobs(&self) -> bool {
         self.queued.get() > 0
@@ -927,9 +919,6 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
             Job::DeleteContact(c) => self.contacts.delete(&self.f, c.as_bytes()).await.unwrap_or(false),
             Job::AprsSave => self.aprs_save(None).await.is_ok(),
             Job::Counts => self.write_counts().await.is_ok(),
-            Job::CrashRead(at) => {
-                CRASH_LOG.contains(&at) && self.f.program(at + crate::crash::READ_AT as u32, &[0; 4]).await.is_ok()
-            }
             Job::Data(_) | Job::DataBegin(_) => false, // above
             Job::Pic(w) => !matches!(w, DataWrite::Stamp) && self.data_job(w).await.is_ok(),
             Job::PicRow { addr, i } => {
@@ -2056,12 +2045,6 @@ enum Header {
     Ok,
     Other(u16),
     None,
-}
-
-/// The chip holds this layout (its header) and no move is under way (no migration mark): Ferrite's own data, which
-/// a write outside the store may sit beside (SAFE-8.3's restart record).
-pub(crate) fn layout_ours<N: Nor>(f: &Flash<N>) -> Result<bool> {
-    Ok(header_version(f, LAYOUT_HEADER.start)? == Some(LAYOUT_VERSION) && mark_at(f)?.is_none())
 }
 
 /// The layout version a Ferrite header at `at` names (magic and CRC good), or None.

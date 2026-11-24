@@ -62,6 +62,8 @@ fn on_and_off_restore_everything() {
     assert_eq!(t.app.screen, Screen::Home, "no band scope (a sweeping receiver)");
     t.app.open(Dest::Counter);
     assert_eq!(t.app.screen, Screen::Home, "no counter (a listening receiver)");
+    t.app.open(Dest::ToneSearch);
+    assert_eq!(t.app.screen, Screen::Home, "no tone search (its chip awake throughout, as the counter's; ferrite#142)");
     t.app.open(Dest::Satellites);
     assert_eq!(t.app.screen, Screen::Home, "no satellite mode (both chips awake; ferrite#133)");
     t.app.open(Dest::Group(7));

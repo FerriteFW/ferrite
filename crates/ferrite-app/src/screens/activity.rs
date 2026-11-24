@@ -278,8 +278,8 @@ impl App {
         let under = self.back.iter().rev().flatten().copied();
         for s in core::iter::once(self.screen).chain(under) {
             let m = match s {
-                // PWR-24.4: no scope, counter, broadcast, HF mode or crossband in Low Power Mode
-                Screen::Scope(_) | Screen::Counter(_) if self.low_power() => continue,
+                // PWR-24.4: no scope, counter, tone search, broadcast, HF mode or crossband in Low Power Mode
+                Screen::Scope(_) | Screen::Counter(_) | Screen::ToneSearch(_) if self.low_power() => continue,
                 Screen::Scope(_) => Mode::Scope,
                 Screen::ToneSearch(_) => Mode::Tone,
                 Screen::Counter(_) => Mode::Counter,

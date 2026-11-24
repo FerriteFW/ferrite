@@ -2127,7 +2127,7 @@ fn meter(t: &mut Toks) -> Result<Done, No> {
 /// `nocrc` turns the chip's CRC off. Anything else is refused here, before anything is sent.
 fn fsk(t: &mut Toks) -> Result<Done, No> {
     use ferrite_core::fskbench::{Ask, Cfg, Speed, COUNT_MAX};
-    const USAGE: Txt = txt!("fsk [off], fsk rx|tx SPEED [N] [nocrc]: SPEED 300-9600, ffsk1800 or ffsk2400; tx N 1-999");
+    const USAGE: Txt = txt!("fsk [off], fsk rx|tx SPEED [N] [nocrc]: SPEED 300-9600, ffsk1800, ffsk2400 or acars; tx N 1-999");
     fn word<'a>(t: &mut Toks<'a>) -> Result<Option<&'a [u8]>, No> {
         match t.next()? {
             None => Ok(None),

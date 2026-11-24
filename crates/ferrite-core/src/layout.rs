@@ -31,11 +31,7 @@ pub const SATELLITES: Range<u32> = 0x00_6000..0x00_8000;
 /// The SI4732 SSB patch (15,832 B with its 64-byte header): imported from the owner's stock firmware, never shipped.
 pub const SSB_PATCH: Range<u32> = 0x00_8000..0x00_C000;
 /// Free: room for the settings and records above to grow.
-pub const CONFIG_FREE: Range<u32> = 0x00_C000..0x00_D000;
-/// The restart record (SAFE-8.3, decision 448): the last restarts in a row, kept across a power-off. Records of 64
-/// bytes ([`crate::msg::CrashRec`], ferrite-store `crash`), a new one in the next erased place each fault or hang;
-/// the sector erased only when all 64 places are used.
-pub const CRASH_LOG: Range<u32> = 0x00_D000..0x00_E000;
+pub const CONFIG_FREE: Range<u32> = 0x00_C000..0x00_E000;
 /// The migration mark (decision 339, LINK-62): while Console moves the chip's data raw, a mark here says the move
 /// isn't finished, so a restart at any point waits for Console (UPD-16) and never formats; the stamp clears it.
 /// Records of 16 bytes (ferrite-store `store`), a new one in the next erased place each move.
@@ -108,7 +104,7 @@ pub static WRITABLE: [Range<u32>; 3] =
 pub const DATA: Range<u32> = 0..UPDATE_AREA.start;
 
 /// Every region in address order, with its name as the developer page and the build report show it.
-pub const REGIONS: [(&str, Range<u32>); 30] = [
+pub const REGIONS: [(&str, Range<u32>); 29] = [
     ("Layout header", LAYOUT_HEADER),
     ("Settings and slots", SETTINGS),
     ("User trims", TRIMS),
@@ -117,7 +113,6 @@ pub const REGIONS: [(&str, Range<u32>); 30] = [
     ("Satellites", SATELLITES),
     ("SSB patch", SSB_PATCH),
     ("Free: config growth", CONFIG_FREE),
-    ("Restart record", CRASH_LOG),
     ("Migration mark", MIGRATE_MARK),
     ("Factory calibration", CALIBRATION),
     ("Channels", CHANNELS),

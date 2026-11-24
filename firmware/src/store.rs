@@ -213,9 +213,10 @@ pub static STORE: OnceLock<Shared> = OnceLock::new();
 /// Writes are queued: the Storage task has work.
 pub static WAKE: Signal<CriticalSectionRawMutex, ()> = Signal::new();
 
-/// Starts the flash: the chip woken, left idle and identified; its driver and JEDEC ID and size, or None when it
-/// didn't answer (the self-test's SPI flash check).
-fn chip() -> (Chip, Option<(u32, u32)>) {
+/// Starts the flash and makes the store (not mounted yet: the caller awaits `mount_async`); the chip's JEDEC ID
+/// and size, or None when it didn't answer (the self-test's SPI flash check).
+#[inline(never)] // SBAR-23: the store is built on this frame's stack before it moves to its static
+pub fn make() -> (Option<(u32, u32)>, &'static Store) {
     // SAFE-1.5: a restart (a fault, a hang, the updater) doesn't reset the chip: a program or erase started before it
     // may still be running, and a busy chip ignores the ID read. Woken, then waited for (busy-polled, as stock waits)
     // before it is identified or read.
@@ -242,23 +243,7 @@ fn chip() -> (Chip, Option<(u32, u32)>) {
     };
     let size = id.map_or(0, |i| i.1);
     let sus = id.and_then(|i| sus_of((i.0 >> 16) as u8)); // SAFE-1.3
-    (Chip { spi, size, active: false, sus }, id)
-}
-
-/// SAFE-8.3: the chip for the restart record's busy-waited reads and writes at start-up and at a safety stop
-/// (`crate::restart::keep`), before the store is made; None when it didn't answer. Its writes are held to
-/// [`WRITE_OK`] like the store's.
-pub fn raw_chip() -> Option<ferrite_store::io::Flash<Chip>> {
-    let (c, id) = chip();
-    id.map(|_| ferrite_store::io::Flash::new(c))
-}
-
-/// Starts the flash and makes the store (not mounted yet: the caller awaits `mount_async`); the chip's JEDEC ID
-/// and size, or None when it didn't answer (the self-test's SPI flash check).
-#[inline(never)] // SBAR-23: the store is built on this frame's stack before it moves to its static
-pub fn make() -> (Option<(u32, u32)>, &'static Store) {
-    let (chip, id) = chip();
-    let store: &'static Store = cortex_m::singleton!(: Store = FlashStore::new(chip, RadioData::new())).unwrap();
+    let store: &'static Store = cortex_m::singleton!(: Store = FlashStore::new(Chip { spi, size, active: false, sus }, RadioData::new())).unwrap();
     store.set_deferred(true);
     let _ = STORE.init(Shared(store));
     (id, store)

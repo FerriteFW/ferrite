@@ -31,7 +31,6 @@
 //! Strings are in double quotes, `"` and `\` escaped with `\`; the arrows are `^ v < >`.
 
 use crate::chan::ChannelStore;
-use core::sync::atomic::{AtomicBool, Ordering::Relaxed};
 use crate::screens::{self, shared::Cx};
 use crate::slot::{card_tone, mode_chip, shift_chip, QUICK};
 use crate::term::cmd::Line;
@@ -440,12 +439,17 @@ fn describe<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
             }
         }
     }
-    // SAFE-8.2: this start followed a fault (its address) or a hang, and the restarts in a row; SAFE-8.3: or the
-    // record kept from before this power-on (a safety stop's), until Console has read it.
-    if cx.dev.restart[0] != 0 || cx.dev.crash.is_some() {
+    // SAFE-8.2: this start followed a fault (its address) or a hang, and the restarts in a row.
+    if cx.dev.restart[0] != 0 {
         if let Some(l) = d.ln() {
             l.push(b"restart");
-            restart_keys(cx.dev, l);
+            if cx.dev.restart[0] == 1 {
+                l.push(b" after=hang");
+            } else {
+                l.push(b" after=fault");
+                let _ = uwrite!(l, " pc=0x{:x}", cx.dev.restart[0]);
+            }
+            kn(l, "in_a_row", cx.dev.restart[1]);
         }
     }
     if let Some(l) = d.ln() {
@@ -1533,49 +1537,6 @@ pub fn key_line(i: u16, out: &mut Line) -> bool {
     true
 }
 
-/// SAFE-8.3: the readback's `restart` line has gone out with a kept record in it: the UI task marks the record read
-/// in the SPI flash (Ferrite Console reads the line on connecting, LINK-19), so the next start doesn't report it.
-pub static RESTART_READ: AtomicBool = AtomicBool::new(false);
-
-/// SAFE-8.2, SAFE-8.3: the `restart` line's keys: `after=` (`hang`, or `fault` with `pc=`) and `in_a_row=`, this
-/// start's or else the kept record's; then, with a kept record (which sets [`RESTART_READ`]), `stopped=` (SAFE-8.1),
-/// `up_s=` (the uptime before the newest restart), `build=`, `pcs=` (the restarts in a row, newest first: addresses, or `hang`) and
-/// `saved=1` when it is from before this power-on.
-fn restart_keys(dev: &Device, l: &mut Line) {
-    let (pc, n) = match (dev.restart[0], dev.crash) {
-        (0, Some(c)) => (c.pcs[0], c.n),
-        _ => (dev.restart[0], dev.restart[1]),
-    };
-    if pc == 1 {
-        l.push(b" after=hang");
-    } else {
-        l.push(b" after=fault");
-        let _ = uwrite!(l, " pc=0x{:x}", pc);
-    }
-    kn(l, "in_a_row", n);
-    if let Some(c) = dev.crash {
-        kn(l, "stopped", c.stopped as u32);
-        kn(l, "up_s", c.up_s);
-        l.push(b" build=");
-        l.push(c.build());
-        l.push(b" pcs=");
-        for (i, &p) in c.pcs.iter().take_while(|&&p| p != 0).enumerate() {
-            if i > 0 {
-                l.push(b",");
-            }
-            if p == 1 {
-                l.push(b"hang");
-            } else {
-                let _ = uwrite!(l, "0x{:x}", p);
-            }
-        }
-        if dev.restart[0] == 0 {
-            l.push(b" saved=1");
-        }
-        RESTART_READ.store(true, Relaxed);
-    }
-}
-
 /// LINK-19.6: line `i` of what the radio knows about itself (`ui radio`, the link's `UI` what=4), for Ferrite
 /// Console's debug info: the build, the MCU, the SPI flash and the store's mount, calibration, the chips, what is
 /// stored, power, GPS, Bluetooth and the last restart. No callsign, position or other personal data. False past the
@@ -1678,12 +1639,15 @@ pub fn radio_line<S: ChannelStore>(app: &App, st: &S, dev: &Device, i: u16, l: &
         }
         8 => {
             l.push(b"restart");
-            if dev.restart[0] == 0 && dev.crash.is_none() {
-                l.push(b" after=start");
-                kn(l, "in_a_row", dev.restart[1]);
-            } else {
-                restart_keys(dev, l);
+            l.push(match dev.restart[0] {
+                0 => b" after=start".as_slice(),
+                1 => b" after=hang",
+                _ => b" after=fault",
+            });
+            if dev.restart[0] > 1 {
+                let _ = uwrite!(l, " pc=0x{:x}", dev.restart[0]);
             }
+            kn(l, "in_a_row", dev.restart[1]);
         }
         _ => return false,
     }

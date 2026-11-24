@@ -1664,6 +1664,40 @@ fn log_record(o: &mut Out, seq: u32, e: &crate::data::Event) -> bool {
     true
 }
 
+/// LINK-41.4 (ferrite#147): what the radio's channel editor can't produce: power past High, busy lockout past On,
+/// squelch past 9 (10 is the slot's own level), a tone word that is neither CTCSS 60.0-260.0 Hz nor DCS D000-D777,
+/// a name ending in a space. Console showed these as other values or refused the row.
+fn out_of_range(c: &Channel, name: &[u8; 16]) -> Option<&'static str> {
+    let g = &c.cfg;
+    if g.power > 2 {
+        return Some("power: 0 to 2");
+    }
+    if g.busy > 1 {
+        return Some("busy: 0 or 1");
+    }
+    if g.squelch > crate::slot::SQ_GLOBAL {
+        return Some("squelch: 0 to 9, or 10 for the slot's own");
+    }
+    if !tone_word_ok(g.rx_tone) || !tone_word_ok(g.tx_tone) {
+        return Some("tone: CTCSS 60.0-260.0 Hz or DCS D000-D777");
+    }
+    if name.iter().rev().find(|&&b| b != 0) == Some(&b' ') {
+        return Some("name: no trailing space");
+    }
+    None
+}
+
+/// A tone word as the editors write it (CHAN-3): 0 none, CTCSS in 0.1 Hz (TONE-15's range), or DCS with its code.
+fn tone_word_ok(t: u16) -> bool {
+    use crate::screens::tones::{CTCSS_MAX, CTCSS_MIN};
+    use crate::slot::{DCS_FLAG, DCS_INV};
+    match t {
+        0 => true,
+        _ if t & DCS_FLAG == 0 => (CTCSS_MIN..=CTCSS_MAX).contains(&t),
+        _ => t & !(DCS_FLAG | DCS_INV) <= 0o777,
+    }
+}
+
 /// LINK-41.1: room for one more record of a `WRITE_MANY` of `what`: the App holds no write, and for a channel the
 /// store's queue has room (behind channel writes only), for anything else the store is idle (a zone may need the
 /// one before it stored).
@@ -1739,6 +1773,9 @@ fn apply<S: ChannelStore>(app: &mut App, st: &S, w: u8, idx: u16, rec: &[u8], o:
             let mode_ok = crate::slot::slot_mode_ok(c.cfg.mode) || c.is_hf() && crate::screens::hf::channel_mode_ok(c.rx, c.cfg.mode);
             if !mode_ok || c.cfg.step as usize >= STEPS.len() {
                 return invalid(o, "mode or step out of range".as_bytes());
+            }
+            if let Some(m) = out_of_range(&c, &name) {
+                return invalid(o, m.as_bytes());
             }
             if let Err(m) = crate::term::cmd::check(&c) {
                 return invalid(o, m.as_bytes());

@@ -408,3 +408,49 @@ fn heard_by_age() {
     let got = stream(&mut pc, 92, &[msg::HEARD, 0, 60, 0]);
     assert_eq!(&got[0].1[1..], &a[..], "a stream's first frame is what asking once gives");
 }
+
+/// LINK-41.4 (ferrite#147): a channel write refuses what the radio's editor can't produce (power 3, busy 2,
+/// squelch 11, tone words 1, 0x7FFF and 0xFFFF, a trailing space in the name) and takes the edges it can.
+#[test]
+fn channel_values_out_of_range_refused() {
+    use crate::slot::{DCS_FLAG, DCS_INV};
+    let mut pc = Pc::new(true);
+    let rec = |f: &dyn Fn(&mut Channel)| {
+        let mut c = Channel { num: 300, zone: NO_ZONE, rx: 14_652_000, name: [0; 16], cfg: SlotCfg::default(), flags: 0, tones: 0 };
+        c.set_name(b"Test");
+        f(&mut c);
+        let mut out = std::vec![0u8; 64];
+        let mut w = Window { b: &mut out, from: 0, n: 0 };
+        channel_save(&c, &mut w);
+        let n = w.n;
+        out.truncate(n);
+        out
+    };
+    let bad: [&dyn Fn(&mut Channel); 8] = [
+        &|c| c.cfg.power = 3,
+        &|c| c.cfg.busy = 2,
+        &|c| c.cfg.squelch = 11,
+        &|c| c.cfg.rx_tone = 1,
+        &|c| c.cfg.tx_tone = 0x7FFF,
+        &|c| c.cfg.rx_tone = 0xFFFF,
+        &|c| c.cfg.tx_tone = 2601,
+        &|c| c.set_name(b"Test "),
+    ];
+    for (i, f) in bad.iter().enumerate() {
+        assert_eq!(pc.write(what::CHANNEL, 300, &rec(*f), 0).0, Status::Invalid as u8, "case {i}");
+        assert!(pc.st.get(300).is_none(), "case {i}: nothing stored");
+    }
+    let good: [&dyn Fn(&mut Channel); 5] = [
+        &|c| c.cfg.power = 2,
+        &|c| c.cfg.squelch = crate::slot::SQ_GLOBAL,
+        &|c| c.cfg.rx_tone = 885,
+        &|c| c.cfg.tx_tone = DCS_FLAG | DCS_INV | 0o754,
+        &|c| c.cfg.busy = 1,
+    ];
+    for (i, f) in good.iter().enumerate() {
+        assert_eq!(pc.write(what::CHANNEL, 300, &rec(*f), 0).0, 0, "good case {i}");
+    }
+    // the issue's record (tone word 1)
+    let ex = [221u8, 4, 0, 0, 96, 146, 223, 0, 82, 38, 60, 61, 67, 36, 114, 69, 43, 0, 0, 0, 0, 0, 0, 0, 6, 0, 1, 0, 89, 128, 32, 161, 7, 0, 1, 6, 7, 2, 0, 232, 115];
+    assert_ne!(pc.write(what::CHANNEL, 1245, &ex, 0).0, 0);
+}

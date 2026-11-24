@@ -945,7 +945,7 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
 /// one comes in ` rx="Robot 36" rx_slot=1 rx_lines=20` (lines so far), while one goes out ` tx="PD90" frame=12`, a mode
 /// started by hand ` forced="PD90"`, and ` held=1` while a picture holds the squelch open (SSTV-2.6).
 fn sstv_lines<S: ChannelStore>(app: &App, cx: &Cx<S>, s: &screens::sstv::Sstv, d: &mut Desc) {
-    use crate::sstv::{headers, FORCE_MODES, SEND_MODES, VIEW_CARD};
+    use crate::sstv::{headers, SEND_MODES, VIEW_CARD};
     let st = &app.sstv;
     let Some(l) = d.ln() else { return };
     l.push(b"sstv");
@@ -985,8 +985,8 @@ fn sstv_lines<S: ChannelStore>(app: &App, cx: &Cx<S>, s: &screens::sstv::Sstv, d
         kq(l, "tx", ferrite_core::sstv::mode_name(tx.vis).as_bytes());
         kn(l, "frame", st.frame as u32);
     }
-    if st.forced != 0 {
-        kq(l, "forced", ferrite_core::sstv::mode_name(FORCE_MODES[st.forced as usize - 1]).as_bytes());
+    if let Some(vis) = st.forced_vis() {
+        kq(l, "forced", ferrite_core::sstv::mode_name(vis).as_bytes());
     }
     if st.held != 0 {
         kn(l, "held", 1);

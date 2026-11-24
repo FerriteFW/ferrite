@@ -10,8 +10,10 @@ use ferrite_core::sstv::{self, Event, Header, HEADER_LEN, ROW_LEN, SLOTS, WIDTH}
 
 /// The modes a picture is sent in (SSTV-5.1), their VIS codes in the Send page's order.
 pub const SEND_MODES: [u8; 4] = [8, 44, 60, 99];
-/// The modes # starts by hand (SSTV-2.5), in order, then off.
+/// The modes # starts by hand (SSTV-2.5), in order, then Auto (the VIS picks).
 pub const FORCE_MODES: [u8; 5] = [8, 44, 60, 99, 95];
+/// [`SstvState::forced`]'s flag: # has been pressed since the screen opened (one bit, not a field: the App's RAM).
+pub const PICKED: u8 = 0x80;
 /// What ◀▶ show after the slots: the test card.
 pub const VIEW_CARD: u8 = SLOTS;
 
@@ -39,7 +41,9 @@ pub struct SstvState {
     pub open: bool,
     /// For the UI task to pass to the DSP task: a mode started by hand (its VIS), or 0: stop.
     pub force: Option<u8>,
-    /// The mode # started (an index into [`FORCE_MODES`] plus one; 0 none), until a picture starts.
+    /// SSTV-2.5: the mode # picked (an index into [`FORCE_MODES`] plus one; 0 Auto), until its picture ends; with
+    /// [`PICKED`] once # has been pressed since the screen opened (the screen's last line says the mode, "Mode: Auto"
+    /// too). Read through [`SstvState::forced_vis`] and [`SstvState::picked`].
     pub forced: u8,
     pub rx: Option<Rx>,
     /// The picture shown: a slot, or [`VIEW_CARD`].
@@ -61,6 +65,21 @@ pub struct SstvState {
     /// header's lines are written through the store's queue after its last rows. Slot 0 when none (slot 0 is a
     /// picture to send, never received into).
     pub ended: (u8, u16),
+}
+
+impl SstvState {
+    /// SSTV-2.5: the mode # picked (its VIS), or None: Auto.
+    pub fn forced_vis(&self) -> Option<u8> {
+        match self.forced & !PICKED {
+            0 => None,
+            k => FORCE_MODES.get(k as usize - 1).copied(),
+        }
+    }
+
+    /// SSTV-2.5: # has been pressed since the screen opened.
+    pub fn picked(&self) -> bool {
+        self.forced & PICKED != 0
+    }
 }
 
 /// Every slot's header, read from the flash (an empty slot, or no flash: None).
@@ -97,6 +116,24 @@ pub fn views(hs: &[Option<Header>; SLOTS as usize], out: &mut [u8; SLOTS as usiz
     }
     out[k] = VIEW_CARD;
     k + 1
+}
+
+/// SSTV-2.4 (HOME-9: one line, nothing cut): a received picture's toast as it ends: whether it's whole, then its
+/// mode ("Signal lost" / "Robot 36").
+pub fn end_toast(vis: u8, whole: bool) -> (&'static [u8], &'static [u8]) {
+    (if whole { b"Picture saved" } else { b"Signal lost" }, sstv::mode_name(vis).as_bytes())
+}
+
+/// SSTV-5 (HOME-9): a picture's toast as it's sent or stopped, then its mode ("SSTV sent" / "Martin M1").
+pub fn sent_toast(vis: u8, whole: bool) -> (&'static [u8], &'static [u8]) {
+    (if whole { b"SSTV sent" } else { b"SSTV stopped" }, sstv::mode_name(vis).as_bytes())
+}
+
+/// SSTV-5.1 (HOME-9): the body of "Too long" (to send): the picture's seconds and the transmit timeout's.
+pub fn too_long_body(secs: u32, limit: u32) -> ferrite_ui::text::Buf<28> {
+    let mut b = ferrite_ui::text::Buf::<28>::new();
+    let _ = ufmt::uwrite!(b, "{} s, timeout {} s", secs, limit);
+    b
 }
 
 /// The seconds a mode's transmission takes, its VIS included.
@@ -190,13 +227,11 @@ impl App {
         }
     }
 
-    /// # (SSTV-2.5): the next mode by hand, then off.
+    /// # (SSTV-2.5): the next mode by hand, then Auto; the decoder waits for that mode's next sync.
     pub fn sstv_force_next(&mut self) {
-        self.sstv.forced = (self.sstv.forced + 1) % (FORCE_MODES.len() as u8 + 1);
-        self.sstv.force = Some(match self.sstv.forced {
-            0 => 0,
-            k => FORCE_MODES[k as usize - 1],
-        });
+        let k = ((self.sstv.forced & !PICKED) + 1) % (FORCE_MODES.len() as u8 + 1);
+        self.sstv.forced = PICKED | k;
+        self.sstv.force = Some(self.sstv.forced_vis().unwrap_or(0));
     }
 
     /// The DSP task's news (the UI task passes it on, a row with each [`Event::Line`]).
@@ -223,7 +258,11 @@ impl App {
                     self.out.push(RadioCmd::Monitor { slot: a, on: true });
                     self.sstv.held = a + 1;
                 }
-                self.sstv.forced = 0;
+                // SSTV-2.5: the mode # picked stays shown while its picture waits and comes in; a header heard
+                // instead (another mode) is the decoder's own
+                if self.sstv.forced_vis().is_some_and(|f| f != vis) {
+                    self.sstv.forced &= PICKED;
+                }
                 self.sstv.view = slot;
                 self.sstv.ver = self.sstv.ver.wrapping_add(1);
             }
@@ -242,6 +281,22 @@ impl App {
             Event::End(whole) => {
                 self.sstv_release();
                 let Some(rx) = self.sstv.rx.take() else { return };
+                // SSTV-2.5: the decoder is back on Auto (the VIS) once the mode # picked ends; a picture # itself
+                // ended (the next mode picked) leaves the new pick
+                if self.sstv.forced_vis() == Some(rx.vis) {
+                    self.sstv.forced &= PICKED;
+                }
+                if rx.lines == 0 {
+                    // SSTV-2.5: a mode # picked that never found its sync (# again, or the screen closed): no
+                    // picture, no toast; its slot erased again so the older pictures stay
+                    st.data().picture_erase(rx.slot);
+                    // the newest picture received shown again (the erase is queued: that slot's header may still read)
+                    let mut v = [0u8; SLOTS as usize + 1];
+                    let n = views(&headers(st), &mut v);
+                    self.sstv.view = v[..n].iter().copied().find(|&s| (sstv::FIRST_RX..SLOTS).contains(&s) && s != rx.slot).unwrap_or(VIEW_CARD);
+                    self.sstv.ver = self.sstv.ver.wrapping_add(1);
+                    return;
+                }
                 self.sstv.ended = (rx.slot, rx.lines);
                 // SSTV-4.4: the flags and lines programmed over the header written at the start
                 let l = rx.lines.to_le_bytes();
@@ -249,10 +304,8 @@ impl App {
                 bytes[..5].copy_from_slice(&[if whole { 0xFE } else { 0xFF }, (WIDTH as u16).to_le_bytes()[0], (WIDTH as u16).to_le_bytes()[1], l[0], l[1]]);
                 st.data().picture_write(DataWrite::Program { addr: sstv::slot_addr(rx.slot) + 7, len: 5, bytes });
                 self.sstv.ver = self.sstv.ver.wrapping_add(1);
-                let mut b = ferrite_ui::text::Buf::<24>::new();
-                b.push(sstv::mode_name(rx.vis).as_bytes());
-                b.push(if whole { b" saved" } else { b": signal lost" });
-                self.show_toast(b"SSTV picture", b.as_bytes(), false);
+                let (head, body) = end_toast(rx.vis, whole);
+                self.show_toast(head, body, false);
                 // the picture just written counts now: the slot after it gets ready
                 let mut hs = headers(st);
                 if hs[rx.slot as usize].is_none() {
@@ -269,9 +322,7 @@ impl App {
         let secs = mode_secs(vis);
         let limit = self.set.tx_timeout_s();
         if secs > limit {
-            let mut b = ferrite_ui::text::Buf::<40>::new();
-            let _ = ufmt::uwrite!(b, "{} s, over the {} s timeout", secs, limit);
-            return self.show_toast(b"Too long to send", b.as_bytes(), false);
+            return self.show_toast(b"Too long", too_long_body(secs, limit).as_bytes(), false);
         }
         let mut call = [0u8; 10];
         let c = self.set.callsign.as_bytes();
@@ -289,9 +340,7 @@ impl App {
     /// The picture's end (whole, or stopped, or refused).
     pub fn sstv_sent(&mut self, whole: bool) {
         let Some(t) = self.sstv.tx.take() else { return };
-        let mut b = ferrite_ui::text::Buf::<24>::new();
-        b.push(sstv::mode_name(t.vis).as_bytes());
-        b.push(if whole { b" sent" } else { b" stopped" });
-        self.show_toast(b"SSTV", b.as_bytes(), false);
+        let (head, body) = sent_toast(t.vis, whole);
+        self.show_toast(head, body, false);
     }
 }

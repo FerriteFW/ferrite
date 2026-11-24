@@ -1,12 +1,12 @@
 //! The SSTV screen (chapter 27a): the picture scaled to 240 wide at the top (240 x 192 for 256 lines), drawn from
 //! the SPI flash a few dozen rows a pass, and as a received picture's lines come in; what it is below. ◀▶ step
-//! through the pictures, OK opens Send (the knob picks the mode, OK sends), # starts a mode by hand.
+//! through the pictures, OK opens Send (the knob picks the mode, OK sends), # picks the receive mode (Auto, or one by hand: SSTV-2.5).
 
 use super::shared::*;
 use super::{Cx, Hints, View};
 use crate::chan::ChannelStore;
 use crate::keys::{KeyEvent, Press};
-use crate::sstv::{headers, mode_secs, views, SEND_MODES, FORCE_MODES, VIEW_CARD};
+use crate::sstv::{headers, mode_secs, views, SEND_MODES, VIEW_CARD};
 use crate::slot::Item;
 use crate::{App, Screen};
 use ferrite_core::keys::Key;
@@ -185,7 +185,8 @@ impl Sstv {
         }
     }
 
-    fn info(app: &App, st: &impl ChannelStore, send: Option<u8>, l1: &mut Buf<40>, l2: &mut Buf<40>, l3: &mut Buf<40>) {
+    /// The three lines under the picture: what it is (l1, l2) and the slot listened on or the mode # picked (l3).
+    pub fn info(app: &App, st: &impl ChannelStore, send: Option<u8>, l1: &mut Buf<40>, l2: &mut Buf<40>, l3: &mut Buf<40>) {
         let v = app.sstv.view;
         if let Some(t) = app.sstv.tx {
             let _ = ufmt::uwrite!(l1, "Sending {}", sstv::mode_name(t.vis));
@@ -208,7 +209,15 @@ impl Sstv {
             l3.set(b"OK sends, BACK goes back");
             return;
         }
-        if let Some(rx) = app.sstv.rx.filter(|r| r.slot == v) {
+        let listening = |l: &mut Buf<40>| {
+            let f = w::freq3(app.tuned_freq(app.active));
+            let _ = ufmt::uwrite!(l, "Listening on {}, {}", ["A", "B", "C"][app.active as usize % 3], Bytes(f.as_bytes()));
+        };
+        if let Some(rx) = app.sstv.rx.filter(|r| r.slot == v && r.lines == 0 && app.sstv.forced_vis().is_some()) {
+            // SSTV-2.5: the mode # picked, waiting for its first sync (no picture yet)
+            let _ = ufmt::uwrite!(l1, "{}, waiting for sync", sstv::mode_name(rx.vis));
+            listening(l2);
+        } else if let Some(rx) = app.sstv.rx.filter(|r| r.slot == v) {
             let _ = ufmt::uwrite!(l1, "{}, receiving", sstv::mode_name(rx.vis));
             let total = ferrite_core::usstv::Mode::by_vis(rx.vis).map_or(LINES as u16, |m| m.lines);
             let _ = ufmt::uwrite!(l2, "Line {} of {}", rx.lines, total);
@@ -239,13 +248,12 @@ impl Sstv {
                 None => l1.set(b"Nothing received yet"),
             }
         }
-        match app.sstv.forced {
-            0 => {
-                let f = w::freq3(app.tuned_freq(app.active));
-                let _ = ufmt::uwrite!(l3, "Listening on {}, {}", ["A", "B", "C"][app.active as usize % 3], Bytes(f.as_bytes()));
-            }
-            k => {
-                let _ = ufmt::uwrite!(l3, "Waiting for a {} sync", sstv::mode_name(FORCE_MODES[k as usize - 1]));
+        // SSTV-2.5: once # is pressed, the mode it picked (Auto: the VIS picks) and what the next press does
+        match app.sstv.forced_vis() {
+            None if !app.sstv.picked() => listening(l3),
+            None => l3.set(b"Mode: Auto (# next)"),
+            Some(vis) => {
+                let _ = ufmt::uwrite!(l3, "Mode: {} (# next)", sstv::mode_name(vis));
             }
         }
     }

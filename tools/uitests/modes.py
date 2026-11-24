@@ -124,17 +124,22 @@ def hf_receiver_follows_frequency_and_mode(t):
         vfo.restore()
 
 
-@test("HF-10", pages=("Hf",))
+@test("HF-10", "HF-10.1", pages=("Hf",))
 def hf_no_ssb_from_18_mhz(t):
-    """From 18 MHz chip 1 receives, AM on 6 m included, and USB isn't offered there (HF-10, decision 322: chip 1
-    has no SSB; as stock)."""
+    """From 18 MHz chip 1 receives AM and FM, AM on 6 m included (HF-10, decision 322: chip 1 has no SSB; as
+    stock). USB stays on the SI4732 up to 30 MHz, marked as an experiment, and isn't offered from 30 MHz (HF-10.1,
+    decision 446)."""
     vfo = HfVfo(t)
     try:
         hf_type(t, 50.4)
         u = hf_mode(t, "AM")
         t.eq(hf_line(u)["rx"], "CHIP 1", "AM on 50.4 MHz")
+        t.eq(hf_mode(t, "USB"), None, "no USB on 6 m")
         hf_type(t, 21.2)
-        t.eq(hf_mode(t, "USB"), None, "no USB on 15 m")
+        u = hf_mode(t, "USB")
+        t.check(u is not None, "USB offered on 15 m (HF-10.1)")
+        if u is not None:
+            t.eq(hf_line(u)["rx"], "SI4732 EXP", "15 m USB: the SI4732, marked experimental")
     finally:
         vfo.restore()
 

@@ -124,6 +124,9 @@ pub struct Out {
     pub hold: Option<u8>,
     /// The chip on a slot running a range scan (SCAN-21), for [`Hop`]'s turns.
     pub scan: Option<u8>,
+    /// Chips with a priority slot among their slots, a bit each, whichever slot they are on now: beside a range
+    /// scan its chip still gets its turns of the receive path (SCAN-21, decision 450).
+    pub prio_chips: u8,
     /// Slots deferring to the APRS slot (APRS-21.2): no chip of their own, their squelch the APRS slot's.
     pub defer: u8,
     /// The slot they defer to.
@@ -343,6 +346,7 @@ impl Watch {
                 }
             }
             self.on[n as usize] = next;
+            out.prio_chips |= (p.is_some() as u8) << n;
         }
         if let Some(p) = to {
             // APRS-21.2: a deferring slot's squelch is the APRS slot's.
@@ -405,16 +409,15 @@ impl BcastTurn {
     }
 }
 
-/// SCAN-21 (decision 189): chip `c`'s turn on the receive path while it scans and the other chip's slot has no
-/// priority: [`SCAN_TURN_MS`]. None otherwise (the ordinary dwell).
 /// WATCH-17.2: the other chip has a priority slot (the path's turn on chip `c` is the short one).
 fn beside(out: &Out, c: u8) -> bool {
     out.chip[(c ^ 1) as usize].is_some_and(|x| out.prio & 1 << x != 0)
 }
 
+/// SCAN-21 (decisions 189, 450): chip `c`'s turn on the receive path while it scans and the other chip has no
+/// priority slot among its slots (whichever it is on now): [`SCAN_TURN_MS`]. None otherwise (the ordinary dwell).
 fn scan_dwell(out: &Out, c: u8) -> Option<u32> {
-    let other = out.chip[(c ^ 1) as usize];
-    (out.scan == Some(c) && !other.is_some_and(|s| out.prio & 1 << s != 0)).then_some(SCAN_TURN_MS)
+    (out.scan == Some(c) && out.prio_chips & 1 << (c ^ 1) == 0).then_some(SCAN_TURN_MS)
 }
 
 /// The receive path select (the RF path machine's one RX select, SAFE-11) between the two chips while both have a

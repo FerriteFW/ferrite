@@ -406,6 +406,14 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         }
         self.count.set(all);
         self.loose.set(loose);
+        // CHAN-12.2 (ferrite#170): a zone whose record is damaged or erased still owns its channels: the zone count
+        // reaches the highest zone a channel names, so that zone lists them (unnamed) instead of hiding them in no
+        // list at all. Nothing is written: renaming the zone writes its record, deleting it moves them to no zone.
+        if let Some(top) = per.iter().rposition(|&n| n > 0).map(|t| t as ZoneId + 1) {
+            if top > self.zones.get() {
+                self.zones.set(top);
+            }
+        }
         self.hashes.borrow_mut()[..CH_SECTORS].copy_from_slice(&h);
         self.f.fresh((1u128 << CH_SECTORS) - 1);
         self.dirty.set([0; DIRTY_WORDS]);

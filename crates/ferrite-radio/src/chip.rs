@@ -301,6 +301,19 @@ pub struct TxSetup {
     pub tone_dev: u8,
     /// REG_7D[5:0], the mic sensitivity (VOX-15: `vox::mic_reg`; a data key-up `vox::MIC_DATA`, VOX-6).
     pub mic: u8,
+    /// REG_2C[5:0], the pre-emphasis gain (VOX-15.3: `vox::pre_gain`): written only above stock's 34 (Mic gain 10 to
+    /// 12), and put back by [`pre_gain_stock`] at the unkey.
+    pub pre: u8,
+}
+
+/// REG_2C as stock writes it at start-up (0x0800A114) and Ferrite's start-up copies: the pre-emphasis gain 34
+/// (VOX-15.3), the other fields 0.
+pub const REG2C_STOCK: u16 = 0x0022;
+
+/// VOX-15.3: REG_2C back to stock's after a key-up that raised the pre-emphasis gain.
+#[cfg(feature = "tx")]
+pub fn pre_gain_stock<B: Bus>(bk: &mut Bk4829<B>) {
+    bk.write(0x2C, REG2C_STOCK);
 }
 
 /// The transmitting chip's set-up before the path plan keys it (TX-23), in stock's order (TX start 0x0801EAF8,
@@ -325,6 +338,9 @@ pub fn tx_setup<B: Bus>(bk: &mut Bk4829<B>, s: &TxSetup) {
         bk.subtone_gain(s.tone_dev);
     }
     bk.mic_gain(s.mic);
+    if s.pre != ferrite_core::vox::PRE_STOCK {
+        bk.write(0x2C, (REG2C_STOCK & !0x3F) | (s.pre as u16 & 0x3F)); // VOX-15.3: Mic gain 10 to 12
+    }
     bk.tx_deviation();
     // TX-46.1 (decision 431): V0.29's REG_50 at every key-up (0x0801EC3C), the TX mute (bit 15) clear; only bit 15 is
     // documented, and the register reads back 0.

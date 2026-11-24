@@ -199,6 +199,7 @@ impl Radio {
         self.dtmf_key[n as usize] = None;
         let setup = self.tx_chip_setup(f, narrow, tone, data.is_some() || testing);
         radio_chip::tx_setup(&mut self.chip(n), &setup);
+        self.tx.pre_raised = (setup.pre != ferrite_core::vox::PRE_STOCK).then_some(n); // VOX-15.3: put back at the unkey
         self.rx_set[n as usize] = None; // SQL-18.10: the next receive tune is the full one
         // APRS-14 (decision 135): an APRS burst (a data key-up) goes out with the `data` TX audio set-up, as
         // `txtest`'s `data`; a test with `flat` or `data` its own; both put back at the unkey. `afsk-bk` and `voice`
@@ -283,9 +284,10 @@ impl Radio {
         let tone_dev = self.tx.cal.map_or(0, |c| c.tone_dev(tone, self.tone_level));
         // VOX-15.2: a key-up on the speaker mic (its PTT, or VOX/the link with one plugged in, SND-12.7) one step up
         let spk = ferrite_radio::ptt::mic_src(acc_plugged(), ptt_pressed()) == ferrite_core::msg::MIC_SRC_SPK;
-        let mic = if data { ferrite_core::vox::MIC_DATA } else { ferrite_core::vox::mic_reg_for(self.tx.mic, spk) };
+        // VOX-15.3: Mic gain 10 to 12 go on through the pre-emphasis gain; a data key-up keeps stock's
+        let (mic, pre) = if data { (ferrite_core::vox::MIC_DATA, ferrite_core::vox::PRE_STOCK) } else { ferrite_core::vox::mic_reg_for(self.tx.mic, spk) };
         let freq = self.tx.cal.map_or(freq, |c| c.tx_word(freq)); // CAL-12: the factory crystal trim
-        radio_chip::TxSetup { freq, narrow, tone, tone_dev, mic }
+        radio_chip::TxSetup { freq, narrow, tone, tone_dev, mic, pre }
     }
 
     /// While keyed: the sequencer's own unkeys (timeout backstop, duty limit, battery under load).

@@ -57,6 +57,10 @@ impl ferrite_radio::Hw for Radio {
     fn unkey_chip(&mut self, n: u8) {
         if self.has(n) {
             self.chip(n).tx_off();
+            // VOX-15.3: a raised pre-emphasis gain back to stock's (receive and the next key-up start from it)
+            if self.tx.pre_raised.take() == Some(n) {
+                ferrite_radio::chip::pre_gain_stock(&mut self.chip(n));
+            }
         }
     }
     // TONE-8's order at the unkey, still keyed: end tone, CW ID when due, tail elimination.

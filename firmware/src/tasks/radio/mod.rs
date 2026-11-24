@@ -530,8 +530,10 @@ struct Tx {
     dialled: bool,
     /// DTMF-1: the sequence being dialled ([`Radio::dial_step`]).
     dial: Option<Dial>,
-    /// Mic gain 1-9 (0 8 3, VOX-15): REG_7D at each voice key-up.
+    /// Mic gain 1-12 (0 8 3, VOX-15, VOX-15.3): REG_7D, and REG_2C above 9, at each voice key-up.
     mic: u8,
+    /// VOX-15.3: the chip whose pre-emphasis gain this key-up raised, put back to stock's at the unkey.
+    pre_raised: Option<u8>,
     /// TX-30: 0 8 1's timeout (s); the sequencer's backstop is [`TX_BACKSTOP_S`] after it.
     timeout_s: u16,
     /// The keyed slot's bandwidth: stock keys through REG_30 0x0200 when wide (TX audit F3).
@@ -920,6 +922,7 @@ pub async fn task() {
             vox_screen: false,
             region: None,
             mic: 5,
+            pre_raised: None,
             timeout_s: 120,
             narrow: false,
             #[cfg(feature = "bench")]

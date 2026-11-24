@@ -186,7 +186,7 @@ pub struct Settings {
     pub vox: bool,
     pub vox_level: u8,
     pub vox_tail: u8,
-    /// 0 8 3 (VOX-15): Mic gain 1-9, 8 (0x3A) the default: 9 (the field's top) left loud talkers on a hot mic
+    /// 0 8 3 (VOX-15): Mic gain 1-12 (10 to 12 the pre-emphasis gain, VOX-15.3), 8 (0x3A) the default: 9 (REG_7D's top) left loud talkers on a hot mic
     /// within 2 dB of NFM's limit (clear, Nov 22, 2026; decision 436).
     pub mic_gain: u8,
     /// 0 8 1 (TX-30): the transmit timeout in 30 s steps, 1-20 (30-600 s; stock's TOT counts 30 s too).
@@ -632,7 +632,7 @@ impl Settings {
         if self.clock as usize >= CLOCKS.len() {
             self.clock = Self::DEFAULT.clock;
         }
-        if !(1..=9).contains(&self.mic_gain) {
+        if !(1..=ferrite_core::vox::MIC_MAX).contains(&self.mic_gain) {
             self.mic_gain = Self::DEFAULT.mic_gain;
         }
         if !(1..=20).contains(&self.tx_timeout) {

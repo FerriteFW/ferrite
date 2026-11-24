@@ -612,7 +612,7 @@ fn key_reads_back_before_the_pa() {
 }
 
 fn setup(freq: Freq10, narrow: bool, tone: u16) -> chip::TxSetup {
-    chip::TxSetup { freq, narrow, tone, tone_dev: 0x46, mic: 0x24 }
+    chip::TxSetup { freq, narrow, tone, tone_dev: 0x46, mic: 0x24, pre: ferrite_core::vox::PRE_STOCK }
 }
 
 /// TX-45 (TX audit M7): the TX set-up writes stock's REG_43 with every TX frequency (0x3028 wide, 0x4008 narrow), over
@@ -659,6 +659,26 @@ fn tx_setup_writes_stocks_registers() {
     let bus = b.release();
     assert_eq!(bus.last(reg::SUBTONE).map(|v| v & 0x7F), Some(0x3E), "the DCS byte");
     assert_eq!(bus.last(reg::MIC), Some(0xE934), "a data key-up: V0.29's 0x34");
+}
+
+/// VOX-15.3: up to Mic gain 9 the key-up leaves REG_2C alone (stock writes it only at start-up); 10 to 12 raise its
+/// pre-emphasis gain (bits 5:0) over stock's 0x0022, and `pre_gain_stock` puts 0x0022 back.
+#[test]
+fn mic_gain_past_9_raises_the_pre_emphasis_gain() {
+    let mut b = bk();
+    chip::tx_setup(&mut b, &setup(VHF, false, 0));
+    assert_eq!(b.release().last(0x2C), None, "stock's pre-emphasis gain: not written");
+    for (gain, want) in [(10, 0x0025), (11, 0x0027), (12, 0x002A)] {
+        let (mic, pre) = ferrite_core::vox::mic_reg_for(gain, false);
+        let mut b = bk();
+        b.write(reg::MIC, 0xE912);
+        chip::tx_setup(&mut b, &chip::TxSetup { mic, pre, ..setup(VHF, false, 0) });
+        chip::pre_gain_stock(&mut b);
+        let bus = b.release();
+        assert_eq!(bus.last(reg::MIC), Some(0xE93F), "REG_7D at its top");
+        assert_eq!(bus.first(0x2C).map(|i| bus.writes[i].1), Some(want), "Mic gain {gain}");
+        assert_eq!(bus.last(0x2C), Some(chip::REG2C_STOCK), "put back");
+    }
 }
 
 /// TONE-20.1, TONE-20.2 (decision 140): a DCS transmission as stock V0.27's 0x0800D3CC, on the recording bus: REG_51

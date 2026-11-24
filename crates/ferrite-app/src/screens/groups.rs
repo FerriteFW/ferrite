@@ -143,7 +143,7 @@ const G7: [Entry; 9] = [
 const G8: [Entry; 8] = [
     Entry(concat!("Timeout|120 s|", txtc!("Transmit stops after this; a beep says so."))),
     Entry(concat!("VOX|Off|", txtc!("Voice-operated transmit."))),
-    Entry(concat!("Mic gain|8|", txtc!("Higher is louder on air: 1-9. Lower it if too loud."))),
+    Entry(concat!("Mic gain|8|", txtc!("Higher is louder on air: 1-12. 10-12 are for quiet mics."))),
     Entry(concat!("End tone|Off|", txtc!("A short tone as you let go of PTT."))),
     Entry(concat!("DTMF|100 ms|", txtc!("Dialer, memories, timing."))),
     Entry(concat!("Callsign and ID|Empty|", txtc!("Your callsign, and CW ID."))),
@@ -567,7 +567,7 @@ static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
     field!([8, 2, 1], vox: bool, Kind::Flip(&ON_OFF), Vox),
     field!([8, 2, 2], vox_level: u8, Kind::Level(1, 9, 1, vox_level_text), Vox),
     field!([8, 2, 3], vox_tail: u8, Kind::Round(VOX_TAILS.len() as u8, vox_tail_text), Vox),
-    field!([8, 3, 0], mic_gain: u8, Kind::Level(1, 9, 1, vox_level_text), MicGain),
+    field!([8, 3, 0], mic_gain: u8, Kind::Level(1, ferrite_core::vox::MIC_MAX, 1, mic_gain_text), MicGain),
     field!([8, 4, 0], end_tone: u8, Kind::Pick(&END_TONE_NAMES), SlotTones),
     // 50-200 ms in 10 ms steps (DTMF-3)
     field!([8, 5, 3], dtmf_ms: u8, Kind::Level(50, 200, 10, dtmf_ms_text), TxTones),
@@ -621,7 +621,7 @@ fn tell(app: &mut App, t: Tell) {
         Tell::ScanTx => app.out.push(RadioCmd::ScanTx(app.set.scan_tx)),
         Tell::BeepVol => app.out.push(RadioCmd::BeepVol(app.set.beep_vol)),
         Tell::Vox => app.send_vox(),
-        Tell::MicGain => app.out.push(RadioCmd::MicGain(app.set.mic_gain.clamp(1, 9))),
+        Tell::MicGain => app.out.push(RadioCmd::MicGain(app.set.mic_gain.clamp(1, ferrite_core::vox::MIC_MAX))),
         Tell::TxTimeout => app.out.push(RadioCmd::TxTimeout(app.set.tx_timeout_s() as u16)),
         Tell::TxTones => app.send_tx_tones(),
         Tell::SlotTones => app.send_slot_tones(),
@@ -700,6 +700,11 @@ fn beep_vol_text(v: u8, b: &mut Buf<24>) {
 
 fn vox_level_text(v: u8, b: &mut Buf<24>) {
     let _ = uwrite!(b, "{}", v.clamp(1, 9));
+}
+
+/// VOX-15.3: Mic gain 1 to 12 (10 to 12 the pre-emphasis gain; the help line says they're for quiet mics).
+fn mic_gain_text(v: u8, b: &mut Buf<24>) {
+    let _ = uwrite!(b, "{}", v.clamp(1, ferrite_core::vox::MIC_MAX));
 }
 
 fn tx_timeout_text(v: u8, b: &mut Buf<24>) {

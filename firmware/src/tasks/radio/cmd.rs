@@ -106,7 +106,7 @@ impl Radio {
                 self.beep_level = [5, 7, 9][i];
             }
             #[cfg(feature = "tx")]
-            RadioCmd::MicGain(g) => self.tx.mic = g.clamp(1, 9),
+            RadioCmd::MicGain(g) => self.tx.mic = g.clamp(1, ferrite_core::vox::MIC_MAX),
             #[cfg(feature = "tx")]
             RadioCmd::TxTimeout(s) => self.tx.timeout_s = s.clamp(30, 600),
             #[cfg(not(feature = "tx"))]

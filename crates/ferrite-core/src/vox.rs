@@ -26,10 +26,33 @@ pub fn mic_reg(gain: u8) -> u8 {
     0x3F - (9 - gain.clamp(1, 9)) * 5
 }
 
-/// VOX-15.2 (decision 436): a key-up on the speaker mic goes one step above Mic gain (capped at 9): speaker mics are
-/// quieter than the radio's own (Alex's, at the old default, "terrible"), so the default 8 gives the speaker mic 9.
-pub fn mic_reg_for(gain: u8, speaker_mic: bool) -> u8 {
-    mic_reg(if speaker_mic { gain.clamp(1, 9).saturating_add(1).min(9) } else { gain })
+/// VOX-15.3 (decision 445): Mic gain's top step. 10 to 12 go on past REG_7D's top through the pre-emphasis gain.
+pub const MIC_MAX: u8 = 12;
+
+/// VOX-15.3: REG_2C[5:0], the pre-emphasis gain (the register table's "Pre-emphasis Gain (dB)", default 34): stock
+/// writes 0x0022 once at start-up and never again, and so does Ferrite up to Mic gain 9.
+pub const PRE_STOCK: u8 = 34;
+
+/// VOX-15.3: REG_2C[5:0] for Mic gain 10, 11 and 12: about 1 dB a count on the bench (black, Nov 23, 2026: 34 to 44
+/// made the same +10.2 dB as REG_7D 0x2B to 0x3F), so 2.5 dB steps rounded: +3, +5 and +8 dB. At equal level the
+/// two registers measured the same distortion and noise; 50 and up ran into the chip's limiter (about 4.2 kHz).
+const PRE_UP: [u8; 3] = [37, 39, 42];
+
+/// VOX-15.3: REG_2C[5:0] for Mic gain `gain`: stock's below 10.
+pub fn pre_gain(gain: u8) -> u8 {
+    match gain.clamp(1, MIC_MAX) {
+        g @ 10.. => PRE_UP[(g - 10) as usize],
+        _ => PRE_STOCK,
+    }
+}
+
+/// VOX-15.2 (decision 436): a key-up on the speaker mic goes one step above Mic gain (capped at the top,
+/// [`MIC_MAX`]): speaker mics are quieter than the radio's own (Alex's, at the old default, "terrible"), so the
+/// default 8 gives the speaker mic 9. VOX-15.3: REG_7D[5:0] and REG_2C[5:0] for that step.
+pub fn mic_reg_for(gain: u8, speaker_mic: bool) -> (u8, u8) {
+    let g = gain.clamp(1, MIC_MAX);
+    let g = if speaker_mic { (g + 1).min(MIC_MAX) } else { g };
+    (mic_reg(g), pre_gain(g))
 }
 
 /// Stock's hysteresis: speech goes on above the threshold and stays on down to this many counts below it.
@@ -221,10 +244,20 @@ mod tests {
     /// VOX-15.2: the speaker mic one step up, to 9 at most; the radio's own mic as set.
     #[test]
     fn speaker_mic_one_step_up() {
-        assert_eq!(mic_reg_for(8, true), 0x3F);
-        assert_eq!(mic_reg_for(9, true), 0x3F, "capped");
-        assert_eq!(mic_reg_for(5, true), mic_reg(6));
-        assert_eq!(mic_reg_for(8, false), 0x3A);
+        assert_eq!(mic_reg_for(8, true), (0x3F, PRE_STOCK));
+        assert_eq!(mic_reg_for(9, true), (0x3F, 37), "into the pre-emphasis gain");
+        assert_eq!(mic_reg_for(12, true), (0x3F, 42), "capped at the top");
+        assert_eq!(mic_reg_for(5, true), (mic_reg(6), PRE_STOCK));
+        assert_eq!(mic_reg_for(8, false), (0x3A, PRE_STOCK));
+    }
+
+    /// VOX-15.3: 10 to 12 keep REG_7D at its top and raise REG_2C by about 2.5 dB a step; 1 to 9 leave it at
+    /// stock's 34; out of range clamps.
+    #[test]
+    fn mic_gain_past_9_is_the_pre_emphasis_gain() {
+        assert_eq!((1..=MIC_MAX).map(pre_gain).collect::<std::vec::Vec<_>>(), [34, 34, 34, 34, 34, 34, 34, 34, 34, 37, 39, 42]);
+        assert_eq!((mic_reg_for(10, false), mic_reg_for(11, false), mic_reg_for(12, false)), ((0x3F, 37), (0x3F, 39), (0x3F, 42)));
+        assert_eq!((mic_reg_for(0, false), mic_reg_for(200, false)), ((0x17, 34), (0x3F, 42)));
     }
 
     #[test]

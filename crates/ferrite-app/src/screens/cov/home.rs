@@ -62,6 +62,31 @@ fn broadcast_card_small_and_elsewhere() {
     t.shows("Some text");
 }
 
+/// BCR-26.9 (ferrite#178): a slot on a saved broadcast channel shows its name beside the frequency, which stays
+/// large: in the SNR's place on the large card, in the stereo tag's on the small one. A VFO shows the SNR as before.
+#[test]
+fn broadcast_channel_shows_its_name() {
+    use crate::chan::{ChanWrite, Channel, NO_ZONE};
+    let mut t = T::ready();
+    let mut name = [0u8; 16];
+    name[..11].copy_from_slice(b"CBC Radio 2");
+    let ch = Channel { num: 70, zone: NO_ZONE, rx: FM1005, name, cfg: crate::slot::DEFAULT_CFG, flags: 0, tones: 0 };
+    t.s.apply(ChanWrite::Put { ch, from: None });
+    t.taps(&[Key::VfoMem, Key::Digit(0), Key::Digit(7), Key::Digit(1), Key::Menu]); // channel mode, 071
+    t.wait(100);
+    assert_eq!(t.app.bcast_slot(), Some(0), "on the broadcast channel");
+    live_fm(&mut t, b"Some text", b"STATION ", 40);
+    t.wait(100);
+    t.shows("100.5");
+    t.shows("CBC Radio 2");
+    t.shows("STEREO");
+    t.hides("SNR"); // the name has its place
+    t.tap(Key::Slot); // B active: A's card is small
+    t.wait(100);
+    t.shows("100.5");
+    t.shows("CBC Radio 2");
+}
+
 /// HOME-4, HOME-4.1, LINK-19.4: a slot scanning on a small card shows its hits and the last hit's frequency, and
 /// the readback carries the last hit as drawn.
 #[test]

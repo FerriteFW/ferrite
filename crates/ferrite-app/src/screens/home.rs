@@ -122,7 +122,9 @@ pub(crate) fn bcast_shown(app: &App, live: &LiveAll, s: u8) -> (bool, u8, u8, Bu
     }
 }
 
-fn bcast_card(app: &mut App, lcd: &mut impl Panel, live: &LiveAll, s: u8, y: i32, big: bool) {
+/// BCR-26.9 (ferrite#178): on a channel with a name (as 0 2 4 shows it), the name goes beside the frequency, at the
+/// right (the SNR's place on the large card, the stereo tag's on the small one); the frequency stays large.
+fn bcast_card(app: &mut App, lcd: &mut impl Panel, live: &LiveAll, s: u8, y: i32, big: bool, name: &Buf<16>) {
     let p = s as usize;
     let f = (app.tuned_freq(s) / 1000) as u16;
     let mine = app.bcast_slot() == Some(s);
@@ -136,16 +138,25 @@ fn bcast_card(app: &mut App, lcd: &mut impl Panel, live: &LiveAll, s: u8, y: i32
         let _ = uwrite!(snr_t, "SNR {} dB", snr);
     }
     let heard = app.bcast_heard(live) && mine;
+    let nb = name.as_bytes();
     if big {
-        // The frequency row: MHz at 28 px, the stereo tag and SNR at the right.
-        if app.dirty(R_FREQ + p, Mix::new().n(f as u32 | (stereo as u32) << 16).b(snr_t.as_bytes()).get()) {
+        // The frequency row: MHz at 28 px, the stereo tag and SNR at the right; on a named channel the name in
+        // the SNR's place (BCR-26.9).
+        if app.dirty(R_FREQ + p, Mix::new().n(f as u32 | (stereo as u32) << 16).b(snr_t.as_bytes()).b(nb).get()) {
             canvas::banded(lcd, 14, y + 26, 212, 35, SURFACE, |lcd| {
                 let x2 = 15 + lcd.text4_rows(15, y + 56, fb.as_bytes(), &DIG_28, TEXT, SURFACE, y + 26, y + 61);
                 lcd.text4(x2 + 5, y + 56, b"MHz", &UI_12B, SUB, SURFACE);
                 if stereo {
                     w::tag(lcd, 226, y + 28, b"STEREO", SUB, SURFACE);
                 }
-                w::field(lcd, 140, 86, y + 44, y + 61, y + 57, snr_t.as_bytes(), const { &w::st(&UI_12, SUB, SURFACE, Align::Right) });
+                if nb.is_empty() {
+                    w::field(lcd, 140, 86, y + 44, y + 61, y + 57, snr_t.as_bytes(), const { &w::st(&UI_12, SUB, SURFACE, Align::Right) });
+                } else {
+                    // BCR-26.9: right after "MHz" (21 px) and a gap, to the card's edge; cut to fit
+                    let x = x2 + 5 + 21 + 10;
+                    let wd = 226 - x;
+                    w::field(lcd, x, wd, y + 44, y + 61, y + 57, w::fit(nb, &UI_15B, wd), const { &w::st(&UI_15B, TEXT, SURFACE, Align::Right) });
+                }
             });
         }
         // Three lines of RDS: 64 characters wrap into them.
@@ -169,12 +180,21 @@ fn bcast_card(app: &mut App, lcd: &mut impl Panel, live: &LiveAll, s: u8, y: i32
         }
     } else {
         app.drawn.meter[p] = None;
-        if app.dirty(R_FREQ + p, Mix::new().n(f as u32 | (stereo as u32) << 16).get()) {
+        if app.dirty(R_FREQ + p, Mix::new().n(f as u32 | (stereo as u32) << 16).b(nb).get()) {
             canvas::banded(lcd, 14, y + 25, 212, 25, SURFACE, |lcd| {
-                let x2 = 15 + lcd.text4_rows(15, y + 45, fb.as_bytes(), &DIG_26, TEXT, SURFACE, y + 25, y + 50);
-                lcd.text4(x2 + 5, y + 45, b"MHz", &UI_12B, SUB, SURFACE);
-                if stereo {
-                    w::tag(lcd, 226, y + 30, b"STEREO", SUB, SURFACE);
+                if nb.is_empty() {
+                    let x2 = 15 + lcd.text4_rows(15, y + 45, fb.as_bytes(), &DIG_26, TEXT, SURFACE, y + 25, y + 50);
+                    lcd.text4(x2 + 5, y + 45, b"MHz", &UI_12B, SUB, SURFACE);
+                    if stereo {
+                        w::tag(lcd, 226, y + 30, b"STEREO", SUB, SURFACE);
+                    }
+                } else {
+                    // BCR-26.9: the frequency large, the name at its right in the stereo tag's place
+                    let x2 = 15 + lcd.text4_rows(15, y + 45, fb.as_bytes(), &DIG_26, TEXT, SURFACE, y + 25, y + 50);
+                    lcd.text4(x2 + 5, y + 45, b"MHz", &UI_12B, SUB, SURFACE);
+                    let x = x2 + 5 + 21 + 10;
+                    let wd = 226 - x;
+                    w::field(lcd, x, wd, y + 25, y + 50, y + 45, w::fit(nb, &UI_15B, wd), const { &w::st(&UI_15B, TEXT, SURFACE, Align::Right) });
                 }
             });
         }
@@ -910,7 +930,8 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
         return;
     }
     if kind == 2 {
-        bcast_card(app, lcd, live, s, y, big);
+        let name = app.card_name(s, live, cx.store); // BCR-26.9: a saved channel's name, as other cards
+        bcast_card(app, lcd, live, s, y, big, &name);
         return;
     }
     let f = app.shown_freq(s, live);

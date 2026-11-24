@@ -517,3 +517,69 @@ fn hold_2_cycles_the_uplink_power() {
     }
     assert!(matches!(t.app.screen(), Screen::Sat(s) if s.page == 1 && s.opt == 0), "still on the pass page");
 }
+
+/// SAT-24: the satellite screen keeps the display lit from 5 minutes before a pass's rise to 5 minutes after its
+/// set: dark before the window (the 5 s backlight time), woken as it opens, lit through the pass and the 5 minutes
+/// after, dark again past them; on the list for any pass listed, and dark when nothing listed is near; never with
+/// the screen closed.
+#[test]
+fn display_stays_lit_around_a_pass() {
+    let p = a_pass(1);
+    let mut t = sat_app(p.aos - 900);
+    t.app.set.backlight = 1; // 5 s
+    t.open(crate::screens::nav::Dest::Satellites);
+    while t.app.sat_data().state() == ferrite_core::sat::data::State::Busy || t.app.sat_data().passes() == 0 {
+        t.wait(100);
+    }
+    t.app.screen = Screen::Sat(SatScr::pass_of(&p));
+    // the clock set: a jump predicts the list again (SAT-6), waited for
+    let at = |t: &mut T, utc: u32| {
+        t.app.sat_clock(Some(utc), true, Some(HERE));
+        t.wait(100);
+        while t.app.sat_data().state() == ferrite_core::sat::data::State::Busy {
+            t.wait(100);
+        }
+    };
+    // the pass page
+    at(&mut t, p.aos - 600);
+    t.wait(6000);
+    assert!(t.app.dark(), "10 min before the rise: the usual timer");
+    at(&mut t, p.aos - 290);
+    t.wait(200);
+    assert!(!t.app.dark(), "5 min before: woken");
+    t.wait(10_000);
+    assert!(!t.app.dark(), "and kept lit");
+    at(&mut t, p.aos + 60);
+    t.wait(10_000);
+    assert!(!t.app.dark(), "during the pass");
+    at(&mut t, p.los() + 280);
+    t.wait(10_000);
+    assert!(!t.app.dark(), "up to 5 min after the set (the page has moved on to the next pass)");
+    at(&mut t, p.los() + 310);
+    t.wait(6000);
+    assert!(t.app.dark(), "past the 5 min: the usual timer");
+    // the list: any pass listed
+    t.app.screen = Screen::Sat(SatScr::LIST);
+    at(&mut t, p.aos + 60);
+    t.wait(200);
+    assert!(!t.app.dark(), "the list with a pass up");
+    let d = t.app.sat_data();
+    let min = t.app.min_el();
+    let list: Vec<Pass> = (0..d.passes()).filter_map(|i| d.pass(i)).filter(|q| q.max_el >= min).collect();
+    let quiet = (p.los() + 600..p.aos + 43_200)
+        .step_by(60)
+        .find(|&u| list.iter().all(|q| u + 400 < q.aos || u > q.los() + 400))
+        .expect("a quiet time");
+    at(&mut t, quiet);
+    t.wait(6000);
+    assert!(t.app.dark(), "nothing listed near: the usual timer");
+    at(&mut t, p.aos + 60);
+    t.wait(200);
+    assert!(!t.app.dark(), "the pass near again: woken");
+    // closed
+    t.hold(Key::Exit);
+    assert!(!matches!(t.app.screen(), Screen::Sat(_)));
+    t.wait(6000);
+    assert!(t.app.dark(), "the screen closed: the usual timer, pass or not");
+    assert_eq!(t.app.sat.awake_until, 0, "the window's end let go with the screen");
+}

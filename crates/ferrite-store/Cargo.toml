@@ -18,6 +18,7 @@ ferrite-app.workspace = true
 ferrite-ui.workspace = true
 
 [dev-dependencies]
+ferrite-fuzzkit.workspace = true
 ferrite-ui = { workspace = true, features = ["std"] }
 
 [lints]

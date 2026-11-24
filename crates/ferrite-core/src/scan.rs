@@ -298,16 +298,34 @@ impl Scan {
         self.nuisance[..self.nn as usize].contains(&i)
     }
 
+    /// A position stopped on: it has a frequency (not a channel's Skip flag, an empty channel or a preset's skipped
+    /// frequency, SCAN-9, SCAN-10) and isn't skipped for this scan (SCAN-11).
+    fn stops_at(&self, l: &impl List, i: u16) -> bool {
+        l.at(i).is_some() && !self.skipped(i)
+    }
+
+    /// The first priority channel from the `k`th on to look at (SCAN-12): a stop (a priority channel with its
+    /// Skip flag or skipped with \* is passed over, never looked at: the look heard the squelch of the frequency
+    /// still tuned and took it as a hit there), not the position the scan is on. Ends at one that is.
+    fn prio_from(&self, l: &impl List, k: u8) -> Option<(u8, u16)> {
+        (k..=u8::MAX).map_while(|k| l.priority(k).map(|q| (k, q))).take_while(|&(_, q)| q != self.pos).find(|&(_, q)| self.stops_at(l, q))
+    }
+
     /// The next position from `pos` in the scan's direction that is stopped on; None if there is none.
-    fn next(&self, l: &impl List) -> Option<u16> {
+    /// `but`: a position left out too (one \# skips for good, not yet stored in the list).
+    fn next(&self, l: &impl List, but: Option<u16>) -> Option<u16> {
         let n = l.len();
         (1..=n).map(|k| if self.up { (self.pos as u32 + k as u32) % n as u32 } else { (self.pos as u32 + n as u32 * 2 - k as u32) % n as u32 } as u16)
-            .find(|&i| l.at(i).is_some() && !self.skipped(i))
+            .find(|&i| Some(i) != but && l.at(i).is_some() && !self.skipped(i))
     }
 
     /// Off the hit and on to the next position (counted as no skip).
     fn leave(&mut self, l: &impl List, now: u32, out: &mut Out) {
-        match self.next(l) {
+        self.leave_but(l, now, out, None);
+    }
+
+    fn leave_but(&mut self, l: &impl List, now: u32, out: &mut Out, but: Option<u16>) {
+        match self.next(l, but) {
             Some(i) => {
                 self.pos = i;
                 self.st = St::Step(now);
@@ -362,7 +380,8 @@ impl Scan {
             return (None, out);
         }
         let p = self.pos;
-        self.leave(l, now, &mut out);
+        // SCAN-17: never back to it, though the list still has it: the last stop skipped for good ends the scan.
+        self.leave_but(l, now, &mut out, Some(p));
         (Some(p), out)
     }
 
@@ -378,7 +397,7 @@ impl Scan {
         let mut out = Out::default();
         // A priority look: open there is a hit there; otherwise back where it was.
         if let Some((k, since)) = self.look {
-            let p = l.priority(k);
+            let p = l.priority(k).filter(|&q| self.stops_at(l, q));
             if open && p.is_some() {
                 self.look = None;
                 self.pos = p.unwrap_or(self.pos);
@@ -389,9 +408,9 @@ impl Scan {
             if now.wrapping_sub(since) < PRIO_DWELL_MS && p.is_some() {
                 return out;
             }
-            match l.priority(k + 1).filter(|&q| Some(q) != Some(self.pos)) {
-                Some(q) => {
-                    self.look = Some((k + 1, now));
+            match self.prio_from(l, k + 1) {
+                Some((k, q)) => {
+                    self.look = Some((k, now));
                     out.tune = l.at(q);
                 }
                 None => {
@@ -439,8 +458,8 @@ impl Scan {
         // SCAN-12: the priority channels at their interval, from a step or a hit.
         if self.running() && self.prio_ms > 0 && now.wrapping_sub(self.prio_at) >= self.prio_ms {
             self.prio_at = now;
-            if let Some(q) = l.priority(0).filter(|&q| q != self.pos) {
-                self.look = Some((0, now));
+            if let Some((k, q)) = self.prio_from(l, 0) {
+                self.look = Some((k, now));
                 out.tune = l.at(q);
             }
         }
@@ -1451,6 +1470,64 @@ mod tests {
             t += 10;
         }
         assert!(!s.listening());
+    }
+
+    /// SCAN-9, SCAN-11, SCAN-12: a priority channel with its Skip flag, or skipped with \* this scan, is never looked
+    /// at: the look tuned nothing there, heard the squelch still open on the step's frequency and stopped on the
+    /// skipped channel as a hit. The next priority channel is still looked at.
+    #[test]
+    fn priority_look_passes_skipped_channels() {
+        /// Ten channels, 3 with its Skip flag; priority 3 then 7.
+        struct SkipPrio;
+        impl List for SkipPrio {
+            fn len(&self) -> u16 {
+                10
+            }
+            fn at(&self, i: u16) -> Option<Freq10> {
+                Chans.at(i)
+            }
+            fn priority(&self, k: u8) -> Option<u16> {
+                [3, 7].get(k as usize).copied()
+            }
+        }
+        let mut s = Scan { prio_ms: 1_000, resume: Resume::Drop, ..Scan::new() };
+        s.start(1, 0);
+        // A carrier on 1 throughout: a hit there, then the looks with the squelch still open.
+        let mut tuned = std::vec::Vec::new();
+        let mut t = 0;
+        while t < 1_500 {
+            let o = s.tick(&SkipPrio, t, true);
+            assert_ne!(o.hit, Some(3), "a hit on the skipped channel at {t}");
+            tuned.extend(o.tune);
+            t += 10;
+        }
+        assert!(tuned.contains(&(mhz(146) + 7 * 1_250)), "7 is still looked at: {tuned:?}");
+        assert!(!tuned.contains(&(mhz(146) + 3 * 1_250)));
+        // \* on a hit at the priority channel 7: no look stops there again this scan.
+        let mut s = Scan { prio_ms: 1_000, resume: Resume::Drop, ..Scan::new() };
+        s.start(7, 0);
+        let mut t = walk(&mut s, &SkipPrio, 0, 100, |p| p == 7);
+        assert!(s.on_hit() && s.pos() == 7);
+        s.skip_once(&SkipPrio, t);
+        let end = t + 5_000;
+        while t < end {
+            assert_ne!(s.tick(&SkipPrio, t, true).hit, Some(7), "a priority look stopped on 7 again at {t}");
+            t += 10;
+        }
+    }
+
+    /// SCAN-17: \# on the last stop left (here the only channel) ends the scan: it skips it for good, so the scan
+    /// never steps back onto it (it went back, the list not yet stored, and then stopped on it again as a hit).
+    #[test]
+    fn skip_for_good_on_the_last_stop_ends() {
+        let r = Range { lo: mhz(146), hi: mhz(146), step: 1_250, skipped: &[] };
+        let mut s = Scan { resume: Resume::Drop, ..Scan::new() };
+        s.start(0, 0);
+        let t = walk(&mut s, &r, 0, 100, |_| true);
+        assert!(s.on_hit());
+        let (p, o) = s.skip_lasting(&r, t);
+        assert_eq!((p, o.tune, o.ended), (Some(0), None, true));
+        assert!(!s.running());
     }
 
     /// The list's edges: a length past [`POS_MAX`] is held to it; a list of none ends the scan at its first step.

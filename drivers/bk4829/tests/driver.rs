@@ -593,3 +593,15 @@ fn tx_start_and_sidetone_off() {
     bk.sidetone(false);
     assert_eq!(r.writes, [(0x30, 0), (0xFF, 50), (0x47, 0x6342), (0x47, 0x6042)]);
 }
+
+/// The frequency read back from registers holding any bits saturates instead of overflowing (found by fuzzing).
+#[test]
+fn freq_read_back_never_overflows() {
+    let mut bk = Bk4829::new(Regs::new());
+    bk.write(reg::FREQ_LO, 0xFFFF);
+    bk.write(reg::FREQ_HI, 0xFFFF);
+    assert_eq!(bk.freq(), u32::MAX);
+    bk.write(reg::FREQ_LO, 0x5BC0);
+    bk.write(reg::FREQ_HI, 0x00DD); // 14,506,944 x 10 Hz
+    assert_eq!(bk.freq(), 145_069_440);
+}

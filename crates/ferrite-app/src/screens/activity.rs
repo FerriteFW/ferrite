@@ -304,6 +304,13 @@ impl App {
         }
     }
 
+    /// MODE-2 settled: the mode running is the one wanted. True after every tick; the simulator's crash hunts
+    /// (`sim/tests/sweep.rs`, `monkey.rs`) check it after every input.
+    #[doc(hidden)]
+    pub fn mode_settled(&self) -> bool {
+        self.wanted_mode() == self.radio.mode
+    }
+
     /// MODE-2: bring the radio to [`App::wanted_mode`]: the running mode's stop, then the wanted one's start,
     /// in that order; and while one runs, the lease renewed (MODE-3). Called after every key, knob step, screen
     /// change and tick, so every way of leaving a mode (BACK, hold BACK, a timeout, PTT, a setting, a reset) ends

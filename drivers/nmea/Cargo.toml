@@ -8,3 +8,6 @@ description = "Incremental NMEA 0183 reader for GPS modules: GGA, RMC and GSV fr
 
 [lints]
 workspace = true
+
+[dev-dependencies]
+ferrite-fuzzkit.workspace = true

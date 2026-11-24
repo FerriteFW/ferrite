@@ -20,6 +20,7 @@ udsp.workspace = true
 usstv.workspace = true
 
 [dev-dependencies]
+ferrite-fuzzkit.workspace = true
 miniz_oxide = "0.8"
 # SAT-4: the f64 SGP4 reference our f32 port is checked against, and its OMM reader.
 sgp4 = "2.4"

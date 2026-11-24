@@ -77,7 +77,8 @@ pub fn check(op: &Op, ranges: &[Range<u32>], chip: u32) -> Result<(), Status> {
     match *op {
         Op::Erase(a) if a % SECTOR != 0 => Err(Status::BadArg),
         Op::Erase(a) if allowed(ranges, a, SECTOR) => Ok(()),
-        Op::Program(a, d) if a / PAGE != (a + d.len() as u32 - 1) / PAGE => Err(Status::BadArg),
+        // the last byte's address checked: near the top of the address space it overflowed (found by fuzzing)
+        Op::Program(a, d) if a.checked_add(d.len() as u32 - 1).is_none_or(|end| a / PAGE != end / PAGE) => Err(Status::BadArg),
         Op::Program(a, d) if allowed(ranges, a, d.len() as u32) => Ok(()),
         Op::Erase(_) | Op::Program(..) => Err(Status::Refused),
         Op::Crc(a, n) if n == 0 || a as u64 + n as u64 > chip as u64 => Err(Status::BadArg),
@@ -106,6 +107,16 @@ pub fn start_answer(chip: u32, cal_crc: u32, ranges: &[Range<u32>], uid: [u32; 3
 mod tests {
     use super::*;
     use crate::layout::WRITABLE;
+
+    /// A program whose last byte is past the top of the address space is a bad argument, not an overflow (found
+    /// by fuzzing).
+    #[test]
+    fn a_program_past_the_top_is_a_bad_argument() {
+        let all = [Range { start: 0, end: u32::MAX }];
+        assert_eq!(check(&Op::Program(u32::MAX, &[1, 2]), &all, 4 << 20), Err(Status::BadArg));
+        assert_eq!(check(&Op::Program(0xFFFF_FFF0, &[0; 32]), &all, 4 << 20), Err(Status::BadArg));
+        assert_eq!(check(&Op::Program(u32::MAX, &[1]), &all, 4 << 20), Err(Status::Refused), "one byte at the very top: past the ranges");
+    }
 
     /// BACKUP-7, LINK-4: nothing in calibration or the update area is ever allowed, even when the ranges given
     /// cover the whole chip; inside Ferrite's own ranges everything is.

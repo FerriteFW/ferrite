@@ -1102,6 +1102,8 @@ mod remote_edges;
 mod aprs_text;
 /// Satellite mode's radio commands, alarm and mark (chapter 28a).
 mod sat;
+/// Property tests: random streams over the exclusive modes, monitors and scans (MODE-1, PWR-24.4, SQL-14.1, SCAN-6).
+mod props_modes;
 
 /// Group D's screens: setup, PIN, key test, link, FM broadcast, HF mode, alert, the menu's groups.
 #[path = "tests_d.rs"]

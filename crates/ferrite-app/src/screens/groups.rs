@@ -479,7 +479,7 @@ pub(crate) fn all_values() -> std::vec::Vec<([u8; 3], std::vec::Vec<std::string:
 static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
     field!([1, 1, 0], special),
     field!([1, 2, 0], special),
-    field!([1, 3, 0], scan_prio: u8, Kind::Round(6, prio_text), Nothing),
+    field!([1, 3, 0], scan_prio: u8, Kind::Round(SCAN_PRIOS, prio_text), Nothing),
     field!([1, 6, 1], pause_time: u8, Kind::Pick(&crate::settings::PAUSE_TIME_NAMES), Nothing),
     field!([1, 6, 2], scan_down: bool, Kind::Flip(&["Up", "Down"]), Nothing),
     field!([1, 6, 3], scan_tx: bool, Kind::Flip(&ON_OFF), ScanTx),

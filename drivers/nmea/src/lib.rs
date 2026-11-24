@@ -64,13 +64,14 @@ fn fixed(s: &[u8], frac: u32) -> Option<i64> {
                     }
                     seen += 1;
                 }
-                v = v * 10 + (c - b'0') as i64;
+                v = v.checked_mul(10)?.checked_add((c - b'0') as i64)?;
             }
             _ => return None,
         }
     }
+    // 15 digits scaled by 10^frac overflowed an i64 (found by fuzzing): too big for any field, refused
     for _ in seen..frac {
-        v *= 10;
+        v = v.checked_mul(10)?;
     }
     Some(v)
 }
@@ -94,7 +95,9 @@ fn coord(s: &[u8], h: &[u8], out: &mut i32) {
     }
     let (deg, min_e5) = (v / 10_000_000, v % 10_000_000);
     let e7 = deg * 10_000_000 + (min_e5 * 10 + 3) / 6; // minutes / 60, rounded
-    *out = if h[0] == b'S' || h[0] == b'W' { -e7 } else { e7 } as i32;
+    // a number past i32 would have wrapped into some other position: refused
+    let Ok(e7) = i32::try_from(e7) else { return };
+    *out = if h[0] == b'S' || h[0] == b'W' { -e7 } else { e7 };
 }
 
 fn hexval(c: u8) -> Option<u8> {

@@ -11,6 +11,7 @@ uradio-bus = { path = "../bus" }
 
 [dev-dependencies]
 uradio-bus = { path = "../bus", features = ["mock"] }
+ferrite-fuzzkit.workspace = true
 
 [lints]
 workspace = true

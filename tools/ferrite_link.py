@@ -950,7 +950,7 @@ class Radio:
 
 def parse_status(line):
     """The compact status line (LINK-19, UI what=2) as a dict:
-    {"screen": "Home", "active": "A", "keyed": None or "A"/"B"/"C"/"HF", "remote": bool, "mode": "off"|"xb"|...,
+    {"screen": "Home", "active": "A", "keyed": None or "A"/"B"/"C"/"HF"/"SAT", "remote": bool, "mode": "off"|"xb"|...,
      "slots": {"A": {"state": "RX", "meter": 20}, ...}, "xb": None or {"state": N, "passes": N}}.
     A slot's state is its card's word as the full readback's `card ... state="..."` has it ("idle", "RX", "heard",
     "RX muted", "MON", "scanning", ...): the line's `-` is "idle" and `_` a space."""

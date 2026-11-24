@@ -231,7 +231,7 @@ impl App {
     /// (HOME-13), home under a shortcut's popup (HOME-8) and under the quick menu (HOME-17): each waits until it goes.
     pub fn redraw_deferred(&self) -> bool {
         self.knob_busy()
-            || self.screen == crate::Screen::Home && self.drawn.popup != 0 && self.toast.is_some_and(|t| t.center)
+            || matches!(self.screen, crate::Screen::Home) && self.drawn.popup != 0 && self.toast.is_some_and(|t| t.center)
             || super::qmenu::frozen(self)
     }
 
@@ -365,7 +365,7 @@ impl App {
 
     /// Low Power Mode's home is up (PWR-24.7): it draws the whole screen, bands included.
     pub(crate) fn lpm_home(&self) -> bool {
-        self.screen == crate::Screen::Home && self.low_power()
+        matches!(self.screen, crate::Screen::Home) && self.low_power()
     }
 
     pub(crate) fn render_hint(&mut self, lcd: &mut impl Panel) {

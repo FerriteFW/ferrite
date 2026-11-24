@@ -2505,7 +2505,7 @@ fn aprs_address_takes_the_ssid_setting() {
     assert_eq!(t.app.aprs_call().as_bytes(), b"VE3KPW-7");
     t.app.set.set_callsign(b"VE3KPW-9");
     assert_eq!(t.app.aprs_call().as_bytes(), b"VE3KPW-7", "the setting wins over one typed in");
-    t.app.set_aprs(crate::aprs::AprsCfg { ssid: 0, ..t.app.aprs_cfg() });
+    t.app.set_aprs(crate::aprs::AprsCfg { ssid: 0, ..*t.app.aprs_cfg() });
     assert_eq!(t.app.aprs_call().as_bytes(), b"VE3KPW");
     let dev = Default::default();
     let mut b = Buf::<24>::new();
@@ -2514,7 +2514,7 @@ fn aprs_address_takes_the_ssid_setting() {
     assert_eq!(crate::screens::groups::wired(&t.app, &dev, &[5, 5, 1], &mut b), Some(true));
     assert_eq!(b.as_bytes(), b"15 Generic");
     // the 0 5 5 row in the APRS group shows the address beacons send (it said "-9" whatever the SSID)
-    t.app.set_aprs(crate::aprs::AprsCfg { ssid: 7, ..t.app.aprs_cfg() });
+    t.app.set_aprs(crate::aprs::AprsCfg { ssid: 7, ..*t.app.aprs_cfg() });
     crate::screens::groups::wired(&t.app, &dev, &[5, 5], &mut b);
     assert_eq!(b.as_bytes(), b"VE3KPW-7");
     t.app.set.set_callsign(b"");

@@ -135,7 +135,7 @@ fn aprs_card_large_rows() {
     t.shows("Bluetooth");
     t.app.set.kiss_port = 0;
     t.app.set_aprs_mode(true);
-    t.app.set_aprs(AprsCfg { beacon: 5, ..t.app.aprs_cfg() });
+    t.app.set_aprs(AprsCfg { beacon: 5, ..*t.app.aprs_cfg() });
     t.s.aprs_tick(10, true, true);
     t.wait(100);
     t.shows("Beacon in");

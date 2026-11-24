@@ -82,7 +82,7 @@ pub(crate) fn close(app: &mut App) {
 /// Every input and tick: the box closes after 5 s with no input, when the screen goes dark, when the keys lock
 /// (auto lock) or when home isn't up any more.
 pub(crate) fn expire(app: &mut App) {
-    if app.qmenu.is_some_and(|q| app.now.wrapping_sub(q.last) >= IDLE_MS) || app.qmenu.is_some() && (app.dark() || app.locked() || app.screen != Screen::Home) {
+    if app.qmenu.is_some_and(|q| app.now.wrapping_sub(q.last) >= IDLE_MS) || app.qmenu.is_some() && (app.dark() || app.locked() || !matches!(app.screen, Screen::Home)) {
         close(app);
     }
 }

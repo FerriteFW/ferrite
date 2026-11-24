@@ -1370,7 +1370,7 @@ fn radio_apply(app: &mut App, rec: &[u8]) -> Status {
     app.change(crate::Item::Watch, watch as i32 - app.watch as i32);
     app.change(crate::Item::BatterySave, bsave as i32 - app.bsave as i32);
     if let Some(sound) = sound.filter(|&s| s != app.aprs_cfg().sound) {
-        app.set_aprs(crate::aprs::AprsCfg { sound, ..app.aprs_cfg() });
+        app.edit_aprs(sound as i32, |c, v| c.sound = v as u8);
     }
     Status::Ok
 }

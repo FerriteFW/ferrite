@@ -640,8 +640,8 @@ impl App {
         self.send_aprs_slot();
     }
 
-    pub fn aprs_cfg(&self) -> AprsCfg {
-        self.aprs
+    pub fn aprs_cfg(&self) -> &AprsCfg {
+        &self.aprs
     }
 
     /// The APRS frequency: 0 5 4, or the region's.
@@ -719,7 +719,7 @@ impl App {
         if v != 1 {
             if let Some(was) = self.tracker_was.take() {
                 if self.aprs.beacon == TRACKER_BEACON {
-                    self.set_aprs(AprsCfg { beacon: was, ..self.aprs });
+                    self.edit_aprs(was as i32, |c, v| c.beacon = v as u8);
                 }
             }
         }
@@ -729,7 +729,7 @@ impl App {
         self.set.kiss_port = if v == 3 { port } else { 0 };
         if v == 1 && !self.aprs.beacons_on() {
             self.tracker_was = Some(self.aprs.beacon);
-            self.set_aprs(AprsCfg { beacon: TRACKER_BEACON, ..self.aprs });
+            self.edit_aprs(0, |c, _| c.beacon = TRACKER_BEACON);
         }
         self.set_aprs_mode(v == 2);
         match v {
@@ -746,6 +746,17 @@ impl App {
     /// New APRS settings: kept, written back at the next tick, and C retuned when it is the APRS slot.
     pub(crate) fn set_aprs(&mut self, c: AprsCfg) {
         self.aprs = c;
+        self.aprs_st |= DIRTY;
+        if self.aprs_c() {
+            self.send_slot(APRS_SLOT);
+        }
+    }
+
+    /// One APRS setting changed in place, then kept and sent as [`App::set_aprs`] does: the menu's many arms
+    /// pass a plain `fn` each, so none of them copies the whole block twice (size review, Nov 23, 2026).
+    #[inline(never)]
+    pub(crate) fn edit_aprs(&mut self, d: i32, f: fn(&mut AprsCfg, i32)) {
+        f(&mut self.aprs, d);
         self.aprs_st |= DIRTY;
         if self.aprs_c() {
             self.send_slot(APRS_SLOT);
@@ -806,7 +817,7 @@ impl App {
             return Err("Off the grid: APRS takes 5 kHz steps");
         }
         let f5k = if f == region_freq(self.set.region()) { 0 } else { (f / 500) as u16 };
-        self.set_aprs(AprsCfg { f5k, ..self.aprs });
+        self.edit_aprs(f5k as i32, |c, v| c.f5k = v as u16);
         Ok(())
     }
 
@@ -820,7 +831,7 @@ impl App {
             i = (i as i32 + dir).rem_euclid(BEACON_STEPS as i32) as usize;
         }
         let m = if i == DROPPED { SMART } else { i };
-        self.set_aprs(AprsCfg { beacon: m as u8, ..self.aprs });
+        self.edit_aprs(m as i32, |c, v| c.beacon = v as u8);
     }
 
     /// "Off", "Manual", "Every 10 min", "Smart".

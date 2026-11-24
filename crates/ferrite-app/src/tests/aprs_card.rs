@@ -163,7 +163,7 @@ fn aprs_card_kiss() {
 #[test]
 fn aprs_card_beacon() {
     let mut a = A::new();
-    a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() }); // every 10 min
+    a.app.set_aprs(AprsCfg { beacon: 5, ..*a.app.aprs_cfg() }); // every 10 min
     a.tick();
     assert_eq!(a.app.aprs_holder(), None);
     assert!(a.app.aprs_card(&a.s).is_none(), "APRS mode off: no APRS card");
@@ -185,7 +185,7 @@ fn aprs_card_beacon() {
 fn aprs_card_beacon_and_mute() {
     let mut a = A::new();
     a.app.set_aprs_mode(true);
-    a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() }); // every 10 min
+    a.app.set_aprs(AprsCfg { beacon: 5, ..*a.app.aprs_cfg() }); // every 10 min
     a.tick();
     let l = a.card_line();
     assert!(l.contains("head=\"APRS Mode \u{b7} VHF\""), "{l}");
@@ -341,7 +341,7 @@ fn aprs_card_beacon_fate_and_countdown() {
     assert_eq!(s.as_bytes(), b"42s");
     let mut a = A::new();
     a.app.set_aprs_mode(true);
-    a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() }); // every 10 min
+    a.app.set_aprs(AprsCfg { beacon: 5, ..*a.app.aprs_cfg() }); // every 10 min
     a.tick();
     a.s.aprs_tick(1, true, true); // the first beacon goes at once; heard back 2 s on
     let k = a.app.aprs_card(&a.s).unwrap();
@@ -381,7 +381,7 @@ fn aprs_mode_mutes_c() {
 fn kiss_suspends_the_radios_own_aprs() {
     let mut a = A::new();
     a.app.set_aprs_mode(true);
-    a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() });
+    a.app.set_aprs(AprsCfg { beacon: 5, ..*a.app.aprs_cfg() });
     a.tick();
     assert!(a.app.aprs_on() && a.app.beacons_on());
     a.app.set.kiss_port = 1; // the cable
@@ -455,7 +455,7 @@ fn aprs_card_counts_and_countdown() {
     // first frame draws every region
     let mut a = A::new();
     a.app.set_aprs_mode(true);
-    a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() }); // every 10 min
+    a.app.set_aprs(AprsCfg { beacon: 5, ..*a.app.aprs_cfg() }); // every 10 min
     a.tick();
     let k = a.app.aprs_card(&a.s).unwrap();
     assert!(!k.next.is_empty(), "beacons on: a countdown or a reason");

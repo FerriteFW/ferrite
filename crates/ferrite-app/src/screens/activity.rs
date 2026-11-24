@@ -295,7 +295,7 @@ impl App {
             return Mode::Off; // TX-24: the broadcast stops before the key-up and starts again after; PWR-24.4
         }
         let rested = self.radio.seen_freq.is_some() && self.now.wrapping_sub(self.radio.freq_at) >= STRIP_REST_MS;
-        if self.screen == Screen::Home && self.set.layout == 1 && rested && !self.strip_blocked() && !self.strip_paused {
+        if matches!(self.screen, Screen::Home) && self.set.layout == 1 && rested && !self.strip_blocked() && !self.strip_paused {
             Mode::Strip
         } else if self.radio.bcast.is_some() {
             Mode::Fm

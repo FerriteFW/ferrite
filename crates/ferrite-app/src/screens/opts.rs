@@ -322,7 +322,7 @@ impl View for Options {
                 Act::Retries => {
                     let c = app.aprs_cfg();
                     let n = (c.retries.min(crate::aprs::RETRIES_DEFAULT) + 1) % (crate::aprs::RETRIES_DEFAULT + 1);
-                    app.set_aprs(crate::aprs::AprsCfg { retries: n, ..c });
+                    app.edit_aprs(n as i32, |c, v| c.retries = v as u8);
                     app.back();
                     app.show_toast(b"Message retries", retries_text(n).as_bytes(), false);
                 }

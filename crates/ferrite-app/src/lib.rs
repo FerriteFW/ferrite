@@ -1582,7 +1582,7 @@ impl App {
     /// steps of their own (an edit, a sub-page, typed digits) take one step back first.
     fn back(&mut self) {
         match self.back.iter_mut().rev().find(|b| b.is_some()).and_then(|b| b.take()) {
-            Some(s) if s != Screen::Home => {
+            Some(s) if !matches!(s, Screen::Home) => {
                 self.screen = s;
                 self.reconcile_mode(); // MODE-1
             }
@@ -2012,7 +2012,7 @@ impl App {
         match item {
             Item::Power if self.aprs_slot(a) => {
                 let power = (self.aprs.power as i32 + d).rem_euclid(3) as u8; // APRS-19.1: 0 5 6 3
-                self.set_aprs(aprs::AprsCfg { power, ..self.aprs });
+                self.edit_aprs(power as i32, |c, v| c.power = v as u8);
             }
             Item::Watch => self.put_watch((self.watch as i32 + d).rem_euclid(3) as u8),
             Item::BatterySave => {

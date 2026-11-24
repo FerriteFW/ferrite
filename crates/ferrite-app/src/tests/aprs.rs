@@ -200,7 +200,7 @@ fn beacons_need_aprs_mode() {
     let own = a.app.slot(APRS_SLOT).freq();
     a.app.set_watch(0);
     a.cmds();
-    a.app.set_aprs(AprsCfg { beacon: 5, ..a.app.aprs_cfg() }); // every 10 min
+    a.app.set_aprs(AprsCfg { beacon: 5, ..*a.app.aprs_cfg() }); // every 10 min
     a.tick();
     assert_eq!(a.app.aprs_holder(), None, "APRS mode off: timed beacons hold nothing");
     assert!(!a.app.aprs_slot(APRS_SLOT) && !a.app.beacons_on());
@@ -262,11 +262,11 @@ fn beacon_settings() {
     a.app.step_beacon(1);
     a.app.beacon_mode_text(&mut b);
     assert_eq!(b.as_bytes(), b"Manual");
-    a.app.set_aprs(AprsCfg { beacon: 5 | 0x80, ..a.app.aprs_cfg() });
+    a.app.set_aprs(AprsCfg { beacon: 5 | 0x80, ..*a.app.aprs_cfg() });
     assert_eq!(a.app.aprs_cfg().mode(), 0, "paused: off");
     a.app.beacon_mode_text(&mut b);
     assert_eq!(b.as_bytes(), b"Off");
-    a.app.set_aprs(AprsCfg { power: 2, ..a.app.aprs_cfg() });
+    a.app.set_aprs(AprsCfg { power: 2, ..*a.app.aprs_cfg() });
     a.mode(true);
     assert!(a.cmds().contains(&RadioCmd::SlotParam { slot: 2, param: Param::Power, value: 2 }));
 }
@@ -408,7 +408,7 @@ fn engine_timeline() {
 fn card_text() {
     let mut a = A::new();
     a.mode(true);
-    a.app.set_aprs(AprsCfg { beacon: 2, ..a.app.aprs_cfg() });
+    a.app.set_aprs(AprsCfg { beacon: 2, ..*a.app.aprs_cfg() });
     a.tick();
     a.s.aprs_tick(0, true, false);
     let mut b = Buf::<28>::new();
@@ -455,7 +455,7 @@ fn path_digipeater_and_after_voice_settings() {
     assert!(a.app.aprs_cfg().after_voice);
     // Kept by the APRS store's owner (written back at the next tick).
     a.tick();
-    assert!(a.s.aprs_cfg() == a.app.aprs_cfg());
+    assert!(a.s.aprs_cfg() == *a.app.aprs_cfg());
 }
 
 /// APRS-45: 0 5 9 5, FX.25 on transmit: 16 check bytes by default (decision 230), then 32, 64 and Off; # puts it
@@ -511,7 +511,7 @@ fn beacon_after_voice_on_release() {
     a.press(Key::Ptt(0), 300);
     a.press(Key::Exit, 100);
     assert!(!sent(&mut a), "after voice is off by default");
-    a.app.set_aprs(AprsCfg { after_voice: true, ..a.app.aprs_cfg() });
+    a.app.set_aprs(AprsCfg { after_voice: true, ..*a.app.aprs_cfg() });
     a.cmds();
     a.press(Key::Ptt(0), 300);
     assert!(a.cmds().contains(&RadioCmd::Transmit { slot: 0, on: true }), "a voice transmission on A");
@@ -567,7 +567,7 @@ fn custom_path() {
     let mut a = A::new();
     // APRS-26: custom keeps value 3 (a radio set to it before APRSAT and ARISS were added still is); unset, it's skipped
     assert!(!a.app.aprs_cfg().path_ok(PATH_CUSTOM), "no custom path: not a choice");
-    a.app.set_aprs(crate::aprs::AprsCfg { path: 2, ..a.app.aprs_cfg() });
+    a.app.set_aprs(crate::aprs::AprsCfg { path: 2, ..*a.app.aprs_cfg() });
     change(&mut a.app, &[5, 9, 1], 1);
     assert_eq!(a.app.aprs_cfg().path, 4, "WIDE1-1,WIDE2-1 then APRSAT, Custom skipped");
     change(&mut a.app, &[5, 9, 1], 1);
@@ -648,7 +648,7 @@ fn a_message_to_you_plays_the_message_sound() {
     assert!(a.cmds().contains(&RadioCmd::Chime { sound: CHIME_DEFAULT, level: 11 }), "APRS-6.2: Max by default");
     a.app.notify(b"Pager", b"a page", false);
     assert!(!a.cmds().iter().any(|c| matches!(c, RadioCmd::Chime { .. })), "only messages to you");
-    a.app.set_aprs(AprsCfg { sound: 0, ..a.app.aprs_cfg() });
+    a.app.set_aprs(AprsCfg { sound: 0, ..*a.app.aprs_cfg() });
     a.app.notify_message(b"VE7GPL", b"again");
     assert!(!a.cmds().iter().any(|c| matches!(c, RadioCmd::Chime { .. })), "Off");
     let ms = |i: usize| -> u32 {
@@ -727,7 +727,7 @@ fn beacon_now_refused_with_nothing_holding_c() {
     let mut a = A::new();
     a.app.set_callsign(b"VA7FER");
     a.mode(false);
-    a.app.set_aprs(AprsCfg { beacon: 0, ..a.app.aprs_cfg() });
+    a.app.set_aprs(AprsCfg { beacon: 0, ..*a.app.aprs_cfg() });
     crate::screens::opts::beacon_now(&mut a.app, &a.s);
     assert!(!a.s.beacon_asked(), "nothing asked for");
     assert_eq!(a.app.toast.map(|t| t.body), Some(Buf::from(&b"APRS and beacons off"[..])));
@@ -887,7 +887,7 @@ fn aprs_mode_selector_off_tracker_on_kiss() {
     assert_eq!((shown(&a, &mut b), a.app.aprs_holder(), a.app.set.kiss_port), ("Off".into(), None, 0));
     assert_eq!(a.app.set.kiss_via, 1, "the port is kept");
     // A beacon mode of the user's own stays when leaving Tracker.
-    a.app.set_aprs(AprsCfg { beacon: 3, ..a.app.aprs_cfg() }); // every 2 min
+    a.app.set_aprs(AprsCfg { beacon: 3, ..*a.app.aprs_cfg() }); // every 2 min
     change(&mut a.app, &[5, 3], 1);
     assert_eq!(a.app.aprs_cfg().beacon, 3, "already automatic: kept");
     change(&mut a.app, &[5, 3], 1);

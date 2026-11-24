@@ -8,7 +8,8 @@ fn reason(a: &[u8]) -> std::string::String {
 }
 
 /// LINK-41: a zone written: the same one again changes nothing, a new name is saved, the next number adds one;
-/// a bad name, resume, a short record or a number past the next are refused.
+/// a bad name, resume, a priority channel past 3999 (LINK-41.3), a short record or a number past the next are
+/// refused.
 #[test]
 fn zones_written() {
     let mut pc = Pc::new(true);
@@ -31,6 +32,14 @@ fn zones_written() {
     bad[19] = 13;
     let (s, a) = pc.write(what::ZONE, 0, &bad, 0);
     assert_eq!((s, reason(&a).as_str()), (Status::Invalid as u8, "resume out of range"));
+    // LINK-41.3 (ferrite#148): a priority channel past the last channel number is refused; the last one is taken
+    let mut bad = z.clone();
+    bad[22..24].copy_from_slice(&5000u16.to_le_bytes());
+    let (s, a) = pc.write(what::ZONE, 0, &bad, 0);
+    assert_eq!((s, reason(&a).as_str()), (Status::Invalid as u8, "priority channel out of range"));
+    let mut ok = z.clone();
+    ok[22..24].copy_from_slice(&3999u16.to_le_bytes());
+    assert_eq!(pc.write(what::ZONE, 0, &ok, 0).0, 0, "channel 4000 (3999) as priority");
     assert_eq!(pc.write(what::ZONE, 0, &z[..10], 0).0, Status::BadArg as u8, "short");
     assert_eq!(pc.write(what::ZONE, n + 5, &z, 0).0, Status::NotFound as u8, "past the next");
 }

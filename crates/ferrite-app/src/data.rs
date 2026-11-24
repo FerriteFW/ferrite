@@ -145,6 +145,20 @@ pub struct Message {
     pub text: Buf<67>,
     pub ago_s: u32,
     pub state: MsgState,
+    /// APRS-6.5: the addressee a message to us was sent to, as heard ("VE7GPL" or "VE7GPL-7"); empty when unknown
+    /// (one stored before this was kept) and for ours (`peer` is where it went).
+    pub to: Buf<10>,
+}
+
+/// APRS-6.4: a message to everyone (CQ, QST, ALL) heard lately: shown above the inbox for a while, RAM only.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Notice {
+    pub from: Buf<10>,
+    /// The addressee as sent (CQ, QST or ALL).
+    pub to: Buf<9>,
+    pub text: Buf<67>,
+    pub ago_s: u32,
+    pub unread: bool,
 }
 
 /// The beacon, as the APRS task has it.
@@ -540,6 +554,17 @@ pub trait Data {
     }
     fn message(&self, _i: u16) -> Option<Message> {
         None
+    }
+    /// APRS-6.4: the messages to everyone shown above the inbox, newest first (RAM).
+    fn notices(&self) -> u16 {
+        0
+    }
+    fn notice(&self, _i: u16) -> Option<Notice> {
+        None
+    }
+    /// The `i`th notice read; whether it was unread.
+    fn notice_read(&self, _i: u16) -> bool {
+        false
     }
     fn draft(&self) -> Draft {
         Draft::default()

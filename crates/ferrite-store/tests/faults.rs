@@ -338,7 +338,7 @@ fn log_and_aprs_changes_with_the_chip_gone() {
     sweep("read", false, &|s| s.request(Op::Read(1)));
     sweep("read all", false, &|s| s.request(Op::ReadAll));
     sweep("clear log", true, &|s| s.request(Op::ClearLog));
-    sweep("message", true, &|s| s.message_to_us(b"VE3KPW-9", b"73", b"AB1"));
+    sweep("message", true, &|s| s.message_to_us(b"VE3KPW-9", b"73", b"AB1", b"VE3XYZ"));
     sweep("message read", false, &|s| s.request(Op::MessageRead(1)));
     sweep("messages read all", false, &|s| s.request(Op::MessagesReadAll));
     sweep("clear messages", true, &|s| s.request(Op::ClearMessages));

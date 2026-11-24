@@ -102,7 +102,7 @@ pub enum Job {
     /// An event for the log ([`logs::event_job`]), stamped when it is written.
     Log([u8; logs::EVENT_JOB]),
     /// An APRS message: one for us (unread), or ours (pending).
-    Msg { inbound: bool, peer: Buf<10>, text: Buf<67>, id: Buf<5>, ago_s: u32 },
+    Msg { inbound: bool, peer: Buf<10>, text: Buf<67>, id: Buf<5>, to: Buf<10>, ago_s: u32 },
     /// Our message to `peer` with `text` moved on (tried again, acked, failed).
     MsgState { peer: Buf<10>, text: Buf<67>, state: MsgState },
     /// A heard station's row (APRS-4, [`logs::heard_job`]), stamped when it is written.
@@ -877,8 +877,8 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
                 let mut r = logs::event_rec(&j, self.now_s(), self.utc.get());
                 self.events.append(&self.f, &mut r).await.is_ok()
             }
-            Job::Msg { inbound, peer, text, id, ago_s } => {
-                let mut r = logs::msg_rec(inbound, &peer, &text, &id, self.now_s().saturating_sub(ago_s), self.utc.get());
+            Job::Msg { inbound, peer, text, id, to, ago_s } => {
+                let mut r = logs::msg_rec(inbound, &peer, &text, &id, &to, self.now_s().saturating_sub(ago_s), self.utc.get());
                 match self.msgs.append(&self.f, &mut r).await {
                     Ok(seq) => {
                         self.set_gone(seq, false); // a slot a deleted one had
@@ -1808,13 +1808,14 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
     /// An APRS message: for us (`inbound`, unread) or ours (pending, the APRS task tries it); `ago_s` dates it
     /// back from now (the simulator's sample).
     pub fn message_in(&self, inbound: bool, peer: &[u8], text: &[u8], ago_s: u32) -> bool {
-        self.ok() && self.submit(Job::Msg { inbound, peer: Buf::from(peer), text: Buf::from(text), id: Buf::new(), ago_s })
+        self.ok() && self.submit(Job::Msg { inbound, peer: Buf::from(peer), text: Buf::from(text), id: Buf::new(), to: Buf::new(), ago_s })
     }
 
     /// A message to us with its sender's message number `id` (empty: none), kept for APRS-32's check after a power
     /// cycle ([`FlashStore::message_heard`]).
-    pub fn message_to_us(&self, peer: &[u8], text: &[u8], id: &[u8]) -> bool {
-        self.ok() && self.submit(Job::Msg { inbound: true, peer: Buf::from(peer), text: Buf::from(text), id: Buf::from(id), ago_s: 0 })
+    /// `to`: the addressee it was sent to, as heard (APRS-6.5).
+    pub fn message_to_us(&self, peer: &[u8], text: &[u8], id: &[u8], to: &[u8]) -> bool {
+        self.ok() && self.submit(Job::Msg { inbound: true, peer: Buf::from(peer), text: Buf::from(text), id: Buf::from(id), to: Buf::from(to), ago_s: 0 })
     }
 
     /// APRS-32: the message to us from `peer` numbered `id` with `text` is among the newest [`HEARD_CHECK`] stored
@@ -2397,6 +2398,15 @@ impl<N: Nor, D: Data> Data for FlashStore<N, D> {
     }
     fn send_room(&self) -> bool {
         self.extra.send_room()
+    }
+    fn notices(&self) -> u16 {
+        self.extra.notices()
+    }
+    fn notice(&self, i: u16) -> Option<ferrite_app::data::Notice> {
+        self.extra.notice(i)
+    }
+    fn notice_read(&self, i: u16) -> bool {
+        self.extra.notice_read(i)
     }
     fn quick(&self, i: usize) -> Option<Buf<67>> {
         if i >= ferrite_app::words::QUICK || !self.ok() {

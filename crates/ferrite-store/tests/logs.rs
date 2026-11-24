@@ -169,6 +169,22 @@ fn rejected_message_kept() {
     assert_eq!(s.message(0).unwrap().state, MsgState::Rejected);
 }
 
+/// APRS-6.5: a message to us keeps the address it was sent to across a power cycle (outside the record's CRC); one
+/// stored without it (as before APRS-6.5) reads it as unknown, and ours never has one.
+#[test]
+fn message_keeps_the_address_it_was_sent_to() {
+    let s = mount(SimFlash::new());
+    s.message_to_us(b"VE7GPL-7", b"old style", b"1", b"");
+    s.message_to_us(b"VE7GPL-7", b"plain call", b"2", b"VA7IF");
+    s.request(Op::Draft(Draft { to: Buf::from(b"VE7GPL"), text: Buf::from(b"ours") }));
+    assert!(s.request(Op::Send));
+    let s = cycle(s);
+    let to = |i| s.message(i).unwrap().to;
+    assert_eq!((s.message(0).unwrap().text.as_bytes(), to(0).as_bytes()), (&b"ours"[..], &b""[..]));
+    assert_eq!((s.message(1).unwrap().text.as_bytes(), to(1).as_bytes()), (&b"plain call"[..], &b"VA7IF"[..]));
+    assert_eq!((s.message(2).unwrap().text.as_bytes(), to(2).as_bytes()), (&b"old style"[..], &b""[..]));
+}
+
 /// APRS-32: after a power cycle the APRS task's RAM table is empty, so a sender's retry of a message already
 /// stored is found in the store (by sender, number and text) and not stored or rung again; the APRS task still
 /// acks it. Another number, other text, and a message without a number are new.
@@ -188,7 +204,7 @@ fn retry_after_power_cycle_stored_once() {
     let hear = |s: &Store, a: &AprsLive, info: &[u8], now: u32| -> bool {
         let rx = a.receive(&frame(info), now, me, &cfg);
         match rx.inbound {
-            Some((from, text)) if !s.message_heard(from.as_bytes(), rx.inbound_id.as_bytes(), text.as_bytes()) => s.message_to_us(from.as_bytes(), text.as_bytes(), rx.inbound_id.as_bytes()),
+            Some((from, text)) if !s.message_heard(from.as_bytes(), rx.inbound_id.as_bytes(), text.as_bytes()) => s.message_to_us(from.as_bytes(), text.as_bytes(), rx.inbound_id.as_bytes(), rx.inbound_to.as_bytes()),
             _ => false,
         }
     };
@@ -536,7 +552,7 @@ fn reading_a_message_reads_its_log_entry() {
     let s = mount(SimFlash::new());
     let entry = |name: &[u8], text: &[u8]| Event { src: Src::Aprs, ago_s: 0, freq: 14_439_000, slot: 2, unread: true, id: 0, x: 0, y: 0, pos: None, name: Buf::from(name), text: Buf::from(text) };
     s.log(&entry(b"VE7TES-7", b"other"));
-    s.message_to_us(b"VE7TES-7", b"hello", b"1");
+    s.message_to_us(b"VE7TES-7", b"hello", b"1", b"");
     s.log(&entry(b"VE7TES-7", b"hello"));
     assert!(s.request(Op::MessageRead(0)));
     assert_eq!(s.message(0).map(|m| m.state), Some(MsgState::Read));
@@ -553,7 +569,7 @@ fn messages_read_all_and_delete_all() {
     let s = mount(SimFlash::new());
     let entry = |name: &[u8], text: &[u8]| Event { src: Src::Aprs, ago_s: 0, freq: 14_439_000, slot: 2, unread: true, id: 0, x: 0, y: 0, pos: None, name: Buf::from(name), text: Buf::from(text) };
     for (n, t) in [(&b"VE7GPL-7"[..], &b"one"[..]), (b"VA7IF-7", b"two")] {
-        s.message_to_us(n, t, b"1");
+        s.message_to_us(n, t, b"1", b"");
         s.log(&entry(n, t));
     }
     s.message_in(false, b"VE7GPL-7", b"sent", 0);

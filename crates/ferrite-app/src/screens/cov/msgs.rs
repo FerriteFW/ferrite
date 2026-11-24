@@ -376,3 +376,44 @@ fn delete_one() {
     assert_eq!(t.toast(), "Message deleted / VE3JLH");
     assert!(matches!(t.screen(), Screen::Msgs(m) if m.cur.sel == n - 3 && !m.open), "{}", t.name());
 }
+
+/// APRS-6.4: a message to everyone shows above the stored messages (its addressee as the tag, unread dot); OK opens
+/// it ("To CQ") and reads it without touching the envelope's count; OK again replies to its sender. The stored
+/// messages below keep their own actions: hold MENU and delete takes the stored one under the cursor.
+#[test]
+fn notices_above_the_inbox() {
+    let mut t = T::new();
+    t.s.add_notice(crate::data::Notice { from: Buf::from(b"VE7GPL-7"), to: Buf::from(b"CQ"), text: Buf::from(b"anyone on?"), ago_s: 60, unread: true });
+    t.app.inbox = 1;
+    t.open(Dest::AprsMessages);
+    t.shows("anyone on?");
+    t.shows("VE7GPL-7");
+    assert_eq!(sel(&t), 0);
+    // Hold MENU on it: the messages' general options (nothing to stop, resend or delete)
+    t.hold(Key::Menu);
+    assert!(matches!(t.screen(), Screen::Options(o) if o.of == crate::screens::opts::Of::Messages), "{}", t.name());
+    t.tap(Key::Exit);
+    // OK opens it, read; the envelope keeps its count (a notice isn't in it)
+    t.tap(Key::Menu);
+    assert!(matches!(t.screen(), Screen::Msgs(m) if m.open), "{}", t.name());
+    t.draw();
+    t.shows("To CQ");
+    t.shows("anyone on?");
+    assert!(!t.s.notice(0).unwrap().unread);
+    assert_eq!(t.app.inbox, 1);
+    // OK again: a reply to its sender
+    t.tap(Key::Menu);
+    assert_eq!(t.name(), "Compose message");
+    assert_eq!(t.s.draft().to.as_bytes(), b"VE7GPL-7");
+    // the first stored message is the next row: deleting there deletes it, not the notice
+    t.open(Dest::AprsMessages);
+    let n = t.s.messages();
+    t.tap(Key::Down);
+    assert_eq!(sel(&t), 1);
+    t.hold(Key::Menu);
+    assert!(matches!(t.screen(), Screen::Options(o) if o.of == crate::screens::opts::Of::Msg), "{}", t.name());
+    t.taps(&[Key::Menu, Key::Menu]); // Delete message, asked first
+    assert_eq!(t.toast(), "Message deleted / VE3KPW-9");
+    assert_eq!(t.s.messages(), n - 1);
+    assert_eq!(t.s.notices(), 1, "the notice stays");
+}

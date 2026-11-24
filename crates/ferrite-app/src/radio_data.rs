@@ -135,6 +135,20 @@ impl Data for RadioData {
         self.aprs.room()
     }
 
+    fn notices(&self) -> u16 {
+        self.aprs.notices()
+    }
+
+    fn notice(&self, i: u16) -> Option<crate::data::Notice> {
+        self.aprs.notice_at(i)
+    }
+
+    fn notice_read(&self, i: u16) -> bool {
+        let was = self.aprs.notice_read(i);
+        self.changed();
+        was
+    }
+
     fn fix(&self) -> Option<Fix> {
         self.gps.fix()
     }

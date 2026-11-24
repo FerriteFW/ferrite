@@ -151,6 +151,36 @@ fn chip1_range() {
     assert_eq!(t.app.set.hf.bw, 0);
 }
 
+/// HF-10.1 (decision 446): on 15 m, SIDE2 reaches USB on the SI4732 past 18 MHz; going into it says it's an
+/// experiment, and the receiver shows as one; PTT refuses there (receive only); past 30 MHz USB isn't offered.
+#[test]
+fn ssb_past_18_mhz_is_the_si4732_experiment() {
+    let mut t = open(255);
+    t.app.set.hf.freq = 2_107_400;
+    t.app.set.hf.mode = hf::AM;
+    t.wait(100);
+    t.reads("CHIP 1");
+    for _ in 0..4 {
+        if t.app.set.hf.mode == hf::USB {
+            break;
+        }
+        t.tap(Key::Side(2));
+    }
+    assert_eq!(t.app.set.hf.mode, hf::USB, "SIDE2 offers USB on 15 m");
+    assert_eq!(t.toast(), "Experimental / please report");
+    t.wait(100);
+    t.shows("SI4732 exp");
+    t.reads("SI4732 EXP");
+    // 1 MHz steps up (SIDE2 held, the knob) to 30 MHz: USB isn't offered there, chip 1 takes it in FM
+    t.app.key_down(Key::Side(2), t.t, &t.s);
+    t.knob(9);
+    t.app.key_up(Key::Side(2), t.t, &t.s);
+    assert!(t.app.set.hf.freq >= mhz(30));
+    assert_eq!(t.app.set.hf.mode, hf::FM);
+    t.wait(100);
+    t.reads("CHIP 1");
+}
+
 /// NAV-3: SIDE2 held, the knob steps 1 MHz in HF mode too.
 #[test]
 fn side2_knob_big_step() {

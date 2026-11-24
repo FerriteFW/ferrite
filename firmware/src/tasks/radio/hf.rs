@@ -29,8 +29,8 @@ async fn part_read_wait(addr: u32, buf: &mut [u8]) -> Result<(), si4732::Error> 
 }
 
 impl Radio {
-    /// HF mode on, retuned or off (HF-3, HF-4, HF-10, HF-11): the SI4732 below 18 MHz, chip 1 through the
-    /// energised relay from 18 MHz (decision 322, as stock and nicFW). Watch, scan and the other chip pause meanwhile (HF-8).
+    /// HF mode on, retuned or off (HF-3, HF-4, HF-10, HF-11): the SI4732 below 18 MHz, and in USB, LSB and CW up to
+    /// 30 MHz (HF-10.1); chip 1 through the energised relay from 18 MHz otherwise (decision 322, as stock and nicFW). Watch, scan and the other chip pause meanwhile (HF-8).
     pub(super) async fn hf(&mut self, freq: Freq10, mode: u8, on: bool) {
         self.seek_cancel(); // HF-31: a retune or off ends a seek
         if !on {
@@ -46,7 +46,8 @@ impl Radio {
             log(b"hf off", 0);
             return;
         }
-        let si = freq < mhz(18);
+        // HF-10.1 (decision 446): SSB and CW stay on the SI4732 to 30 MHz (chip 1 has no SSB), an experiment past 18
+        let si = freq < mhz(18) || matches!(mode, MODE_USB | MODE_LSB | MODE_CW) && freq < mhz(30);
         let was = self.hf.replace(HfOn { freq, mode, si });
         for n in 0..2u8 {
             if !(n == 1 && !si) {

@@ -35,8 +35,8 @@ use ufmt::uwrite;
 
 /// Modes, as [`ferrite_core::msg::Param::Mode`] numbers, in the order * cycles them.
 pub const FM: u8 = 0;
-const AM: u8 = 2;
-const USB: u8 = 3;
+pub(crate) const AM: u8 = 2;
+pub(crate) const USB: u8 = 3;
 const LSB: u8 = 4;
 const CW: u8 = 5;
 const MODE_ORDER: [u8; 5] = [AM, USB, LSB, CW, FM];
@@ -51,8 +51,12 @@ pub fn mode_name(m: u8) -> &'static str {
     }
 }
 
-/// Chip 1 takes over from 18 MHz, every mode (HF-9, HF-10; decision 322: as stock and nicFW).
+/// Chip 1 takes over from 18 MHz in AM and FM (HF-9, HF-10; decision 322: as stock and nicFW).
 pub(crate) const CHIP1_FROM: Freq10 = mhz(18);
+/// HF-10.1 (decision 446): USB, LSB and CW stay on the SI4732 up to here, past 18 MHz (chip 1 has no SSB), as an
+/// experiment: the chip's documented range ends at 23 MHz (AN332; its brief says 26.1) and the board's input past
+/// 18 MHz is untested.
+pub(crate) const SSB_TOP: Freq10 = mhz(30);
 const TOP: Freq10 = mhz(64);
 const BOTTOM: Freq10 = 15_000; // 150 kHz
 
@@ -334,15 +338,21 @@ impl HfMem {
         matches!(self.mode, USB | LSB | CW)
     }
 
-    /// 0 SI4732 AM, 1 SI4732 SSB/CW, 2 chip 1 (HF-10: everything from 18 MHz, as the Radio task tunes it).
+    /// 0 SI4732 AM, 1 SI4732 SSB/CW, 2 chip 1 (HF-10: AM and FM from 18 MHz; HF-10.1: SSB and CW on the SI4732 to
+    /// 30 MHz; as the Radio task tunes it).
     fn rx(&self) -> usize {
-        if self.freq >= CHIP1_FROM {
-            2
-        } else if self.ssb() {
+        if self.ssb() && self.freq < SSB_TOP {
             1
+        } else if self.freq >= CHIP1_FROM {
+            2
         } else {
             0
         }
+    }
+
+    /// HF-10.1: SSB or CW past 18 MHz, the experiment.
+    fn ssb_high(&self) -> bool {
+        self.ssb() && self.freq >= CHIP1_FROM
     }
 
     fn chip1(&self) -> bool {
@@ -390,11 +400,12 @@ impl HfMem {
         BANDS.iter().position(|b| (b.1..=b.2).contains(&self.freq))
     }
 
-    /// A mode allowed here: FM only on chip 1's range; USB, LSB, CW only below it, with the patch (HF-10, HF-20).
+    /// A mode allowed here: FM only on chip 1's range; USB, LSB, CW below 30 MHz, with the patch (HF-10, HF-10.1,
+    /// HF-20).
     pub(crate) fn allowed(&self, m: u8, patch: bool) -> bool {
         match m {
             FM => self.freq >= CHIP1_FROM,
-            USB | LSB | CW => patch && self.freq < CHIP1_FROM,
+            USB | LSB | CW => patch && self.freq < SSB_TOP,
             _ => true,
         }
     }
@@ -407,9 +418,9 @@ impl HfMem {
 }
 
 /// An HF channel's mode is one HF mode has at its frequency (CHAN-26): AM anywhere, USB, LSB and CW below
-/// 18 MHz (the SI4732), FM from 18 MHz (chip 1).
+/// 30 MHz (the SI4732, HF-10.1), FM from 18 MHz (chip 1).
 pub fn channel_mode_ok(f: Freq10, m: u8) -> bool {
-    m == AM || matches!(m, USB | LSB | CW) && f < CHIP1_FROM || m == FM && f >= CHIP1_FROM
+    m == AM || matches!(m, USB | LSB | CW) && f < SSB_TOP || m == FM && f >= CHIP1_FROM
 }
 
 /// CHAN-26: an HF channel recalled (by number, from the browser, the home channel) opens HF mode on its
@@ -507,6 +518,7 @@ fn first_step(b: usize, region: u8) -> u8 {
 /// [`tune_to`], with a band's remembered step, bandwidth and fine tune (HF-27).
 fn tune_vfo(app: &mut App, f: Freq10, mode: Option<u8>, rest: Option<(u8, u8, i16)>) {
     let h = &mut app.set.hf;
+    let was_high = h.ssb_high();
     h.keep_band(); // HF-27: the band being left keeps this VFO
     if let Some((step, bw, bfo)) = rest {
         (h.step, h.bw, h.bfo) = (step, bw, bfo);
@@ -517,6 +529,10 @@ fn tune_vfo(app: &mut App, f: Freq10, mode: Option<u8>, rest: Option<(u8, u8, i1
     }
     if !h.allowed(h.mode, app.radio.ssb_patch) {
         h.mode = if h.freq >= CHIP1_FROM { FM } else { AM };
+    }
+    // HF-10.1: going into SSB past 18 MHz says it's an experiment, once each way in
+    if h.ssb_high() && !was_high {
+        app.show_toast(b"Experimental", b"please report", false);
     }
     if app.radio.mode == Mode::Hf {
         send(app); // MODE-2: stopped, the start takes the new frequency
@@ -685,7 +701,7 @@ impl Hf {
             loading: self.patch_loading(app, live).then_some(pct),
             menu: self.menu.then(|| (self.row, option_values(&h))),
             band: h.band().map_or("", |b| BANDS[b].0),
-            rx: if h.chip1() { "CHIP 1" } else { "SI4732" },
+            rx: if h.chip1() { "CHIP 1" } else if h.ssb_high() { "SI4732 EXP" } else { "SI4732" },
             mode: mode_name(h.mode),
             step: STEP_NAMES[h.rx()][h.step as usize % 4],
             bw: h.bw_text(),
@@ -948,9 +964,13 @@ impl View for Hf {
         };
         let su = s_units(rssi, (!chip1).then_some(snr));
         let step = STEP_NAMES[h.rx()][h.step as usize % 4];
-        if app.dirty(R_INFO, Mix::new().b(step.as_bytes()).h(&chip1).b(su.as_bytes()).get()) {
+        let exp = h.ssb_high(); // HF-10.1: SSB past 18 MHz, the experiment
+        if app.dirty(R_INFO, Mix::new().b(step.as_bytes()).h(&chip1).h(&exp).b(su.as_bytes()).get()) {
             let mut t = Buf::<32>::new();
-            let _ = uwrite!(t, "{} step \u{b7} {}", step, if chip1 { "chip 1" } else { "SI4732" });
+            // The field holds about 20 characters: the word "step" gives its room to a long step ("12.5 kHz", which
+            // overflowed with chip 1) and to the experiment's mark (HF-10.1)
+            let rx = if chip1 { "chip 1" } else if exp { "SI4732 exp" } else { "SI4732" };
+            let _ = if exp || step.len() > 6 { uwrite!(t, "{} \u{b7} {}", step, rx) } else { uwrite!(t, "{} step \u{b7} {}", step, rx) };
             // DISP-31: to y 119, above the band strip (from 118, its marker from 119): to 120 each signal change cut the
             // marker's top pixel row
             w::field(lcd, 12, 140, 104, 119, 116, t.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Left) });
@@ -1101,8 +1121,8 @@ mod band_list_tests {
 mod rx_tests {
     use super::*;
 
-    /// HF-10 (decision 322, as stock and nicFW): below 18 MHz the SI4732 in every mode; from 18 MHz chip 1 in
-    /// every mode, where USB, LSB and CW aren't offered (chip 1 has no SSB).
+    /// HF-10 (decision 322, as stock and nicFW): below 18 MHz the SI4732 in every mode; from 18 MHz chip 1 in AM and
+    /// FM. HF-10.1 (decision 446): USB, LSB and CW stay on the SI4732 up to 30 MHz, never past it.
     #[test]
     fn chip_1_from_18_mhz() {
         let mem = |freq, mode| HfMem { freq, mode, ..HfMem::DEFAULT };
@@ -1110,13 +1130,18 @@ mod rx_tests {
         assert!(!mem(mhz(18) - 1, USB).chip1(), "17.99 MHz USB: the SI4732");
         assert!(mem(mhz(18), AM).chip1(), "18 MHz AM: chip 1");
         assert!(mem(2_718_500, AM).chip1(), "CB AM: chip 1");
-        assert!(mem(1_810_000, USB).chip1(), "17 m: chip 1 whatever the mode");
+        assert!(mem(1_810_000, AM).chip1(), "17 m AM: chip 1");
+        // HF-10.1: SSB and CW stay on the SI4732 to 30 MHz
+        assert!(!mem(1_810_000, USB).chip1() && !mem(2_807_400, USB).chip1() && !mem(mhz(30) - 1, CW).chip1(), "SSB to 30 MHz: the SI4732");
+        assert!(mem(mhz(30), USB).chip1(), "30 MHz and up: chip 1 (and USB not offered there)");
         let h = mem(1_420_000, AM);
         assert!(h.allowed(USB, true) && !h.allowed(USB, false), "20 m USB with the patch");
         let h = mem(2_107_400, AM);
-        assert!(!h.allowed(USB, true) && !h.allowed(LSB, true) && !h.allowed(CW, true), "15 m: no SSB on chip 1");
+        assert!(h.allowed(USB, true) && h.allowed(LSB, true) && h.allowed(CW, true), "15 m: SSB on the SI4732 (HF-10.1)");
+        assert!(!h.allowed(USB, false), "still only with the patch");
         assert!(h.allowed(FM, true) && h.allowed(AM, true));
-        assert!(channel_mode_ok(1_420_000, USB) && !channel_mode_ok(2_107_400, USB));
+        assert!(!mem(mhz(30), AM).allowed(USB, true) && !mem(mhz(50), AM).allowed(LSB, true), "no SSB from 30 MHz");
+        assert!(channel_mode_ok(1_420_000, USB) && channel_mode_ok(2_107_400, USB) && !channel_mode_ok(mhz(50), USB));
         assert!(BANDS.iter().all(|b| b.1 < CHIP1_FROM || matches!(b.4, AM | FM)), "every band from 18 MHz starts in AM or FM");
     }
 }

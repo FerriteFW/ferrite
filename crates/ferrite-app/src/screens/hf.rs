@@ -35,6 +35,8 @@ use ufmt::uwrite;
 
 /// Modes, as [`ferrite_core::msg::Param::Mode`] numbers, in the order * cycles them.
 pub const FM: u8 = 0;
+/// Not one of HF mode's own (its * cycle): an 18-64 MHz channel's, as on any home slot (CHAN-26).
+const NFM: u8 = 1;
 pub(crate) const AM: u8 = 2;
 pub(crate) const USB: u8 = 3;
 const LSB: u8 = 4;
@@ -417,10 +419,10 @@ impl HfMem {
     }
 }
 
-/// An HF channel's mode is one HF mode has at its frequency (CHAN-26): AM anywhere, USB, LSB and CW below
-/// 30 MHz (the SI4732, HF-10.1), FM from 18 MHz (chip 1).
+/// An HF channel's mode (CHAN-26): AM anywhere, USB, LSB and CW below 30 MHz (the SI4732, HF-10.1), FM and NFM
+/// from 18 MHz (chip 1 through the relay; NFM as on any home slot, ferrite#84).
 pub fn channel_mode_ok(f: Freq10, m: u8) -> bool {
-    m == AM || matches!(m, USB | LSB | CW) && f < SSB_TOP || m == FM && f >= CHIP1_FROM
+    m == AM || matches!(m, USB | LSB | CW) && f < SSB_TOP || matches!(m, FM | NFM) && f >= CHIP1_FROM
 }
 
 /// CHAN-26: an HF channel recalled (by number, from the browser, the home channel) opens HF mode on its

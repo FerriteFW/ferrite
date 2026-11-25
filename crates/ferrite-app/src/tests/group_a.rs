@@ -150,6 +150,28 @@ fn entry_reasons_fit_one_line() {
     }
 }
 
+/// VFO-14 (ferrite#84): a home VFO on CB (18-64 MHz, chip 1 through the relay) takes NFM as well as FM and AM,
+/// the narrow filter going to the Radio task with it.
+#[test]
+fn cb_vfo_takes_nfm() {
+    let mut t = T::new();
+    crate::screens::entry::tune_vfo(&mut t.app, 0, mhz(27) + 18_500);
+    t.wait(100);
+    t.cmds();
+    let at = |t: &T| t.app.slot(0).cfg.mode;
+    while at(&t) != 0 {
+        t.app.change(crate::slot::Item::Mode, 1);
+    }
+    t.cmds();
+    t.app.change(crate::slot::Item::Mode, 1);
+    assert_eq!((at(&t), t.app.slot(0).cfg.narrow), (1, true), "NFM");
+    let c = t.cmds();
+    assert!(c.contains(&RadioCmd::SlotParam { slot: 0, param: Param::Mode, value: 1 }), "{c:?}");
+    assert!(c.contains(&RadioCmd::SlotParam { slot: 0, param: Param::Bandwidth, value: 1 }), "{c:?}");
+    t.app.change(crate::slot::Item::Mode, 1);
+    assert_eq!(at(&t), 2, "then AM");
+}
+
 /// NAV-4 in channel mode: a number, its name or "empty".
 #[test]
 fn channel_entry() {

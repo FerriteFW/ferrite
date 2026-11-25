@@ -1967,6 +1967,21 @@ impl App {
         }
     }
 
+    /// CHAN-26.2 (ferrite#84): the knob's Mode step `v` (direction `d`) on a channel slot, moved on past the modes
+    /// its frequency doesn't have (an 18-64 MHz channel: FM, NFM, AM), so a step always lands on one it does; `v`
+    /// itself when none does (the refusal says why).
+    fn channel_mode_step(&self, slot: u8, v: i32, d: i32) -> i32 {
+        let cfg = *self.slots[slot as usize].cfg();
+        (0..crate::slot::SLOT_MODES as i32 - 1)
+            .map(|k| v + k * d.signum())
+            .find(|&w| {
+                let mut c = cfg;
+                let _ = Item::Mode.set(&mut c, w, 0);
+                self.channel_ok(slot, c).is_ok()
+            })
+            .unwrap_or(v)
+    }
+
     /// A channel field's refusal as a toast: its label and why ("Offset", "TX outside 64 to 1000 MHz"); TX-37's
     /// as [`App::relay_toast`].
     pub(crate) fn refusal_toast(&mut self, r: chfield::Refusal) {
@@ -2033,8 +2048,11 @@ impl App {
                 let rx = self.slots[a as usize].freq();
                 let shift = crate::slot::band_shift(band_near(rx), self.set.region());
                 let on_ch = self.slots[a as usize].on_channel();
+                let mut v = item.get(self.slots[a as usize].cfg()).0 + d;
+                if item == Item::Mode && on_ch && d.abs() == 1 {
+                    v = self.channel_mode_step(a, v, d); // CHAN-26.2: past the modes the channel's frequency lacks
+                }
                 let c = self.slots[a as usize].cfg_mut();
-                let mut v = item.get(c).0 + d;
                 if item == Item::Squelch && !on_ch && v.rem_euclid(11) == 0 {
                     v += d.signum(); // a VFO has no "Global": it is the slot's level (SQL-6)
                 }

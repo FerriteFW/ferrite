@@ -351,9 +351,12 @@
 > ch 12 rx 700
   writes true
   ! rx: 0.15-64 MHz (HF), 64-630 or 756-1300 MHz
-> ch 12 rx 30
+> ch 12 rx 7
   writes true
-  ! mode: an HF channel is AM, USB, LSB or CW (FM from 18 MHz)
+  ! mode: an HF channel is AM, USB, LSB or CW (FM or NFM from 18 MHz)
+> ch 12 rx 27.185
+  writes true
+  ! offset: an HF channel is simplex
 > ch 12 mode usb
   writes true
   ! mode: USB, LSB and CW are for HF channels
@@ -636,7 +639,7 @@
   writes true
   list Ui
   | screen Home "Home" title=""
-  | state frame=0 ago=16300 dark=0 locked=0 active=B keyed=- remote=0 mode=off fm=0 leave=0
+  | state frame=0 ago=16400 dark=0 locked=0 active=B keyed=- remote=0 mode=off fm=0 leave=0
   | bar lock=0 scan=0 watch=0 inbox=0 alert=0 gps=off bt_on=0 bt=0 battery=0 low=0 cutoff=0 dry=0 lpm=0 vox=0 spk=0 mcu=0 switches=0 held_us=0 why=0 clock=14:32 utc=0 call=""
   | card A active=0 head="VFO · VHF" state="off" freq=146.52000 name="" mode="AM" tone="D023I*" shift="SPLIT" power="No TX" s="+60" meter=20 rx=0 scan=0 kind=slot
   | card B active=1 head="VFO · UHF" state="idle" freq=443.47500 name="" mode="FM" tone="" shift="" power="No TX" s="+60" meter=20 rx=0 scan=0 kind=slot

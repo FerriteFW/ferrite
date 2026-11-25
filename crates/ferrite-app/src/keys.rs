@@ -44,6 +44,8 @@ struct Held {
     next: u32,
     /// Taken by the quick menu (HOME-17): no long press, repeat or release event at all.
     dead: bool,
+    /// A screen's note on this hold, gone with its release (BCR-25.1: home's ◀▶ hold stepping bands).
+    mark: u8,
 }
 
 /// Up to four keys held at once (SIDE2 + an arrow, # held while another key goes down, ...).
@@ -65,7 +67,7 @@ impl KeyTracker {
             return; // the PC's auto-repeat, or a bounce: one press
         }
         if let Some(slot) = self.held.iter_mut().find(|h| h.is_none()) {
-            *slot = Some(Held { key, since: now, fired: false, long: false, next: now.wrapping_add(REPEAT_AFTER_MS), dead: false });
+            *slot = Some(Held { key, since: now, fired: false, long: false, next: now.wrapping_add(REPEAT_AFTER_MS), dead: false, mark: 0 });
         }
     }
 
@@ -124,6 +126,18 @@ impl KeyTracker {
             if key.is_none_or(|k| h.key == k) {
                 h.dead = true;
             }
+        }
+    }
+
+    /// The screen's note on the held key's hold (0 when it has none, or the key isn't held).
+    pub fn mark(&self, key: Key) -> u8 {
+        self.held.iter().flatten().find(|h| h.key == key).map_or(0, |h| h.mark)
+    }
+
+    /// Notes `m` on the held key's hold; the next press of it starts at 0.
+    pub fn set_mark(&mut self, key: Key, m: u8) {
+        for h in self.held.iter_mut().flatten().filter(|h| h.key == key) {
+            h.mark = m;
         }
     }
 

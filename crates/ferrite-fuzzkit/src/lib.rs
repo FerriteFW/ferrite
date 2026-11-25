@@ -5,7 +5,7 @@
 //!
 //! - `FERRITE_FUZZ_SCALE=N` (default 1) runs N times the cases, for a long CI run.
 //! - `FERRITE_FUZZ_CASE=SEED` runs one case alone (the seed a failure printed).
-//! - `FERRITE_FUZZ_NO_TESTDATA=1` leaves out the `../testdata` recordings, as CI runs.
+//! - `FERRITE_FUZZ_NO_TESTDATA=1` leaves out the test data's recordings ([`testdata_dir`]), as CI runs.
 //! - A failure prints the target, the case's seed and the input as hex, and writes the input to
 //!   `target/fuzz-found/TARGET/SEED.hex`. Copy that file into `fuzz/regress/TARGET/` to keep it: every file there
 //!   runs first, every time.
@@ -297,13 +297,46 @@ pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The decoders' recordings (`../testdata`, the private testdata repo), when it is there: the seeds that need it
-/// are skipped without it (CI; `FERRITE_FUZZ_NO_TESTDATA=1` runs as CI does).
+/// The test data checkout, by the one rule every test and tool follows (`tools/testdata.sh` is the shell copy):
+/// `TESTDATA` if set (relative to the workspace when not absolute), else `../testdata-private` (FerriteFW/
+/// testdata-private: everything, maintainers only) when it is there, else `../testdata` (FerriteFW/testdata, public;
+/// its `fetch/all.sh` adds the third-party sets). The two repos have the same folders.
+pub fn testdata_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("TESTDATA") {
+        return root().join(p);
+    }
+    let private = root().join("../testdata-private");
+    if private.is_dir() { private } else { root().join("../testdata") }
+}
+
+/// A file or folder of the public test data (in FerriteFW/testdata, or fetched by its `fetch/all.sh`), when present.
+/// When it isn't, one line on stderr names it and how to get it, and the caller skips.
+pub fn testdata_file(rel: &str) -> Option<PathBuf> {
+    present(rel, "clone FerriteFW/testdata beside ferrite and run its fetch/all.sh, or set TESTDATA")
+}
+
+/// A file or folder only the private test data has (FerriteFW/testdata-private, maintainers only), when present;
+/// else one line on stderr, and the caller skips.
+pub fn testdata_private_file(rel: &str) -> Option<PathBuf> {
+    present(rel, "private test data, maintainers only")
+}
+
+fn present(rel: &str, how: &str) -> Option<PathBuf> {
+    let p = testdata_dir().join(rel);
+    if p.exists() {
+        return Some(p);
+    }
+    eprintln!("skipped: {} not found ({how})", p.display());
+    None
+}
+
+/// The decoders' recordings ([`testdata_dir`]), when they are there: the fuzz seeds that need them are skipped
+/// without them (CI; `FERRITE_FUZZ_NO_TESTDATA=1` runs as CI does).
 pub fn testdata() -> Option<PathBuf> {
     if std::env::var_os("FERRITE_FUZZ_NO_TESTDATA").is_some() {
         return None;
     }
-    let p = root().join("../testdata");
+    let p = testdata_dir();
     p.is_dir().then_some(p)
 }
 

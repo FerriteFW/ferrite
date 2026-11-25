@@ -1,6 +1,6 @@
 //! The packet decoders' fuzz targets (`fuzz/`, tools/fuzz.sh; digimodes/FUZZING.md) run deterministically in the
 //! normal tests: the same harness functions (`fuzz/src/harness.rs`), fed the TNC2 test packets
-//! (`digimodes/uaprs/tests/spec_packets.txt`, and when present `../testdata/aprs/*.hex`) turned into each target's
+//! (`digimodes/uaprs/tests/spec_packets.txt`, and when present the test data's `aprs/*.hex`) turned into each target's
 //! format as `fuzz/src/bin/seeds.rs` does, then mutated (ferrite-fuzzkit). No panic, no broken round trip, no
 //! case slower than the limit. `FERRITE_FUZZ_SCALE` runs more cases.
 

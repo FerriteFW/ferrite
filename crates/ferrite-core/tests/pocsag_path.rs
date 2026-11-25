@@ -1,7 +1,8 @@
 //! The pager decoder through the radio's receive path (DEC-4, roadmap 6b): audio as ADC1 samples PA2 (48 kHz,
 //! 12-bit counts around mid-scale), [`Decim`]'s 4:1 step, then the decoder slot's POCSAG receiver at 12 kHz and
-//! [`Page`]. A synthetic transmission always runs; the recordings in udigimodes (fetched with its
-//! the testdata repo (`../testdata/pocsag`), never redistributed) run with
+//! [`Page`]. A synthetic transmission always runs; the recordings in the test data's `pocsag/`
+//! (`ferrite_fuzzkit::testdata_dir`'s rule; the Signal Identification Wiki ones from the testdata repo's
+//! `fetch/all.sh`; each skipped when missing) run with
 //! `cargo test --release -p ferrite-core --test pocsag_path -- --ignored --nocapture`.
 
 use ferrite_core::audio::{Decim, ADC_HZ, BLOCK_IN, BLOCK_OUT};
@@ -76,8 +77,9 @@ fn synthetic_pages_at_every_rate() {
     }
 }
 
+/// A file of the test data's `pocsag/` (`ferrite_fuzzkit::testdata_dir`'s rule).
 fn testdata(rel: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata/pocsag").join(rel)
+    ferrite_fuzzkit::testdata_dir().join("pocsag").join(rel)
 }
 
 fn read_wav(path: &Path) -> Option<(Vec<i16>, u32)> {
@@ -120,8 +122,7 @@ fn recordings_through_the_radio_path() {
     println!("\nPOCSAG recordings through the radio's path (48 kHz ADC, Decim, POCSAG at 12 kHz)");
     println!("{:<20} {:>9} {:>12} {:>14} {:>14}", "recording", "multimon", "direct 22k", "radio, 1500", "radio, 400");
     for name in FILES {
-        let Some((s, rate)) = read_wav(&testdata(&format!("{name}.22050.wav"))) else {
-            println!("{name}: not fetched, skipped");
+        let Some((s, rate)) = ferrite_fuzzkit::testdata_file(&format!("pocsag/{name}.22050.wav")).and_then(|p| read_wav(&p)) else {
             continue;
         };
         let refs = ["multimon", "multimon_inv"]

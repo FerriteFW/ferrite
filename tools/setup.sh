@@ -63,9 +63,9 @@ fi
 if command -v just >/dev/null; then ok "$(just --version)"; else no "just (brew install just, cargo install just)"; fi
 
 echo "optional"
-for s in docs testdata; do
-    if [ -d "../$s" ]; then ok "../$s"; else note "../$s not found: recipes that need it say skipped"; fi
-done
+if [ -d ../docs ]; then ok "../docs"; else note "../docs not found: recipes that need it say skipped"; fi
+td=$(tools/testdata.sh)
+if [ -d "$td" ]; then ok "test data: $td"; else note "test data not found ($td): clone FerriteFW/testdata beside ferrite (fetch/all.sh for the rest); tests that need it say skipped"; fi
 [ -f .env ] && set -a && . ./.env && set +a
 if [ -n "${FERRITE_REMOTE:-}" ]; then ok "FERRITE_REMOTE=$FERRITE_REMOTE (just remote RECIPE)"; else note "FERRITE_REMOTE not set (.env.example)"; fi
 radios=${FERRITE_RADIOS:-$HOME/.config/ferrite/radios.toml}

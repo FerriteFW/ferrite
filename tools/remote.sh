@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # just remote RECIPE [ARGS]: copy this checkout to FERRITE_REMOTE (user@host:path) and run `just RECIPE ARGS` there.
-# The checkout goes to path/ferrite, ../docs and ../testdata (when present) to path/docs and path/testdata.
+# The checkout goes to path/ferrite; ../docs, ../testdata-private and ../testdata (each when present) to path/docs,
+# path/testdata-private and path/testdata, so the remote finds the test data by the same rule (tools/testdata.sh).
 # Not copied: target/, .git, .venv/, .env (the remote keeps its own). The remote needs just and cargo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
@@ -13,7 +14,7 @@ dir=${FERRITE_REMOTE#*:}
 ex=(--exclude /target/ --exclude .git --exclude /.venv/ --exclude /.env --exclude __pycache__/)
 ssh "$host" "mkdir -p $dir"
 rsync -az --delete "${ex[@]}" ./ "$host:$dir/ferrite/"
-for s in docs testdata; do
+for s in docs testdata-private testdata; do
     if [ -d "../$s" ]; then rsync -az --delete "${ex[@]}" "../$s/" "$host:$dir/$s/"; fi
 done
 # the remote copy has no .git: the commit goes along, for the build stamp and the test reports

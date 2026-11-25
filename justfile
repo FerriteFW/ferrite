@@ -98,9 +98,10 @@ testplan *args:
 manual:
     @if [ ! -d ../docs/manual ]; then echo "skipped: ../docs not found"; else cd .. && {{py}} docs/tools/mkmanual.py; fi
 
-# The decoders' measurements on recordings (ignored tests; needs ../testdata)
+# The decoders' measurements on recordings (ignored tests): the test data is TESTDATA, ../testdata-private or ../testdata
+# (tools/testdata.sh); a recording that is missing is skipped
 decoder-reports:
-    @if [ ! -d ../testdata ]; then echo "skipped: ../testdata not found"; else cargo nextest run --run-ignored only -E 'binary(report)' --no-capture; fi
+    @td=$(tools/testdata.sh); if [ ! -d "$td" ]; then echo "skipped: $td not found (FerriteFW/testdata beside ferrite)"; else cargo nextest run --run-ignored only -E 'binary(report)' --no-capture; fi
 
 # The simulator as wasm for sim-web/
 simweb:
@@ -111,6 +112,6 @@ size-diff what="diff":
     @if [ "{{what}}" = save ]; then {{py}} tools/sizemap.py --json target/size-base.json > /dev/null && echo "saved target/size-base.json"; \
     else {{py}} tools/sizemap.py --json target/size-new.json --diff target/size-base.json; fi
 
-# Run a recipe on FERRITE_REMOTE (.env): copies the checkout (and ../docs, ../testdata) there first
+# Run a recipe on FERRITE_REMOTE (.env): copies the checkout (and ../docs, ../testdata-private, ../testdata) there first
 remote +args:
     tools/remote.sh "$@"

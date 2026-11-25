@@ -1,15 +1,18 @@
-//! Measurements on the WA8LMF TNC Test CD (fetch with ../testdata/tools/fetch-wa8lmf.sh). Run with
+//! Measurements on the WA8LMF TNC Test CD (the testdata repo's `fetch/wa8lmf.sh`; found by
+//! `ferrite_fuzzkit::testdata_dir`'s rule, skipped when missing). Run with
 //! `cargo test --release -p uafsk --test report -- --ignored --nocapture`.
 
+use ferrite_fuzzkit::{testdata_file, testdata_private_file};
 use std::collections::HashMap;
 use uafsk::Demodulator;
 
-fn repo(rel: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(rel)
+/// A WA8LMF track and Dire Wolf's decode of it, when fetched (else a skip note).
+fn track(name: &str) -> Option<(std::path::PathBuf, std::path::PathBuf)> {
+    Some((testdata_file(&format!("wa8lmf/{name}.wav"))?, testdata_file(&format!("wa8lmf/ref/{name}.atest.txt"))?))
 }
 
 fn read_wav(path: &std::path::Path) -> (Vec<i16>, u32) {
-    let d = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e} (run ../testdata/tools/fetch-wa8lmf.sh)", path.display()));
+    let d = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let mut i = 12;
     let (mut rate, mut data) = (0, Vec::new());
     while i + 8 <= d.len() {
@@ -77,8 +80,9 @@ fn wa8lmf() {
     for t in ["track01", "track02"] {
         for suffix in ["_9600", ""] {
             let name = format!("{t}{suffix}");
-            let (s, rate) = read_wav(&repo(&format!("../testdata/wa8lmf/{name}.wav")));
-            let dw = atest_frames(&repo(&format!("../testdata/wa8lmf/ref/{name}.atest.txt")));
+            let Some((wav, atest)) = track(&name) else { return };
+            let (s, rate) = read_wav(&wav);
+            let dw = atest_frames(&atest);
             print!("{:>16}", format!("{t} {}k", rate / 1000));
             tracks.push((s, rate, dw));
         }
@@ -152,8 +156,9 @@ fn ax25_ok(f: &[u8]) -> bool {
 fn extras() {
     use uafsk::demod::Config;
     for name in ["track01_9600", "track02_9600"] {
-        let (s, rate) = read_wav(&repo(&format!("../testdata/wa8lmf/{name}.wav")));
-        let dw = atest_frames(&repo(&format!("../testdata/wa8lmf/ref/{name}.atest.txt")));
+        let Some((wav, atest)) = track(name) else { continue };
+        let (s, rate) = read_wav(&wav);
+        let dw = atest_frames(&atest);
         let mut d = Box::new(Demodulator::<3>::new(Config::new(rate)));
         let mut got = Vec::new();
         for &x in &s {
@@ -174,7 +179,8 @@ fn carrier_detect() {
     println!("{:<16} {:>8} {:>18} {:>16} {:>14}", "audio", "frames", "busy at decode", "busy in frames", "busy outside");
     let mut results = Vec::new();
     for name in ["track01_9600", "track02_9600"] {
-        let (s, rate) = read_wav(&repo(&format!("../testdata/wa8lmf/{name}.wav")));
+        let Some((wav, atest)) = track(name) else { continue };
+        let (s, rate) = read_wav(&wav);
         let mut d: Demodulator = Demodulator::new(uafsk::demod::Config::new(rate));
         let mut busy = vec![false; s.len()];
         // (end sample, length in bytes) of each frame, and whether the demodulator was busy as it ended.
@@ -196,7 +202,7 @@ fn carrier_detect() {
         // busy). What is left is still not all quiet: collisions and packets neither decoder gets.
         let margin = rate as usize / 2;
         let mut near = vec![false; s.len()];
-        let atest = std::fs::read(repo(&format!("../testdata/wa8lmf/ref/{name}.atest.txt"))).unwrap();
+        let atest = std::fs::read(&atest).unwrap();
         for line in String::from_utf8_lossy(&atest).lines() {
             // "DECODED[12] 1:23.456 ...": the time the frame ended.
             let Some(at) = line.find("DECODED[") else { continue };
@@ -286,7 +292,7 @@ fn carrier_detect() {
     }
 }
 
-/// Off-air recordings in testdata/aprs/ (any `NAME.wav`, mono 16-bit, any rate; never redistributed), each against
+/// Off-air recordings in the private test data's aprs/ (any `NAME.wav`, mono 16-bit, any rate; never redistributed), each against
 /// Dire Wolf's `atest -h NAME.wav` in testdata/aprs/ref/NAME.atest.txt: frames with a correct CRC, how many Dire Wolf
 /// also decoded, and what only one side got. Run with
 /// `cargo test --release -p uafsk --test report recordings -- --ignored --nocapture`.
@@ -294,7 +300,9 @@ fn carrier_detect() {
 #[ignore]
 fn recordings() {
     use uafsk::demod::Config;
-    let dir = repo("../testdata/aprs");
+    // the recordings' references: only the private test data has them
+    let Some(refs) = testdata_private_file("aprs/ref") else { return };
+    let dir = refs.parent().unwrap().to_path_buf();
     let mut wavs: Vec<_> = std::fs::read_dir(&dir).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
     wavs.retain(|p| p.extension().is_some_and(|e| e == "wav") && dir.join("ref").join(format!("{}.atest.txt", p.file_stem().unwrap().to_string_lossy())).exists());
     wavs.sort();
@@ -368,7 +376,8 @@ fn recordings_crc() {
         }
         !c
     }
-    let dir = repo("../testdata/aprs");
+    let Some(refs) = testdata_private_file("aprs/ref") else { return };
+    let dir = refs.parent().unwrap().to_path_buf();
     let mut wavs: Vec<_> = std::fs::read_dir(&dir).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
     wavs.retain(|p| p.extension().is_some_and(|e| e == "wav"));
     wavs.sort();

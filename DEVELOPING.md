@@ -25,7 +25,8 @@ Ferrite is Rust on [Embassy](https://embassy.dev), for the AT32F403A in the RT-9
 - Your radios by name: copy `radios.example.toml` to `~/.config/ferrite/radios.toml`, or `just radio-add NAME`. A name works wherever a tool takes a port.
 - No port given: `FERRITE_PORT`, then the default radio, then the only cable plugged in.
 - Another machine for the heavy runs: `FERRITE_REMOTE=user@host:path` in `.env`, then `just remote test`.
-- Recipes that need the private `../docs` or `../testdata` say they skipped without them.
+- Recipes that need the private `../docs` say they skipped without it.
+- The decoders' test data: `TESTDATA` if set, else `../testdata-private` (maintainers) if present, else `../testdata` (the public FerriteFW/testdata; its `fetch/all.sh` adds the third-party sets). Tests whose file is missing say skipped.
 
 ## Run it on the PC
 

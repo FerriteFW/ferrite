@@ -1,9 +1,9 @@
 //! The other decoders the radio runs on what it hears, fuzzed in the normal tests (ferrite-fuzzkit): POCSAG
 //! (codewords, and audio through the decoder slot), DSC (bits through the framer, symbols through the message
 //! reader, audio), SSTV (audio), SAME headers (the BK4829's FIFO words through the assembler, then the parser) and
-//! the DTMF digit tracker. Seeds come from the decoders' own encoders and, when present, the testdata recordings
-//! (`../testdata/pocsag`, `../testdata/dsc`). Invariant: no panic, nothing slower than the limit, results inside
-//! their buffers.
+//! the DTMF digit tracker. Seeds come from the decoders' own encoders and, when present, the test data's
+//! recordings (`pocsag/`, `dsc/`, found by `testdata_dir`'s rule). Invariant: no panic, nothing slower than the
+//! limit, results inside their buffers.
 
 use ferrite_core::decoders::{Decoder, Found, RATE_HZ};
 use ferrite_core::dtmfrx::{Track, MAX as DTMF_MAX};
@@ -236,7 +236,7 @@ fn fuzz_dsc_message() {
 fn fuzz_dsc_audio() {
     let corpus = recordings("dsc", 48_000);
     if corpus.is_empty() {
-        eprintln!("fuzz_dsc_audio: no ../testdata/dsc recordings, random audio only");
+        eprintln!("fuzz_dsc_audio: no dsc recordings in the test data, random audio only");
     }
     Fuzz::new("dsc_audio", 0xD5C3, 300).slow_ms(5_000).run(|r| mutated(r, &corpus, 120_000), |a| through(Decoder::dsc(), a));
 }

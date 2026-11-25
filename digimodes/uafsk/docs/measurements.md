@@ -5,7 +5,7 @@ committed results are in [`bench/results/uafsk.json`](../../../bench/results/uaf
 
 ## Test data
 
-The WA8LMF TNC Test CD (`../testdata/tools/fetch-wa8lmf.sh`):
+The WA8LMF TNC Test CD (the testdata repo's `fetch/wa8lmf.sh`):
 - **Track 1**: 40 minutes of APRS traffic on 144.39 MHz, flat audio (discriminator).
 - **Track 2**: the same traffic, de-emphasised, as from a receiver's speaker.
 
@@ -32,8 +32,8 @@ valid AX.25 addresses.
 
 ## Off-air recordings
 
-`recordings` in `tests/report.rs`: any `testdata/aprs/NAME.wav` with Dire Wolf's `atest -h` output in
-`testdata/aprs/ref/NAME.atest.txt`. Two recordings of a busy APRS channel at 16 kS/s, not redistributed; the
+`recordings` in `tests/report.rs`: any `aprs/NAME.wav` in the private test data with Dire Wolf's `atest -h`
+output in `aprs/ref/NAME.atest.txt`. Two recordings of a busy APRS channel at 16 kS/s, not redistributed; the
 radio runs 12 kS/s, so each is also scored resampled to 12 kS/s (ffmpeg). Frames (also Dire Wolf's):
 
 | | Rec. 1, 12k | Rec. 1, 16k | Rec. 2, 12k | Rec. 2, 16k |

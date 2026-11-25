@@ -68,7 +68,7 @@ for &x in samples {
 
 ```sh
 cargo test -p udsc                                                   # codewords, damaged copies, fields
-tools/fetch_dsc_testdata.sh                                          # calls from dsc_generator (Docker)
+# the calls from dsc_generator: FerriteFW/testdata beside ferrite (its tools/make-dsc.sh remakes them, Docker)
 cargo test --release -p udsc --test report -- --ignored --nocapture  # exact decodes, then in noise
 ```
 

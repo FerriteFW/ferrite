@@ -95,7 +95,7 @@ discriminator mode provides it.
 
 ```sh
 cargo test -p upocsag                                                   # BCH, round trips, synthetic audio
-# the recordings and multimon-ng decodes: the testdata repo, cloned beside ferrite
+# the recordings and multimon-ng decodes: FerriteFW/testdata beside ferrite (fetch/all.sh adds the sigid_* set)
 cargo test --release -p upocsag --test report -- --ignored --nocapture  # the table above
 ```
 

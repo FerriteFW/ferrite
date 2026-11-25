@@ -161,12 +161,13 @@ const APRS: [Opt; 7] = [
     ("APRS settings", Act::Open(Dest::Group(5)), txt!("Beacon, path, symbol, frequency")),
 ];
 const CHANNELS: [Opt; 1] = [("Show hidden channels", Act::ShowHidden, txt!("Hidden channels stay reachable by number"))];
-const WAYPOINTS: [Opt; 5] = [
+const WAYPOINTS: [Opt; 6] = [
     ("Mark here", Act::Do(Simple::MarkHere), txt!("A waypoint at this fix")),
     ("Add a grid square", Act::Grid, txt!("A waypoint at a square's centre: FN31pr")),
     ("Arrival alarm", Act::Arrival, txt!("Off, 50 m to 1 km from the one you go to")),
     ("Use as fixed position", Act::Sel(Sel::Fixed, false), txt!("This waypoint, used when there's no fix")),
     ("GPS position", Act::Open(Dest::GpsPosition), txt!("Fix, satellites, grid square")),
+    ("Delete", Act::Sel(Sel::Delete, true), txt!("This waypoint only; the rest move up")), // GPS-10.2
 ];
 const STATION: [Opt; 3] = [
     ("Message", Act::Sel(Sel::Message, false), txt!("Write this station a message")),

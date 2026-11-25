@@ -1,7 +1,7 @@
 """Checks read from the cable log (0 9 9 5, TERM-28) while the keys and readback go over Bluetooth: the cable must
 carry no byte from the PC (the first one ends the log), so these run with
 
-    tools/uitest.py --port ble:walkie-talkie --cablelog /dev/cu.usbserial-114220 --module cablelog
+    tools/uitest.py --port ble:walkie-talkie --cablelog /dev/cu.usbserial-XXXX --module cablelog
 
 (Bluetooth on, 0 9 2 1; the cable log is turned on for each test and off after). Radio only: the simulator has no
 cable log. GPS checks need GPS on; the standby one a fix.

@@ -416,7 +416,7 @@ def write_parts(ask, hello, parts, say=print, busy_s=15.0, clock=None):
 def build_id(image):
     """The build ID (SELF-5) a firmware image carries: the commit, with "+" when built from changes."""
     import subprocess
-    sha = subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
+    sha = os.environ.get("FERRITE_COMMIT") or subprocess.run(["git", "rev-parse", "--short=7", "HEAD"], capture_output=True, text=True, cwd=ROOT).stdout.strip()
     for cand in (sha + "+", sha):
         if cand and cand.encode() in image:
             return cand

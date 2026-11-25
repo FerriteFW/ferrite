@@ -5,3 +5,6 @@
 __pycache__/
 !assets/words/dict.bin
 /.claude/worktrees/
+.env
+personal.just
+/.venv/

@@ -51,7 +51,7 @@ Ferrite's public key (ID `5B2C47F45817851B`) is also in [`minisign.pub`](minisig
 
 ## For developers
 
-Building, testing, the code's layout and how to put your own build on a radio: [DEVELOPING.md](DEVELOPING.md).
+Building, testing, the code's layout and how to put your own build on a radio: [DEVELOPING.md](DEVELOPING.md). The commands: `just --list`; first time: `just setup`.
 
 ## Contributing
 

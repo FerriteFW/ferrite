@@ -2,7 +2,7 @@
 at a time. Each line goes through the terminal's own `ch`/`zone` commands (TERM rules): validated as an edit on the
 radio would be, then saved by the store; nothing is written to flash directly.
 
-    ../.venv/bin/python tools/loadch.py PORT FILE [--dry]     # PORT: the cable, or ble:ID
+    .venv/bin/python tools/loadch.py PORT FILE [--dry]        # PORT: the cable, ble:ID, a radio's name or auto
 
 Stops at the first line the radio refuses. Lists channels and zones already on the radio that the file doesn't
 set (they are left as they are; delete them on the radio if unwanted). --dry checks the file and lists only."""

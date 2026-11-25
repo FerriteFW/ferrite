@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Real APRS traffic into a radio's receive path, on the bench: APRS-IS (read-only) to KISS on the cable.
 
-    ../.venv/bin/python tools/aprsis_relay.py PORT --call VE7GPL [--filter r/49.25/-123.1/150] [--every 10] [--minutes 20]
+    .venv/bin/python tools/aprsis_relay.py PORT --call VE7GPL [--filter r/49.25/-123.1/150] [--every 10] [--minutes 20]
 
 It logs in read-only (passcode -1), turns each APRS-IS line (TNC2 text) back into an AX.25 UI frame (the original
 source, destination and RF path; APRS-IS's own path additions, q-constructs and TCPIP, dropped) and writes it as a
@@ -14,12 +14,16 @@ frequency at 145.495 (0 5 4), its cable port on KISS (0 9 2 3), per the rules in
 on the air would be an iGate's job; with Dry TX at 145.495 nothing leaves the bench.
 """
 import argparse
+import os
 import re
 import socket
 import sys
 import time
 
 import serial
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import ferrite_link  # noqa: E402
 
 FEND, FESC, TFEND, TFESC = 0xC0, 0xDB, 0xDC, 0xDD
 CALL = re.compile(r"^([A-Z0-9]{1,6})(?:-(\d{1,2}))?(\*?)$")
@@ -87,7 +91,10 @@ def main():
     a = ap.parse_args()
     if a.every < 5:
         sys.exit("--every under 5 s: the radio's duty limit and the rules want gaps")
-    ser = serial.Serial(a.port, 115200, timeout=0)
+    try:
+        ser = serial.Serial(ferrite_link.resolve_port(a.port, cable_only=True), 115200, timeout=0)
+    except ferrite_link.PortError as e:
+        sys.exit(str(e))
     s = socket.create_connection((a.server, 14580), timeout=30)
     s.sendall(f"user {a.call.upper()} pass -1 vers ferrite-relay 0.1 filter {a.filter}\r\n".encode())
     s.settimeout(1.0)

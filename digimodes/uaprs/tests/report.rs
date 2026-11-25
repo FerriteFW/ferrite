@@ -1,15 +1,16 @@
-//! uaprs against Ham::APRS::FAP, field by field, on every vector set (`tools/aprs_vectors.sh`).
+//! uaprs against Ham::APRS::FAP, field by field, on every vector set in the test data's `aprs/` (found by
+//! `ferrite_fuzzkit::testdata_dir`'s rule; `wa8lmf` comes from the testdata repo's `fetch/all.sh`; a set that is
+//! missing is skipped).
 //!
 //! `cargo test --release -p uaprs --test report -- --ignored --nocapture` (`UAPRS_SHOW=1` lists disagreements).
 
+use ferrite_fuzzkit::testdata_file;
 use serde_json::Value;
 use std::collections::BTreeMap;
-use std::path::Path;
 use uaprs::ax25::Tnc2;
 use uaprs::parse::{Format, MessageKind, Packet, Position, Weather};
 use uaprs::parse;
 
-const DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../testdata/aprs");
 
 /// FAP writes bytes as JSON strings, one character per byte.
 fn bytes(v: &Value) -> Option<Vec<u8>> {
@@ -212,9 +213,8 @@ fn against_fap() {
     let mut results = Vec::new();
     println!("\nuaprs against Ham::APRS::FAP: packets where every compared field agrees, and fields that differ\n");
     for set in ["wa8lmf", "suite", "spec"] {
-        let path = Path::new(DIR).join(format!("{set}.jsonl"));
-        let text = std::fs::read_to_string(&path)
-            .unwrap_or_else(|e| panic!("{}: {e} (run tools/aprs_vectors.sh)", path.display()));
+        let Some(path) = testdata_file(&format!("aprs/{set}.jsonl")) else { continue };
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let (mut n, mut agree) = (0, 0);
         let mut by_field: BTreeMap<&str, (u32, u32)> = BTreeMap::new();
         for line in text.lines() {

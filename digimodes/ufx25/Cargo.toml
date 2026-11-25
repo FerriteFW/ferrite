@@ -13,6 +13,7 @@ categories = ["embedded", "no-std"]
 udsp = { path = "../udsp", version = "0.1" }
 
 [dev-dependencies]
+ferrite-fuzzkit.workspace = true # testdata_dir: where the test data is
 uafsk = { path = "../uafsk", version = "0.1" }
 
 [lints]

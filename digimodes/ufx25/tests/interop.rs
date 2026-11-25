@@ -1,25 +1,23 @@
 //! Interoperability with Dire Wolf (used only as a black box: its `gen_packets` and `atest` programs).
 //!
-//! - `dire_wolf_to_us`: WAVs from `gen_packets -X 16|32|64` (testdata/fx25/, made by tools/interop.sh) through
+//! - `dire_wolf_to_us`: WAVs from `gen_packets -X 16|32|64` (the test data's fx25/, made by tools/interop.sh) through
 //!   uafsk's tone detector, NRZI, and [`ufx25::Receiver`]; every FX.25 frame must decode with a good FCS, also
 //!   with noise bursts written over part of each block.
-//! - `write_wavs`: our transmissions, modulated here, to testdata/fx25/ours/ for `atest -d x` (tools/interop.sh).
+//! - `write_wavs`: our transmissions, modulated here, to the test data's fx25/ours/ for `atest -d x` (tools/interop.sh).
 //!
 //! `cargo test --release -p ufx25 --test interop -- --ignored --nocapture`
 
-use std::path::{Path, PathBuf};
+use ferrite_fuzzkit::testdata_file;
+use std::path::Path;
 use uafsk::demod::Config;
 use uafsk::fsk::{Fsk, BELL202};
 use uafsk::hdlc::Deframer;
 use udsp::trig::{cos_sin_phase, phase_step};
 use ufx25::{Encoder, Receiver};
 
-fn repo(p: &str) -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").join(p)
-}
 
 fn read_wav(path: &Path) -> (Vec<i16>, u32) {
-    let d = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e} (run crates/ufx25/tools/interop.sh)", path.display()));
+    let d = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let mut i = 12;
     let (mut rate, mut data) = (0, Vec::new());
     while i + 8 <= d.len() {
@@ -167,7 +165,8 @@ impl Rng {
 fn dire_wolf_to_us() {
     let msgs = 4; // FX.25 frames in msgs.txt that fit a block of every size (the fifth is too long for 32 and 64)
     for name in ["fx16", "fx32", "fx64", "fx1"] {
-        let (s, rate) = read_wav(&repo(&format!("../testdata/fx25/{name}.wav")));
+        let Some(wav) = testdata_file(&format!("fx25/{name}.wav")) else { return };
+        let (s, rate) = read_wav(&wav);
         let r = decode(&s, rate);
         println!("{name}: {} FX.25 frames (corrected {:?}), {} plain AX.25", r.fx25.len(), r.fx25.iter().map(|f| f.1).collect::<Vec<_>>(), r.plain.len());
         assert!(r.fx25.len() >= msgs, "{name}");
@@ -199,8 +198,8 @@ fn dire_wolf_to_us() {
     // gen_packets -n 100: the built-in frame 100 times with rising noise. Dire Wolf's atest decodes 44, 42 and 41
     // of them (16, 32, 64 check bytes; see the README).
     for name in ["noise16", "noise32", "noise64"] {
-        let Ok(_) = std::fs::metadata(repo(&format!("../testdata/fx25/{name}.wav"))) else { continue };
-        let (s, rate) = read_wav(&repo(&format!("../testdata/fx25/{name}.wav")));
+        let Some(wav) = testdata_file(&format!("fx25/{name}.wav")) else { continue };
+        let (s, rate) = read_wav(&wav);
         let r = decode(&s, rate);
         let fixed = r.fx25.iter().filter(|f| f.1 > 0).count();
         let both: usize = r.plain.len() + r.fx25.iter().filter(|(f, _)| !r.plain.contains(f)).count();
@@ -233,7 +232,9 @@ fn dire_wolf_to_us() {
 #[ignore]
 fn write_wavs() {
     let rate = 12_000;
-    let dir = repo("../testdata/fx25/ours");
+    // into the test data checkout (testdata_dir's rule), only when it is there
+    let Some(dir) = testdata_file("fx25") else { return };
+    let dir = dir.join("ours");
     std::fs::create_dir_all(&dir).unwrap();
     let gap = |out: &mut Vec<i16>| out.extend(std::iter::repeat_n(0, rate as usize / 2));
     let mut rng = Rng(0x1357_9BDF);

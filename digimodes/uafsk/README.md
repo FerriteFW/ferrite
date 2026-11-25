@@ -153,7 +153,7 @@ The modulator is an iterator: NRZI, bit stuffing and FCS from [`hdlc::Framer`](s
 
 ```sh
 cargo test -p uafsk                                                   # round trips at 9.6-48 kS/s, noise, twist
-../testdata/tools/fetch-wa8lmf.sh                                          # WA8LMF CD tracks 1 and 2 (Docker)
+../testdata/fetch/wa8lmf.sh                                           # WA8LMF CD tracks 1 and 2 (Docker)
 cargo test --release -p uafsk --test report -- --ignored --nocapture  # the WA8LMF table, with Dire Wolf
 ```
 

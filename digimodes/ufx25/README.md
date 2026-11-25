@@ -90,8 +90,8 @@ programs were used, as black boxes) and confirmed by Dire Wolf decoding ours:
 
 ## Interoperability with Dire Wolf
 
-`tools/interop.sh [user@host]` makes the WAVs (12 kS/s) and runs both directions; the WAVs stay in
-`testdata/fx25/` (git-ignored).
+`tools/interop.sh [user@host]` makes the WAVs (12 kS/s) and runs both directions; the WAVs are in
+the test data's `fx25/` (FerriteFW/testdata).
 
 Dire Wolf to ufx25 (`gen_packets -X`, uafsk's tone detector with 3 slicers, NRZI, one `Receiver` per slicer):
 

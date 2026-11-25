@@ -276,15 +276,20 @@ pub fn activity(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>)
         stt.set(state.as_bytes());
         if state == "RX" {
             stt.push(b" ");
-            stt.push(w::s_text(lv.rssi).as_bytes());
+            // SQL-12.3: 0 7 3 1 dBm shows the level as a number here too, the S-reading's place.
+            if app.set.smeter_dbm {
+                stt.push(w::dbm_text(lv.rssi).as_bytes());
+            } else {
+                stt.push(w::s_text(lv.rssi).as_bytes());
+            }
         } else {
             wide_state(state, &lv, app.slots[s as usize].cfg().rx_tone, &mut stt); // TSRCH-13, DEC-6.1: in a wider field
         }
         if app.dirty(R_HEAD + p, Mix::new().h(&head).h(&stt).h(&active).get()) {
             w::badge(lcd, 14, y + 5, s, active, BG);
             let f = if state == "RX" { &UI_12B } else { &UI_12 };
-            // HOME-4.3: the state's own width (at least 40 px), so a zone name in the header has the rest
-            let sw = if state == "heard" || state == "DTMF" || state.len() > 8 { (text4_width(stt.as_bytes(), &UI_12) + 2).max(HEARD_W) } else { (text4_width(stt.as_bytes(), f) + 6).clamp(40, 72) };
+            // HOME-4.3: the state's own width (40 px to the heard state's, "RX -127 dBm" whole), so a zone name in the header has the rest
+            let sw = if state == "heard" || state == "DTMF" || state.len() > 8 { (text4_width(stt.as_bytes(), &UI_12) + 2).max(HEARD_W) } else { (text4_width(stt.as_bytes(), f) + 6).clamp(40, HEARD_W) };
             w::field(lcd, 34, 192 - sw, y + 4, y + 21, y + 17, w::fit(head.as_bytes(), &UI_12, 192 - sw), const { &w::st(&UI_12, SUB, SURFACE, Align::Left) });
             w::field(lcd, 226 - sw, sw, y + 4, y + 21, y + 17, stt.as_bytes(), &w::st(f, sc, SURFACE, Align::Right));
         }

@@ -1320,6 +1320,37 @@ fn waypoint_as_fixed_position() {
     assert!(t.app.set.fixed_on && t.app.set.fixed == w.pos);
 }
 
+/// GPS-10.2: the waypoints' options delete the selected one after a confirm (BACK keeps it); the later ones move
+/// up and the list stays (ferrite#220). From the one being gone to, the list comes back.
+#[test]
+fn waypoint_delete() {
+    let mut t = T::new();
+    t.open(Dest::Waypoints);
+    t.tap(Key::Down);
+    let n = t.s.waypoints();
+    let (w, next) = (t.s.waypoint(1).unwrap(), t.s.waypoint(2).unwrap());
+    t.hold(Key::Menu);
+    t.tap(Key::Digit(6));
+    t.tap(Key::Menu);
+    assert_eq!(t.name(), "Options");
+    t.tap(Key::Exit); // BACK keeps it
+    assert_eq!(t.s.waypoints(), n);
+    t.tap(Key::Menu);
+    t.tap(Key::Menu);
+    assert_eq!(t.name(), "Waypoints");
+    assert_eq!(t.s.waypoints(), n - 1);
+    assert_eq!(t.s.waypoint(1).unwrap().name, next.name);
+    assert_eq!(t.app.toast.map(|x| x.head.as_bytes().to_vec()), Some(w.name.as_bytes().to_vec()), "the toast names it");
+    t.tap(Key::Menu); // Go to the one now selected
+    assert_eq!(t.name(), "Go to waypoint");
+    t.hold(Key::Menu);
+    t.tap(Key::Digit(6));
+    t.tap(Key::Menu);
+    t.tap(Key::Menu);
+    assert_eq!(t.name(), "Waypoints");
+    assert_eq!(t.s.waypoints(), n - 2);
+}
+
 /// APRS-43: a saved contact's name is found for its rows in Heard and Messages; one not saved has none.
 #[test]
 fn contact_names_in_rows() {

@@ -308,6 +308,14 @@ fn found_home_stale_after_battery_low() {
     found(&[Tap(Key::Hash), Knob(3), Tap(Key::Left), Event(ferrite_sim::simcore::Event::Battery), Wait(100), Wait(4000)]);
 }
 
+/// Seed 1001 once the ACARS screen joined the jump list: Quick open, then an FM station moves the slot into the
+/// broadcast band; FM's six 25 px rows left the ten settings' last rows on the screen (DISP-31).
+#[test]
+fn found_quick_rows_after_fm_retune() {
+    let quick = jump_names().position(|n| n.starts_with("D1 ")).expect("D1 Quick");
+    found(&[Jump(quick), Wait(300), Event(ferrite_sim::simcore::Event::FmStation)]);
+}
+
 #[test]
 fn found_transmit_header_after_fm_retune() {
     use ferrite_sim::simcore::Event as E;

@@ -424,10 +424,9 @@ impl Radio {
         self.live.aprs_sq = ferrite_core::aprssq::Counts { opens: add(a.opens, b.opens), short: add(a.short, b.short), spikes: add(a.spikes, b.spikes), settle: add(a.settle, b.settle) };
         let active_relay = Sel::rx(self.slots[self.active as usize].freq).relay();
         for (i, sl) in self.live.slots.iter_mut().enumerate() {
+            // The level as read, open or closed: a closed slot's meter shows the signal (or the band's noise) under
+            // the threshold, dimmed, as an operator expects from a radio's S-meter.
             let open = self.watcher.open(i as u8) || self.monitor & 1 << i != 0;
-            if !open {
-                sl.rssi = sl.rssi.min(-121);
-            }
             sl.squelch_open = open;
             sl.carrier = open && self.carrier & 1 << i != 0; // SQL-13.1
             sl.heard_tone = self.hints[i].heard;

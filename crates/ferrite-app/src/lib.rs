@@ -869,10 +869,12 @@ impl App {
         self.scan_mask &= !(1 << slot);
         let f = core::mem::take(&mut self.scan_hit[slot as usize]);
         self.scan_move(slot, f, store);
+        self.send_slot(slot); // SCAN-6 (ferrite#213): the receiver back from the scan's last step
     }
 
     /// SCAN-6: SIDE2 stops a scan; with Return to "Last hit" (0 1 6 4) the slot moves to the scan's last hit,
-    /// as a PTT on a hit does (SCAN-19); else it stays where the scan started.
+    /// as a PTT on a hit does (SCAN-19); else it stays where the scan started. Either way the slot is sent again:
+    /// the Radio task's receiver is still on the scan's last step, which the slot doesn't show (ferrite#213).
     pub(crate) fn stop_scan(&mut self, slot: u8, store: &impl ChannelStore) {
         self.out.push(RadioCmd::Scan { slot, on: false });
         self.range_feed = self.range_feed.filter(|f| f.0 != slot); // SCAN-27: a preset scan not started yet
@@ -881,6 +883,7 @@ impl App {
         if self.set.scan_return_hit {
             self.scan_move(slot, f, store);
         }
+        self.send_slot(slot);
     }
 
     /// The slot to a scan's hit `f` (none: 0): its channel on a channel scan, else its VFO.

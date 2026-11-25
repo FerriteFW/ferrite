@@ -1626,6 +1626,8 @@ enum C {
     Job(u8),
     #[cfg(feature = "bench")]
     Bench(u8),
+    #[cfg(feature = "bench")]
+    Acars,
 }
 
 /// The commands by name (TERM-12): one table, looked up once; the arguments are each command's.
@@ -1678,6 +1680,8 @@ const CMDS: &[(&str, C)] = &[
     ("lcd", C::Bench(9)),
     #[cfg(feature = "bench")]
     ("crash", C::Bench(10)),
+    #[cfg(feature = "bench")]
+    ("acars", C::Acars),
     ("load", C::Load),
     ("sat", C::Sat),
     ("clear", C::Clear),
@@ -1739,6 +1743,8 @@ fn line_run<S: ChannelStore>(app: &mut App, st: &S, dev: &Device, loading: bool,
         C::Job(j) => Ok(Done::Debug(Job::new([Kind::Gpio, Kind::Mic(false), Kind::Mic(true)][j as usize]))),
         #[cfg(feature = "bench")]
         C::Bench(b) => [txtest, bk, fsk, meter, synthfsk, pin, si, bt, rx, lcd, crash][b as usize](t),
+        #[cfg(feature = "bench")]
+        C::Acars => acars(app, st, t),
         C::Load => Ok(Done::Load),
         C::Sat => sat(st, t, loading),
         C::Clear => clear(app, st, t),
@@ -1885,7 +1891,35 @@ use super::debug::{BK_REGS, MEM_MAX};
 /// TERM-38 (decision 151): the bench builds' commands (bring-up and tx-bench, the `bench` cargo feature). A receive
 /// or tx build compiles them out but knows their names, so it can say where they are; `gps` alone (the last fix)
 /// is in every build, its `query`, `nmea` and `standby` are the bench's.
-pub const BENCH_ONLY: [&str; 16] = ["pin", "mem", "mem32", "gpio", "bk", "si", "bt", "rx", "mic", "af", "txtest", "lcd", "fsk", "meter", "synthfsk", "crash"];
+pub const BENCH_ONLY: [&str; 17] = ["pin", "mem", "mem32", "gpio", "bk", "si", "bt", "rx", "mic", "af", "txtest", "lcd", "fsk", "meter", "synthfsk", "crash", "acars"];
+
+/// ACARS-8: `acars feed [N]` hands the first N sample frames (all without N) to the ACARS list as if just heard on
+/// the frequency picked; `acars clear` empties it; `acars` says how many there are.
+#[cfg(feature = "bench")]
+fn acars<S: ChannelStore>(app: &mut App, st: &S, t: &mut Toks) -> Result<Done, No> {
+    const USAGE: Txt = txt!("acars, acars feed [N] (the first N sample frames), acars clear");
+    let Some(live) = st.data().acars() else { return Err(t.say_t(txt!("acars: no ACARS list here"))) };
+    match t.next()? {
+        None => {
+            let (frames, bad, dups) = live.counts();
+            Ok(Done::Said(msg!("ACARS: {} messages; {} frames, {} bad CRC, {} copies", live.len(), frames, bad, dups)))
+        }
+        Some(Tok::Word(w)) if same(w, b"feed") => {
+            let n = match t.next()? {
+                None => usize::MAX,
+                Some(Tok::Word(w)) => number(w).filter(|&n| n > 0).ok_or_else(|| t.say_t(USAGE))? as usize,
+                Some(_) => return Err(t.say_t(USAGE)),
+            };
+            let put = crate::acars::sample::feed(live, n, app.set.acars_freq, app.now / 1000);
+            Ok(Done::Said(msg!("ACARS: {} sample frames fed, {} messages", put, live.len())))
+        }
+        Some(Tok::Word(w)) if same(w, b"clear") => {
+            live.clear();
+            Ok(Done::Said(msg!("ACARS: cleared")))
+        }
+        _ => Err(t.say_t(USAGE)),
+    }
+}
 
 /// TERM-38: what a user build says to a bench command.
 #[cfg(not(feature = "bench"))]
@@ -2751,7 +2785,7 @@ static HELP: [Txt; 22] = [
 ];
 /// TERM-38: the bench commands' help in a bench build, or where they are in a user build.
 #[cfg(feature = "bench")]
-static HELP_BENCH: [Txt; 34] = [
+static HELP_BENCH: [Txt; 35] = [
     txt!(""),
     txt!("Bench builds only (bring-up, tx-bench; hex addresses, registers and values; Esc stops):"),
     txt!("  mem 20000000 64        bytes of MCU memory (flash, RAM)"),
@@ -2785,6 +2819,7 @@ static HELP_BENCH: [Txt; 34] = [
     txt!("  synthfsk 3000 4 2400 1290 10 40 70 100   bench test while keyed: 4FSK from tone 1's gain"),
     txt!("  fsk rx 2400 [nocrc]    bench test: the BK4829's FSK modem on the active slot; fsk, fsk off"),
     txt!("  fsk tx 2400 20         20 test frames at the next PTT key-up (Dry TX only; ffsk1800 ...)"),
+    txt!("  acars feed [N]         the ACARS list: N sample messages heard now; acars clear; acars"),
     txt!("  The radio's own logic may rewrite a register you set (a tune, Battery Save)."),
 ];
 #[cfg(not(feature = "bench"))]

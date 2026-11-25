@@ -47,7 +47,7 @@ pub fn crc16(data: &[u8]) -> u16 {
 /// The byte with bit 7 set so it has an odd number of ones (as sent).
 pub const fn with_parity(c: u8) -> u8 {
     let c = c & 0x7F;
-    if c.count_ones() % 2 == 0 { c | 0x80 } else { c }
+    if c.count_ones().is_multiple_of(2) { c | 0x80 } else { c }
 }
 
 /// Why bytes aren't a frame.
@@ -160,7 +160,7 @@ pub fn parse(b: &[u8]) -> Result<Frame, Error> {
         return Err(Error::NoCrc);
     }
     f.more = c(b[end]) == ETB;
-    f.parity = b[..=end].iter().filter(|x| x.count_ones() % 2 == 0).count().min(255) as u8;
+    f.parity = b[..=end].iter().filter(|x| x.count_ones().is_multiple_of(2)).count().min(255) as u8;
     f.crc = u16::from_le_bytes([b[end + 1], b[end + 2]]);
     f.crc_ok = crc16(&b[..=end]) == f.crc;
     let mut t = &b[start..end];
@@ -616,7 +616,7 @@ mod tests {
         more: false,
     };
 
-    /// The CRC variant: CRC-16/KERMIT's check value, and a built frame's CRC sits low byte first after ETX.
+    /// ACARS-2.2: the CRC variant: CRC-16/KERMIT's check value, and a built frame's CRC sits low byte first after ETX.
     #[test]
     fn crc_is_kermit() {
         assert_eq!(crc16(b"123456789"), 0x2189);
@@ -628,6 +628,7 @@ mod tests {
         assert_eq!(b[end + 3], DEL);
     }
 
+    /// ACARS-2.2: every character sent with odd parity.
     #[test]
     fn every_byte_has_odd_parity() {
         for c in 0..128u8 {
@@ -639,6 +640,7 @@ mod tests {
         assert!(b[..end].iter().all(|c| c.count_ones() % 2 == 1));
     }
 
+    /// ACARS-2.1, ACARS-2.5: a downlink's fields, its message number and flight.
     #[test]
     fn parses_a_downlink() {
         let f = parse(&frame(&DOWN)).unwrap();
@@ -649,6 +651,7 @@ mod tests {
         assert_eq!(f.parity, 0);
     }
 
+    /// ACARS-2.5: an uplink (a letter block ID) has no message number or flight.
     #[test]
     fn parses_an_uplink() {
         let up = Fields { block: b'A', msgno: b"", flight: b"", label: *b"RA", text: b"METAR CYVR 240700Z", ack: b'2', ..DOWN };
@@ -658,6 +661,7 @@ mod tests {
         assert_eq!(f.text(), b"METAR CYVR 240700Z");
     }
 
+    /// ACARS-2.1: no text, ETX straight after the block ID.
     #[test]
     fn no_text_has_etx_after_the_block_id() {
         let q0 = Fields { label: *b"Q0", msgno: b"", flight: b"", text: b"", ..DOWN };
@@ -668,6 +672,7 @@ mod tests {
         assert_eq!(label(f.label).meaning, "Link test");
     }
 
+    /// ACARS-10: `_` and DEL is the general response, shown `_d`.
     #[test]
     fn general_response_label_is_shown_as_underscore_d() {
         let f = parse(&frame(&Fields { label: [b'_', DEL], text: b"", ..DOWN })).unwrap();
@@ -675,12 +680,14 @@ mod tests {
         assert_eq!(label(f.label).meaning, "General response");
     }
 
+    /// ACARS-2.5: a downlink too short for its number and flight keeps what came.
     #[test]
     fn short_downlink_text_fills_what_it_has() {
         let f = parse(&frame(&Fields { msgno: b"M02", flight: b"", text: b"", ..DOWN })).unwrap();
         assert_eq!((&f.msgno, f.flight, f.text()), (b"M02\0", [0; 6], &b""[..]));
     }
 
+    /// ACARS-2.2: a bad CRC or parity is counted; the frame is still read.
     #[test]
     fn a_bad_crc_or_parity_is_counted_not_refused() {
         let mut b = frame(&DOWN);
@@ -695,6 +702,7 @@ mod tests {
         assert!(!f.crc_ok && f.parity == 0);
     }
 
+    /// ACARS-2.1: bytes without a frame's shape are refused.
     #[test]
     fn broken_frames_are_errors() {
         let b = frame(&DOWN);
@@ -708,6 +716,7 @@ mod tests {
         assert!(parse(&b[..end + 3]).is_ok(), "the DEL is optional");
     }
 
+    /// ACARS-2.1: a block's text is at most 220 characters.
     #[test]
     fn text_past_220_is_cut() {
         let long = [b'X'; 300];
@@ -716,6 +725,7 @@ mod tests {
         assert_eq!(f.text().len(), TEXT_MAX);
     }
 
+    /// ACARS-10: the label table, sorted for its search; other numbered labels are airlines'.
     #[test]
     fn labels_are_sorted_and_found() {
         assert!(LABELS.windows(2).all(|w| w[0].code < w[1].code));
@@ -726,6 +736,7 @@ mod tests {
         assert_eq!(label(*b"ZZ").meaning, "Unknown label");
     }
 
+    /// ACARS-4, ACARS-6: the registration without its dots; the airline code from the flight.
     #[test]
     fn registrations_and_airlines() {
         assert_eq!(trim_reg(b"..N1234"), b"N1234");
@@ -743,6 +754,7 @@ mod tests {
         l.push(&parse(&frame(f)).unwrap(), 0, now);
     }
 
+    /// ACARS-8: the log, newest first.
     #[test]
     fn log_keeps_newest_first() {
         let mut l = L::new();
@@ -755,6 +767,7 @@ mod tests {
         assert!(l.get(2).is_none());
     }
 
+    /// ACARS-2.3: a block heard again within 60 s is kept once; long after, it is a new message.
     #[test]
     fn a_resent_block_is_kept_once() {
         let mut l = L::new();
@@ -765,6 +778,7 @@ mod tests {
         assert_eq!(l.len(), 2, "long after, it's a new message");
     }
 
+    /// ACARS-2.4: a downlink's blocks joined by message number, another message between them.
     #[test]
     fn blocks_join_by_message_number() {
         let mut l = L::new();
@@ -780,6 +794,7 @@ mod tests {
         assert_eq!((t, m.blocks, m.flags, m.block, &m.msgno), (&b"FIRST BLOCK SECOND"[..], 2, 0, b'3', b"M05A"));
     }
 
+    /// ACARS-2.4: a skipped block letter, or a last block that never came, marks it.
     #[test]
     fn a_missing_block_is_marked() {
         let mut l = L::new();
@@ -796,11 +811,12 @@ mod tests {
         assert_eq!((t, m.flags & GAP), (&b"ALONE"[..], GAP));
     }
 
+    /// ACARS-2.4: joined text past 440 characters is cut and marked.
     #[test]
     fn joined_text_past_join_max_is_cut() {
         let mut l = L::new();
         let big = [b'Y'; 210];
-        for (i, k) in [b'A', b'B', b'C'].into_iter().enumerate() {
+        for (i, k) in b"ABC".iter().copied().enumerate() {
             let no = [b'M', b'0', b'7', k];
             push(&mut l, &Fields { msgno: &no, text: &big, more: i < 2, ..DOWN }, 10 + i as u32);
         }
@@ -808,6 +824,7 @@ mod tests {
         assert_eq!((t.len(), m.blocks, m.flags & CUT), (JOIN_MAX, 3, CUT));
     }
 
+    /// ACARS-2.2: a block with a bad CRC is kept alone, never joined.
     #[test]
     fn a_bad_block_stands_alone() {
         let mut l = L::new();
@@ -819,6 +836,7 @@ mod tests {
         assert_eq!((l.bad, l.frames), (1, 1));
     }
 
+    /// ACARS-2.4: an uplink's blocks joined by aircraft, label and mode.
     #[test]
     fn uplinks_join_by_label() {
         let mut l = L::new();
@@ -830,6 +848,7 @@ mod tests {
         assert_eq!((t, m.blocks), (&b"PART ONE PART TWO"[..], 2));
     }
 
+    /// ACARS-2.4: two messages joined at once; a third finishes the older.
     #[test]
     fn three_joins_at_once_finish_the_oldest() {
         let mut l = L::new();
@@ -840,6 +859,7 @@ mod tests {
         assert_eq!((m.reg(), m.flags & GAP), (&b"C-AAAA"[..], GAP));
     }
 
+    /// ACARS-8: the text pool drops the oldest messages first; 16 messages at most.
     #[test]
     fn the_pool_drops_the_oldest_text() {
         let mut l = L::new();
@@ -862,6 +882,7 @@ mod tests {
         assert_eq!(l.len(), 8);
     }
 
+    /// ACARS-8: clearing (`acars clear`) empties the log and redraws.
     #[test]
     fn clear_moves_the_version() {
         let mut l = L::new();
@@ -871,7 +892,7 @@ mod tests {
         assert!(l.is_empty() && l.version != v);
     }
 
-    /// Any bytes: never a panic, and what parses stays inside its fields.
+    /// ACARS-2.1: any bytes (a property test): never a panic, and what parses stays inside its fields.
     #[test]
     fn any_bytes_never_panic() {
         let mut seed = 0x1234_5678_9ABC_DEF0u64;

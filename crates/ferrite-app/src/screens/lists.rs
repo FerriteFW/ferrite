@@ -378,12 +378,17 @@ impl App {
 }
 
 pub(crate) fn head(lcd: &mut impl Panel, left: &[u8], right: &[u8]) {
+    head_at(lcd, HEAD_Y, left, right);
+}
+
+/// [`head`] at `y` (a page with something above its list: ACARS's strip, ACARS-5).
+pub(crate) fn head_at(lcd: &mut impl Panel, y: i32, left: &[u8], right: &[u8]) {
     let rw = text4_width(right, &UI_12);
     // in bands: the old line goes straight to the new (DISP-25)
-    ferrite_ui::canvas::banded(lcd, 0, HEAD_Y, 240, 21, BG, |lcd| {
-        lcd.text4_rows(8, HEAD_Y + 14, w::fit(left, &UI_12, 224 - rw - 12), &UI_12, SUB, BG, HEAD_Y, HEAD_Y + 20);
-        w::field(lcd, 232 - rw, rw + 8, HEAD_Y, HEAD_Y + 20, HEAD_Y + 14, right, const { &w::st(&UI_12, SUB, BG, Align::Left) });
-        lcd.fill(0, HEAD_Y + 20, 240, 1, LINE);
+    ferrite_ui::canvas::banded(lcd, 0, y, 240, 21, BG, |lcd| {
+        lcd.text4_rows(8, y + 14, w::fit(left, &UI_12, 224 - rw - 12), &UI_12, SUB, BG, y, y + 20);
+        w::field(lcd, 232 - rw, rw + 8, y, y + 20, y + 14, right, const { &w::st(&UI_12, SUB, BG, Align::Left) });
+        lcd.fill(0, y + 20, 240, 1, LINE);
     });
 }
 

@@ -81,6 +81,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "acars"
+path = "fuzz_targets/acars.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "seeds"
 path = "src/bin/seeds.rs"
 test = false

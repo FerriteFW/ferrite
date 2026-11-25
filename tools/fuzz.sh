@@ -13,7 +13,7 @@ set -eu
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 OUT="$ROOT/target/fuzz"
-TARGETS="aprs_parse ax25_frame kiss fx25_block fx25_bits hdlc_bits afsk_audio aprs_live"
+TARGETS="aprs_parse ax25_frame kiss fx25_block fx25_bits hdlc_bits afsk_audio aprs_live acars"
 TESTDATA=$(tools/testdata.sh) # TESTDATA, ../testdata-private or ../testdata
 
 seeds() {

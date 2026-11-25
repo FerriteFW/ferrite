@@ -252,6 +252,8 @@ const BUDGET: &[(&str, u64)] = &[
     ("B22 Satellites", 60000),
     // the picture area (240 x 192) drawn whole on opening, then the rows as they come
     ("B25 SSTV", 130000),
+    // the list drawn whole on opening (72,000 px measured Nov 24, 2026); the rows only when a message comes
+    ("B26 ACARS", 90000),
     ("B15 Frequency counter", 142000),
     ("B17 Alert", 2541000),
     ("B18 Crossband repeater", 135000),

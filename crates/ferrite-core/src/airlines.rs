@@ -173,6 +173,7 @@ mod tests {
         t.to_vec()
     }
 
+    /// ACARS-6: a binary search finds every airline in the table and nothing else.
     #[test]
     fn finds_every_fixture_airline_and_no_other() {
         let t = table();
@@ -188,6 +189,7 @@ mod tests {
         }
     }
 
+    /// ACARS-6: no table, another version or a changed row: none (the screen shows the code).
     #[test]
     fn erased_or_damaged_tables_are_refused() {
         let erased = [0xFFu8; 64];
@@ -201,13 +203,14 @@ mod tests {
         assert_eq!(check(&mut |_, _| false), None, "no flash");
     }
 
+    /// ACARS-6: 32 KB holds every airline with an IATA code.
     #[test]
     fn the_fixture_is_sorted_and_fits() {
         assert!(FIXTURE.windows(2).all(|w| w[0].0 < w[1].0));
-        assert!(MAX_ROWS >= 1000, "{MAX_ROWS} rows: room for every airline with an IATA code");
+        const { assert!(MAX_ROWS >= 1000, "room for every airline with an IATA code") };
     }
 
-    /// `tools/mkairlines.py` makes the same bytes from the fixture's CSV (its output is kept beside it).
+    /// ACARS-6: `tools/mkairlines.py` makes the same bytes from the fixture's CSV (its output is kept beside it).
     #[test]
     fn the_python_packer_agrees() {
         let csv = include_str!("../../../tools/mkairlines-fixture.csv");

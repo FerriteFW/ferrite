@@ -37,7 +37,7 @@ impl AcarsLive {
         AcarsLive { log: RefCell::new(Log::new()) }
     }
 
-    /// A frame's bytes after SOH, heard at `now_s` on [`FREQS`]`[freq]` (ACARS-2). A frame that doesn't parse is
+    /// A frame's bytes after SOH, heard at `now_s` on [`FREQS`]`[freq]` (ACARS-2.1). A frame that doesn't parse is
     /// dropped; a bad CRC is kept, marked.
     pub fn frame(&self, bytes: &[u8], freq: u8, now_s: u32) -> Result<(), acars::Error> {
         let f = acars::parse(bytes)?;
@@ -50,7 +50,7 @@ impl AcarsLive {
         self.log.borrow_mut().push(f, freq, now_s);
     }
 
-    /// Time passes: a message whose last block is overdue is kept as it is (ACARS-2.3).
+    /// Time passes: a message whose last block is overdue is kept as it is (ACARS-2.4).
     pub fn tick(&self, now_s: u32) {
         self.log.borrow_mut().tick(now_s);
     }
@@ -88,8 +88,8 @@ impl AcarsLive {
 }
 
 /// The sample traffic (ACARS-8): made-up messages in the right format, Canadian and US carriers near Vancouver.
-/// One uplink, one with a bad CRC, one of two blocks. Each with how long before the feed it came.
-#[cfg(any(feature = "bench", not(target_os = "none")))]
+/// One uplink, one with a bad CRC, one of two blocks. Each with how long before the feed it came. Linked into the
+/// firmware only by the bench builds' `acars feed`.
 pub mod sample {
     use super::AcarsLive;
     use ferrite_core::acars::{encode, Fields, DEL, NAK};
@@ -160,7 +160,7 @@ mod tests {
         assert_eq!(all.iter().filter(|m| m.blocks == 2).count(), 1);
         let (m, n) = live.get(0, &mut t).unwrap();
         assert_eq!((m.reg(), n, m.at_s), (&b"C-FJZS"[..], 0, 990));
-        // the newest heard again at once: a copy (ACARS-2.2)
+        // the newest heard again at once: a copy (ACARS-2.3)
         let mut b = [0u8; 64];
         let k = sample::FRAMES.len() - 1;
         let n = ferrite_core::acars::encode(&sample::FRAMES[k].1, &mut b);

@@ -1262,7 +1262,7 @@ fn set(app: &mut App, dev: &Device, t: &mut Toks) -> Result<Done, No> {
     }
     // Typed values (DEC-4's capcode, APRS-26's custom path): taken as written, "None" clears.
     match p {
-        [4, 2, 3] => {
+        [4, 2, 4] => {
             let v = if same(want, b"none") {
                 0
             } else if want.len() <= 7 && want.iter().all(u8::is_ascii_digit) {
@@ -1284,7 +1284,7 @@ fn set(app: &mut App, dev: &Device, t: &mut Toks) -> Result<Done, No> {
             app.set_aprs_comment(want);
         }
         // MENU-31: a frequency setting typed in MHz, with the entry box's checks
-        [5, 4] | [4, 2, 2] => {
+        [5, 4] | [4, 2, 3] => {
             let fs = if p == [5, 4] { crate::screens::entry::FreqSet::Aprs } else { crate::screens::entry::FreqSet::Pager };
             let f = ferrite_core::freq::parse(want).ok_or_else(|| no!(t, "{}: a frequency in MHz, e.g. 145.495", name))?;
             let now = if p == [5, 4] { app.aprs_freq() } else { app.set.pocsag_freq };
@@ -1307,7 +1307,7 @@ fn set(app: &mut App, dev: &Device, t: &mut Toks) -> Result<Done, No> {
         }
         _ => {}
     }
-    if matches!(p, [4, 2, 3] | [5, 9, 2] | [5, 5, 3] | [5, 4] | [4, 2, 2]) {
+    if matches!(p, [4, 2, 4] | [5, 9, 2] | [5, 5, 3] | [5, 4] | [4, 2, 3]) {
         let mut v = Buf::<24>::new();
         value(app, dev, p, &mut v);
         let mut m = Msg::new();

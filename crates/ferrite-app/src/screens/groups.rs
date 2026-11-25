@@ -189,9 +189,11 @@ pub(crate) const SUBS: [((u8, u8), &[Entry]); 22] = [
         Entry(concat!("Open band scope||", txtc!("Sweep around the active slot. Home: hold 1."))),
     ]),
     ((4, 2), &[
-        Entry(concat!("Decode|Off|", txtc!("Pagers on a slot tuned to the frequency."))),
+        Entry(concat!("Pages||", txtc!("Pages heard, newest first."))),
+        Entry(concat!("Decode|Off|", txtc!("Pager mode: takes slot C from APRS."))),
         Entry(concat!("Frequency|439.9875|", txtc!("The pager channel, any baud; OK types it."))),
         Entry(concat!("Capcode filter|None|", txtc!("Only this capcode: OK types it, # clears it."))),
+        Entry(concat!("Speed|1200|", txtc!("The channel's baud: ham paging is 1200."))),
     ]),
     ((4, 5), &[
         Entry(concat!("SAME|On|", txtc!("Decode weather alerts."))),
@@ -476,7 +478,7 @@ pub(crate) fn all_values() -> std::vec::Vec<([u8; 3], std::vec::Vec<std::string:
 /// that change only on the radio: PIN, region, Extend TX), and for most of them all the menu needs. A new
 /// setting is one row here (and its field, default and place in `persist.rs`).
 #[cfg_attr(target_os = "none", link_section = ".slow_rodata")]
-static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
+static SETTINGS: [Setting; 99 + cfg!(feature = "bench") as usize] = [
     field!([1, 1, 0], special),
     field!([1, 2, 0], special),
     field!([1, 3, 0], scan_prio: u8, Kind::Round(SCAN_PRIOS, prio_text), Nothing),
@@ -495,9 +497,10 @@ static SETTINGS: [Setting; 98 + cfg!(feature = "bench") as usize] = [
     field!([3, 1, 3], special),
     field!([3, 1, 4], scope_trig: u8, Kind::Pick(&SCOPE_TRIGGERS), Nothing),
     field!([3, 1, 5], scope_wf: bool, Kind::Flip(&ON_OFF), Nothing),
-    field!([4, 2, 1], pocsag_on: bool, Kind::Flip(&ON_OFF), Nothing),
-    field!([4, 2, 2], special),
+    field!([4, 2, 2], special), // DEC-20: Decode is Pager mode
     field!([4, 2, 3], special),
+    field!([4, 2, 4], special),
+    field!([4, 2, 5], pocsag_fast: u8, Kind::Pick(&crate::settings::PAGER_SPEEDS), Nothing), // DEC-23
     field!([4, 3, 0], dtmf_rx: bool, Kind::Flip(&ON_OFF), Nothing), // DEC-6
     field!([4, 4, 0], popups: bool, Kind::Flip(&ON_OFF), Nothing),
     field!([4, 5, 1], same: bool, Kind::Flip(&ON_OFF), Nothing),
@@ -957,11 +960,22 @@ pub(crate) fn wired(app: &App, dev: &Device, p: &[u8], b: &mut Buf<24>) -> Optio
             }
             s.pocsag_on
         }
+        [4, 2, 1] => {
+            // DEC-22: the unread pages
+            if app.pages_unread > 0 {
+                let _ = uwrite!(b, "{} new", app.pages_unread);
+            }
+            false
+        }
         [4, 2, 2] => {
+            pick(b, &ON_OFF, s.pocsag_on as u8);
+            s.pocsag_on
+        }
+        [4, 2, 3] => {
             b.set(crate::slot::mhz3(s.pocsag_freq).as_bytes());
             s.pocsag_freq != Settings::DEFAULT.pocsag_freq
         }
-        [4, 2, 3] => {
+        [4, 2, 4] => {
             if s.pocsag_cap == 0 {
                 b.set(b"None");
             } else {
@@ -1105,7 +1119,11 @@ pub(crate) fn change(app: &mut App, p: &[u8], d: i32) -> bool {
         // APRS-57: the knob turns auto reply on and off; OK opens its page
         [5, 9, 9] => app.edit_aprs(d, |c, _| c.reply ^= 1),
         // 6.25 kHz steps across the VHF and UHF pager bands.
-        [4, 2, 2] => s.pocsag_freq = (s.pocsag_freq as i64 + d as i64 * 625).clamp(13_600_000, 52_000_000) as ferrite_core::freq::Freq10,
+        [4, 2, 2] => app.set_pager(!app.set.pocsag_on), // DEC-20
+        [4, 2, 3] => {
+            s.pocsag_freq = (s.pocsag_freq as i64 + d as i64 * 625).clamp(13_600_000, 52_000_000) as ferrite_core::freq::Freq10;
+            app.pager_retune();
+        }
         [7, 4, 2] => *s.brightness_mut() = (s.brightness() as i32 + d).clamp(1, 10) as u8, // DISP-16, DISP-23
         [8, 2] => return change(app, &[8, 2, 1], d),
         // VOX-10: CW ID needs a callsign
@@ -1191,8 +1209,12 @@ pub(crate) fn reset(app: &mut App, p: &[u8]) {
         [5, 9, 4] => app.edit_aprs(0, |c, _| c.tx_level = 1),
         [5, 9, 5] => app.edit_aprs(0, |c, _| c.fx25 = crate::aprs::FX25_DEFAULT),
         [5, 9, 9] => app.edit_aprs(0, |c, _| c.reply &= !1), // APRS-57: off, the rest kept
-        [4, 2, 2] => s.pocsag_freq = d.pocsag_freq,
-        [4, 2, 3] => s.pocsag_cap = d.pocsag_cap,
+        [4, 2, 2] => app.set_pager(false),
+        [4, 2, 3] => {
+            s.pocsag_freq = d.pocsag_freq;
+            app.pager_retune();
+        }
+        [4, 2, 4] => s.pocsag_cap = d.pocsag_cap,
         // # forgets the custom path; a path set to it goes back to the default (APRS-26)
         [5, 9, 2] => app.edit_aprs(0, |c, _| {
             if c.path == crate::aprs::PATH_CUSTOM {
@@ -1506,7 +1528,7 @@ pub(crate) fn open_path(app: &mut App, p: &[u8], name: &str, ok: bool) {
         }
         // OK types the capcode (DEC-4), the clock (GPS-23) or the custom path (APRS-26); the knob still
         // changes 0 6 6's format.
-        [4, 2, 3] => {
+        [4, 2, 4] => {
             app.text = Buf::new();
             if app.set.pocsag_cap != 0 {
                 let _ = uwrite!(app.text, "{}", app.set.pocsag_cap);
@@ -1528,7 +1550,7 @@ pub(crate) fn open_path(app: &mut App, p: &[u8], name: &str, ok: bool) {
         }
         // MENU-31: a frequency setting opens the frequency entry box; the knob still steps it.
         [5, 4] => super::entry::open_setting(app, super::entry::FreqSet::Aprs),
-        [4, 2, 2] => super::entry::open_setting(app, super::entry::FreqSet::Pager),
+        [4, 2, 3] => super::entry::open_setting(app, super::entry::FreqSet::Pager),
         _ => {
             if let Some(d) = nav::menu0(p) {
                 app.open(d);

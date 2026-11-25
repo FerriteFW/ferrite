@@ -350,11 +350,6 @@ fn feed(slot: &mut Decoder, x: &[i16], level: u16, heard: &mut bool, since_cap: 
             if m.addresses { &MISSED } else { &NOISE }.fetch_add(1, Relaxed);
             let _ = APRS_RX.try_send(Heard::Miss(*m, level)); // only for the log: a full queue skips it
         }
-        Found::Page(m) => {
-            if PAGES.try_send(Page::from(m)).is_err() {
-                DROPPED.fetch_add(1, Relaxed);
-            }
-        }
         Found::Call(_) => {} // DSC: roadmap 6c
         Found::SstvStart(_) | Found::SstvLine(..) | Found::SstvEnd(_) => sstv_found(f),
     });
@@ -403,7 +398,7 @@ pub async fn task() {
     let mut dec = Decim::new();
     let mut capturing = false;
     // What each side asks for, and what runs (DEC-18).
-    let (mut aprs, mut pager, mut running) = (DecoderKind::Off, false, DecoderKind::Off);
+    let (mut aprs, mut running) = (DecoderKind::Off, DecoderKind::Off);
     // SSTV-1: the SSTV screen has the slot while it's open
     let mut sstv = false;
     // LINK-13.4: receive audio for the PC, coded from the same samples the decoder gets (the `AUDIO` mode: 0 none, 1
@@ -432,11 +427,10 @@ pub async fn task() {
         let test = core::future::pending::<Option<core::convert::Infallible>>();
         match select4(DSP.receive(), audio::ADC_HALF.wait(), select(AFSK_TX.wait(), SSTV_TX.wait()), test).await {
             Either4::First(DspCmd::SstvForce(vis)) => slot.sstv_force(vis, sstv_found),
-            Either4::First(cmd @ (DspCmd::Decoder(_) | DspCmd::Pager(_) | DspCmd::Audio(_) | DspCmd::Meter(_) | DspCmd::Squelch(_) | DspCmd::Sstv(_))) => {
+            Either4::First(cmd @ (DspCmd::Decoder(_) | DspCmd::Audio(_) | DspCmd::Meter(_) | DspCmd::Squelch(_) | DspCmd::Sstv(_))) => {
                 match cmd {
                     DspCmd::Sstv(on) => sstv = on,
                     DspCmd::Decoder(k) => aprs = k,
-                    DspCmd::Pager(on) => pager = on,
                     DspCmd::Audio(mode) => {
                         if mode != listen {
                             stream = Stream::new(mode);
@@ -462,10 +456,7 @@ pub async fn task() {
                     }
                     _ => {}
                 }
-                let kind = match (aprs, pager) {
-                    (DecoderKind::Off, true) => DecoderKind::Pocsag,
-                    (k, _) => k,
-                };
+                let kind = aprs; // DEC-18: AFSK or nothing (DEC-23: the pager is the Radio task's, on the chip's modem)
                 // SSTV-1: SSTV's decoder in the slot while its screen is open; the others back after
                 // (`running` says Off meanwhile, so the decoder wanted is made again when SSTV lets go)
                 // (`Decoder::set`: never built here, or this poll's frame holds a whole decoder)

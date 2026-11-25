@@ -42,6 +42,7 @@ pub mod memmap;
 pub mod msg;
 pub mod name;
 pub mod part;
+pub mod pagerrx;
 pub mod path;
 pub mod rawaudio;
 pub mod rxmeter;

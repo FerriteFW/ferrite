@@ -86,6 +86,7 @@ mod tune;
 pub(crate) mod shadow;
 mod tick;
 mod same;
+mod pager;
 mod dtmf;
 mod bcast;
 mod hf;
@@ -359,6 +360,8 @@ struct Radio {
     dtmf_key: [Option<(u8, Freq10)>; 2],
     dtmf: [ferrite_core::dtmfrx::Track; SLOTS],
     same: SameRx,
+    /// DEC-23: POCSAG on slot C's chip.
+    pager: pager::PagerState,
     /// TERM-42 (decision 305): `bk rxaf`'s REG_2B bits 10:8, written after every FM tune; None off. RAM only.
     #[cfg(feature = "bench")]
     rxaf: Option<u16>,
@@ -884,6 +887,7 @@ pub async fn task() {
         dtmf_key: [None; 2],
         dtmf: [ferrite_core::dtmfrx::Track::NEW; SLOTS],
         same: SameRx { chip: None, at: None, armed: false, asm: Assembler::new(), repeats: Repeats::new() },
+        pager: pager::PagerState::new(),
         #[cfg(feature = "bench")]
         rxaf: None,
         #[cfg(feature = "bench")]

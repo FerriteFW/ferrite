@@ -176,6 +176,7 @@ fn ffsk() -> Fsk {
         sync4: true,
         crc: 0xA730,
         scramble: true,
+        rx_invert: false,
         len: 28,
     }
 }

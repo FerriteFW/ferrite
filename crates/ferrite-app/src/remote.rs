@@ -133,7 +133,7 @@ impl App {
         }
         // APRS-18: a PTT there sends or opens a message; remote PTT is voice only.
         if matches!(self.screen, Screen::Compose(_)) || self.aprs_slot(s) {
-            return Err("APRS: no voice there");
+            return Err(if self.pager_on() { "Pager: no voice there" } else { "APRS: no voice there" });
         }
         self.remote = Some(Remote { ptt, slot: s, last: now, by });
         self.remote_ended = None;

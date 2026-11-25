@@ -114,7 +114,11 @@ pub const CABLE_PORTS: [&str; 3] = ["Auto", "Link", "Terminal"]; // KISS on the 
 pub const KISS_PORTS: [&str; 3] = ["Off", "Cable", "Bluetooth"];
 /// 0 5 3's values (APRS-29.2): what slot C does for APRS. Off, Tracker (beacons only), On (APRS mode), KISS (a TNC
 /// for an app, on 0 5 8's port).
-pub const APRS_MODES: [&str; 4] = ["Off", "Tracker", "On", "KISS"];
+/// 0 4 2 5 (DEC-23): the speeds the chip's modem receives.
+pub const PAGER_SPEEDS: [&str; 2] = ["1200", "2400"];
+pub const APRS_MODES: [&str; 5] = ["Off", "Tracker", "On", "KISS", "Pager"];
+/// DEC-20: 0 5 3's values as Pager's toast names what it turned off.
+pub const APRS_WAS: [&str; 5] = ["", "Tracker", "APRS", "KISS", ""];
 /// 0 5 8's values (KISS-6.1): the KISS port, by `kiss_port`'s numbers (1 cable, 2 Bluetooth).
 pub const KISS_VIA: [&str; 2] = ["Cable", "Bluetooth"];
 /// 0 5 9 7 (WATCH-17.3, decision 295): who wins a chip shared with the APRS slot. 0, the default, APRS first.
@@ -173,6 +177,8 @@ pub struct Settings {
     pub pocsag_on: bool,
     pub pocsag_freq: Freq10,
     pub pocsag_cap: u32,
+    /// 0 4 2 5 (DEC-23): the pager speed, an index into [`PAGER_SPEEDS`] (1200, DAPNET's, or 2400).
+    pub pocsag_fast: u8,
     /// 0 4 4 (DEC-7): a toast for each decoder hit (pages and the other decoders); off, they only go to the
     /// event log and the inbox count.
     pub popups: bool,
@@ -476,6 +482,8 @@ impl Settings {
             3
         } else if self.aprs_mode {
             2
+        } else if self.pocsag_on {
+            4 // DEC-20
         } else if self.tracker {
             1
         } else {
@@ -510,6 +518,7 @@ impl Settings {
         pocsag_on: false,
         pocsag_freq: 43_998_750,
         pocsag_cap: 0,
+        pocsag_fast: 0,
         popups: true,
         key_beep: true,
         beep_vol: 2,

@@ -898,7 +898,13 @@ fn aprs_mode_selector_off_tracker_on_kiss() {
     assert_eq!((a.app.set.kiss_port, a.app.set.kiss_via), (1, 1), "0 5 8 moves KISS to the cable");
     change(&mut a.app, &[5, 3], 1);
     a.tick();
+    // DEC-20, APRS-29.3: Pager after KISS, the same switch as 0 4 2 2
+    assert_eq!((shown(&a, &mut b), a.app.aprs_holder(), a.app.set.kiss_port), ("Pager".into(), Some(Holder::Pager), 0));
+    assert!(a.app.set.pocsag_on && !a.app.set.aprs_mode && !a.app.set.tracker);
+    change(&mut a.app, &[5, 3], 1);
+    a.tick();
     assert_eq!((shown(&a, &mut b), a.app.aprs_holder(), a.app.set.kiss_port), ("Off".into(), None, 0));
+    assert!(!a.app.set.pocsag_on, "leaving Pager turns Decode off");
     assert_eq!(a.app.set.kiss_via, 1, "the port is kept");
     // A beacon mode of the user's own stays when leaving Tracker.
     a.app.set_aprs(AprsCfg { beacon: 3, ..*a.app.aprs_cfg() }); // every 2 min

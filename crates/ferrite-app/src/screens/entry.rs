@@ -66,6 +66,7 @@ impl FreqSet {
             FreqSet::Pager if !(mhz(136)..=mhz(520)).contains(&f) => Err("Out of range: pagers take 136-520 MHz"),
             FreqSet::Pager => {
                 app.set.pocsag_freq = f; // saved with the settings, as the knob's change
+                app.pager_retune(); // DEC-20
                 Ok(())
             }
             _ => Err("Not a setting: a range edge is in the store"),

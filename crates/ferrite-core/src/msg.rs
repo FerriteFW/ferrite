@@ -147,6 +147,8 @@ pub enum RadioCmd {
     /// SAME weather alerts on or off (0 4 5 1 and the region, WX-3): the BK4829's SAME receiver runs on the chip of
     /// any slot tuned to a weather channel (DEC-19).
     Same(bool),
+    /// POCSAG on slot C through its chip's own FSK modem at this speed, 1200 or 2400 (0: off; DEC-20, DEC-23).
+    Pager(u16),
     /// DEC-6: the BK4829's DTMF detector on (0 4 3).
     DtmfRx(bool),
     /// HF mode: enter on a frequency and mode (as [`Param::Mode`]), retune, or leave (HF-3, HF-4). Entering

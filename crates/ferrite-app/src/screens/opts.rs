@@ -31,6 +31,8 @@ pub enum Of {
     Channels,
     /// Home's APRS card (APRS-17).
     AprsCard,
+    /// Home's pager card (DEC-21).
+    PagerCard,
     /// A station's page (APRS-41) and the Contacts screen (APRS-40).
     Station,
     Contacts,
@@ -160,6 +162,13 @@ const APRS: [Opt; 7] = [
     ("Clear the heard list", Act::Confirm(Simple::ClearHeard), txt!("Stations return when heard")),
     ("APRS settings", Act::Open(Dest::Group(5)), txt!("Beacon, path, symbol, frequency")),
 ];
+/// DEC-21: the pager list, from C's pager card (OK or hold MENU), opened on Pages.
+const PAGER: [Opt; 4] = [
+    ("Pages", Act::Open(Dest::Pages), txt!("Pages heard, newest first")),
+    ("Event log", Act::Open(Dest::EventLog), txt!("Everything decoded and logged")),
+    ("Capcode filter", Act::Open(Dest::Text(super::text::TextFor::Capcode)), txt!("Only this capcode; # in it clears")),
+    ("Pager settings", Act::Open(Dest::Sub(4, 2)), txt!("Decode, frequency, capcode")),
+];
 const CHANNELS: [Opt; 1] = [("Show hidden channels", Act::ShowHidden, txt!("Hidden channels stay reachable by number"))];
 const WAYPOINTS: [Opt; 6] = [
     ("Mark here", Act::Do(Simple::MarkHere), txt!("A waypoint at this fix")),
@@ -184,6 +193,7 @@ pub(crate) fn rows(of: Of) -> &'static [Opt] {
     match of {
         Of::Log => &LOG,
         Of::Heard | Of::AprsCard => &APRS,
+        Of::PagerCard => &PAGER,
         Of::Messages => &MESSAGES,
         Of::MsgSending => &MSG_SENDING,
         Of::MsgEnded => &MSG_ENDED,
@@ -209,6 +219,7 @@ pub(crate) fn title(of: Of) -> &'static [u8] {
         Of::Scope => b"Scope",
         Of::Channels => b"Channels",
         Of::AprsCard => b"APRS slot",
+        Of::PagerCard => b"Pager slot",
         Of::Station => b"APRS station",
         Of::Contacts => b"Contacts",
     }
@@ -277,9 +288,10 @@ impl View for Options {
                     if store.data().request(op) {
                         match op {
                             // the log's: the mail badge counts messages (INBOX-3.1); an emptied log has none new (INBOX-3.2)
-                            Op::ReadAll | Op::ClearLog => app.log_unread = 0,
+                            Op::ReadAll | Op::ClearLog => (app.log_unread, app.pages_unread) = (0, 0), // DEC-22: pages are log entries
                             // INBOX-3.2: each message read takes its log entry with it (INBOX-7.1), as one read does
-                            Op::MessagesReadAll => (app.log_unread, app.inbox) = (app.log_unread.saturating_sub(app.inbox), 0),
+                            // DEC-22: and the pages among them
+                            Op::MessagesReadAll => (app.log_unread, app.inbox, app.pages_unread) = (app.log_unread.saturating_sub(app.badge()), 0, 0),
                             Op::ClearMessages => app.inbox = 0, // APRS-46
                             _ => {}
                         }

@@ -214,7 +214,7 @@ fn bcast_card(app: &mut App, lcd: &mut impl Panel, live: &LiveAll, s: u8, y: i32
 fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32, big: bool) {
     use crate::aprs::Holder;
     let p = s as usize;
-    let f = app.aprs_freq();
+    let f = app.c_freq(); // DEC-20: the pager frequency in Pager mode
     let Some(k) = app.aprs_card_as(data, big) else { return };
     app.drawn.meter[p] = None;
     if big {
@@ -227,8 +227,8 @@ fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32
         let mut cnt = Buf::<16>::new();
         // APRS-29.2: Tracker decodes nothing, so no counts
         let tracker = k.holder == Holder::Beacon;
-        if k.holder == Holder::Kiss {
-            cnt = k.right;
+        if matches!(k.holder, Holder::Kiss | Holder::Pager) {
+            cnt = k.right; // DEC-20.1: the pages
         } else if !tracker {
             let _ = uwrite!(cnt, "{} heard", n);
             let _ = uwrite!(hr, " \u{b7} {} /hr", h);
@@ -249,9 +249,14 @@ fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32
         let msg = k.unread > 0 && !tracker;
         let mut mt = Buf::<32>::new();
         if msg {
-            let _ = uwrite!(mt, "{} new from {}", k.unread, crate::screens::lists::Txt(k.unread_from.as_bytes()));
+            if k.holder == Holder::Pager {
+                let _ = uwrite!(mt, "{} new page{}", k.unread, if k.unread == 1 { "" } else { "s" }); // DEC-22
+            } else {
+                let _ = uwrite!(mt, "{} new from {}", k.unread, crate::screens::lists::Txt(k.unread_from.as_bytes()));
+            }
         }
-        let kiss = k.holder == Holder::Kiss;
+        // DEC-20.1: the pager card is drawn as KISS's: its line, no stations or beacon fate
+        let kiss = matches!(k.holder, Holder::Kiss | Holder::Pager);
         // KISS its frames; Tracker its interval and position source (APRS-29.2: no stations, it decodes nothing)
         let first = if kiss || tracker { k.line.as_bytes() } else { app.nothing_heard(data).as_bytes() };
         if app.dirty(R_INFO + p, Mix::new().any(&k.rows[..2]).h(&k.rows_n.min(2)).h(&mt).h(&first).get()) {
@@ -406,6 +411,10 @@ impl View for Home {
                 // APRS-17.3 (decisions 181, 257): OK (MENU) or hold MENU on the APRS slot opens the APRS list on the
                 // row the hint bar names, one more OK runs it; a digit opens its row (OK 1: messages); 0 there is
                 // still the full menu (MENU-25), so MENU 0 paths work as ever.
+                // DEC-21: in Pager mode the pager list, on Pages
+                (Key::Menu, Short | Long) if app.pager_on() => {
+                    return app.open_screen(Screen::Options(super::opts::Options { of: super::opts::Of::PagerCard, row: 0, confirm: false }));
+                }
                 (Key::Menu, Short | Long) => {
                     let row = if app.aprs_holder() == Some(crate::aprs::Holder::Beacon) { super::opts::APRS_ROW_BEACON_NOW } else { super::opts::APRS_ROW_HEARD };
                     return app.open_screen(Screen::Options(super::opts::Options { of: super::opts::Of::AprsCard, row, confirm: false }));
@@ -416,9 +425,9 @@ impl View for Home {
                 // MENU-34: hold ABC on the APRS slot opens its quick page, whatever holds C
                 (Key::Slot, Long) => return app.open_screen(super::qgrid::Page::Aprs.screen()),
                 // APRS-17.8: hold V/M on the APRS slot sends a beacon (a hold, so a bump never transmits)
-                (Key::VfoMem, Long) => return super::opts::beacon_now(app, store),
-                // a tap says how (KISS holds C with no beacons: its refusal, below)
-                (Key::VfoMem, Short) if app.aprs_holder() != Some(crate::aprs::Holder::Kiss) => {
+                (Key::VfoMem, Long) if !app.pager_on() => return super::opts::beacon_now(app, store),
+                // a tap says how (KISS and Pager hold C with no beacons: their refusal, below)
+                (Key::VfoMem, Short) if !matches!(app.aprs_holder(), Some(crate::aprs::Holder::Kiss | crate::aprs::Holder::Pager)) => {
                     app.show_toast(b"Hold V/M", b"to send a beacon", false);
                     return;
                 }
@@ -555,8 +564,18 @@ impl View for Home {
         if app.aprs_slot(app.active) {
             // APRS-17 (decision 181): OK leads to the heard list, or with beacons alone to Beacon now; # pauses
             // watch while a watched slot is receiving (WATCH-6), else hold MENU is the APRS page.
-            let ok = if app.aprs_holder() == Some(crate::aprs::Holder::Beacon) { ("OK", "Send") } else { ("OK", "Heard") };
-            let third = if app.watched_rx() { ("#", "Pause") } else { ("Hold MENU", "APRS") };
+            let ok = match app.aprs_holder() {
+                Some(crate::aprs::Holder::Beacon) => ("OK", "Send"),
+                Some(crate::aprs::Holder::Pager) => ("OK", "Pages"), // DEC-21
+                _ => ("OK", "Heard"),
+            };
+            let third = if app.watched_rx() {
+                ("#", "Pause")
+            } else if app.pager_on() {
+                ("Hold MENU", "Pager")
+            } else {
+                ("Hold MENU", "APRS")
+            };
             return Hints::new(&[("ABC", "Next"), ok, third]); // the key as it is marked
         }
         let a = app.active;

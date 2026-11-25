@@ -167,7 +167,7 @@ impl App {
             _ => (true, false),
         };
         let unread = [(true, false), (false, true), (true, false)];
-        let (period, flashes): (u32, &[(bool, bool)]) = if self.inbox > 0 || self.alert & crate::ALERT_UNREAD != 0 { (UNREAD_MS, &unread) } else { (BEAT_MS, &[(red, green)][..]) };
+        let (period, flashes): (u32, &[(bool, bool)]) = if self.badge() > 0 || self.alert & crate::ALERT_UNREAD != 0 { (UNREAD_MS, &unread) } else { (BEAT_MS, &[(red, green)][..]) };
         let t = self.now % period;
         let mut next_ms = period - t;
         for (i, &(r, g)) in flashes.iter().enumerate() {

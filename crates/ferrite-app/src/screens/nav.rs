@@ -124,6 +124,8 @@ pub enum Dest {
     EventLog,
     /// C2: one event.
     EventDetail,
+    /// DEC-22: Pages, the event log on its POCSAG filter (MENU 0 4 2 1).
+    Pages,
     /// C3: APRS heard (MENU 0 5 1).
     AprsHeard,
     /// C4: one APRS station.
@@ -235,6 +237,7 @@ impl Dest {
             Squelch => ("Squelch", "12", "B21"),
             EventLog => ("Event log", "24", "C1"),
             EventDetail => ("Event detail", "27", "C2"),
+            Pages => ("Pages", "27", "C1"),
             AprsHeard => ("APRS heard", "25", "C3"),
             AprsStation => ("APRS station", "25", "C4"),
             AprsSent => ("APRS sent", "25", "C3a"),
@@ -321,7 +324,7 @@ pub const ALL: [Dest; 70] = {
 
 /// MENU 0 paths that open a screen or a third-level list (manual Appendix A). Every other path
 /// is a plain value, edited in its group's list.
-pub const MENU0: [(&[u8], Dest); 55] = [
+pub const MENU0: [(&[u8], Dest); 56] = [
     (&[1, 6], Dest::Sub(1, 6)),
     (&[1, 4], Dest::RangePresets),
     (&[1, 5], Dest::SkipList),
@@ -339,6 +342,7 @@ pub const MENU0: [(&[u8], Dest); 55] = [
     (&[3, 7], Dest::Sstv), // SSTV-1
     (&[4, 1], Dest::EventLog),
     (&[4, 2], Dest::Sub(4, 2)),
+    (&[4, 2, 1], Dest::Pages), // DEC-22
     (&[4, 5], Dest::Sub(4, 5)),
     (&[4, 5, 2], Dest::LocationCodes),
     (&[5, 9, 9], Dest::AutoReply),
@@ -420,6 +424,7 @@ pub fn enter(dest: Dest, app: &mut App) -> Screen {
         Dest::Squelch => Screen::Squelch(squelch::Squelch { floor: 0 }),
         // Group C: lists and data
         Dest::EventLog => Screen::Log(super::log::Log::new()),
+        Dest::Pages => Screen::Log(super::log::Log::pages()), // DEC-22: the log on its pager filter
         Dest::EventDetail => Screen::Log(super::log::Log { detail: true, ..super::log::Log::new() }),
         Dest::AprsHeard => Screen::Aprs(super::aprs::Aprs { cur: Default::default(), station: false }),
         Dest::AprsStation => Screen::Aprs(super::aprs::Aprs { cur: Default::default(), station: true }),

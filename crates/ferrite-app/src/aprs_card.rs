@@ -153,6 +153,9 @@ impl App {
     pub fn aprs_priority(&self) -> Option<(&'static str, bool)> {
         self.aprs_shared()?;
         let ab = self.settings().aprs_share != 0;
+        if self.pager_on() && !ab {
+            return Some(("Pager first", false)); // DEC-20.1: C's own name for it
+        }
         Some((crate::settings::APRS_SHARE[ab as usize], ab))
     }
 
@@ -209,6 +212,15 @@ impl App {
                 let (sent, heard) = data.kiss_counts();
                 let _ = uwrite!(line, "Sent {} \u{b7} Heard {}", sent, heard);
             }
+            Holder::Pager => {
+                // DEC-20.1: the pages since power-on; the newest one (its text only on the large card: the store)
+                if self.pages_boot == 0 {
+                    right.set(b"No pages yet");
+                } else {
+                    let _ = uwrite!(right, "{} page{}", self.pages_boot, if self.pages_boot == 1 { "" } else { "s" });
+                }
+                self.page_line(data, large, &mut line);
+            }
             Holder::Beacon => {
                 right = soon;
                 (countdown, right_warn) = (timed, next_warn);
@@ -235,7 +247,7 @@ impl App {
         let up_s = self.now / 1000;
         let mut rows = [Row::default(); 3];
         let mut rows_n = 0u8;
-        let rows_of = if large { data.stations().min(3) } else { 0 };
+        let rows_of = if large && holder != Holder::Pager { data.stations().min(3) } else { 0 };
         for s in (0..rows_of).filter_map(|i| data.station(i)).take_while(|s| since_boot(s, up_s)) {
             let r = &mut rows[rows_n as usize];
             r.call = s.call;
@@ -253,7 +265,7 @@ impl App {
         }
         // APRS-17.2.4: unread messages, the newest one's sender
         let (mut unread, mut unread_from) = (0u16, Buf::<10>::new());
-        let msgs_of = if large { data.messages().min(32) } else { 0 };
+        let msgs_of = if large && holder != Holder::Pager { data.messages().min(32) } else { 0 };
         for m in (0..msgs_of).filter_map(|i| data.message(i)).filter(|m| m.inbound && m.state == MsgState::Unread) {
             if unread == 0 {
                 unread_from = m.peer;
@@ -272,7 +284,21 @@ impl App {
             bottom.set(b"Beacon: no fix");
             (bottom_warn, fix_note) = (true, false);
         }
-        let power = ["LOW", "MID", "HIGH"][self.aprs_cfg().power as usize % 3];
+        let mut power = ["LOW", "MID", "HIGH"][self.aprs_cfg().power as usize % 3];
+        if holder == Holder::Pager {
+            // DEC-20.1: nothing is sent, so no power; the bottom line is the capcode filter, the badge's pages
+            power = "";
+            (bottom_warn, fix_note) = (false, false);
+            bottom.clear();
+            match self.set.pocsag_cap {
+                0 => bottom.set(b"Every capcode"),
+                c => {
+                    let _ = uwrite!(bottom, "Capcode {}", c);
+                }
+            }
+            (unread, unread_from) = (self.pages_unread as u16, Buf::new());
+            fate.clear();
+        }
         let next_timed = timed || next.as_bytes() == b"soon";
         Some(AprsCard {
             holder,
@@ -298,6 +324,24 @@ impl App {
             nofix,
             fix_note,
         })
+    }
+
+    /// DEC-20.1: the pager card's line: the newest page's capcode and age, and on the large card its text.
+    fn page_line(&self, data: &dyn Data, large: bool, line: &mut Buf<48>) {
+        if self.pages_boot == 0 {
+            line.set(b"Listening for pages");
+            return;
+        }
+        let (cap, at) = self.last_page;
+        let mut a = Buf::<12>::new();
+        age_text(self.now.wrapping_sub(at) / 1000, &mut a);
+        let _ = uwrite!(line, "{} \u{b7} {}", cap, Txt(a.as_bytes()));
+        if large {
+            let n = data.events().min(64);
+            if let Some(e) = (0..n).filter_map(|i| data.event(i)).find(|e| e.src == crate::data::Src::Pocsag && e.id == cap) {
+                let _ = uwrite!(line, ": {}", Txt(e.text.as_bytes()));
+            }
+        }
     }
 
     /// APRS-17.10: "Nothing since power-on" while the heard list holds only stations from before it, else "Nothing

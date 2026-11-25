@@ -297,6 +297,7 @@ impl Radio {
         }
         // SAME on a weather channel's chip (DEC-19), then DTMF on the others (DEC-6).
         self.same_tick(now);
+        self.pager_tick(now); // DEC-23
         self.dtmf_tick(now, &sq);
         // 2. Scans step while their slot has a chip, on the answer from that chip. Before the watch turn, so the
         // turn gives a step to the other band that band's chip in this tick (decision 166): after it, as until Oct

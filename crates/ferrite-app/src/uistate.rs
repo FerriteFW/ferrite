@@ -1336,7 +1336,7 @@ fn card<S: ChannelStore>(app: &App, cx: &Cx<S>, s: u8, d: &mut Desc) {
         // the stations heard; C's own VFO (AM, say) is put aside meanwhile, so its chips would mislead.
         let data = cx.store.data();
         let mut last = Buf::<80>::new();
-        match app.aprs_card(data).filter(|k| k.holder == crate::aprs::Holder::Mode) {
+        match app.aprs_card(data).filter(|k| matches!(k.holder, crate::aprs::Holder::Mode | crate::aprs::Holder::Pager)) {
             // LINK-19.4: APRS mode's bottom line as drawn (the last heard since power-on, APRS-17.2)
             Some(k) => last.push(k.line.as_bytes()),
             None => crate::aprs::last_text(data, &mut last),
@@ -1345,11 +1345,12 @@ fn card<S: ChannelStore>(app: &App, cx: &Cx<S>, s: u8, d: &mut Desc) {
         app.beacon_text(data, &mut beacon);
         // APRS-29.2: Tracker decodes nothing, so its card has no last heard and no counts (its rows are `line=`)
         let tracker = app.aprs_holder() == Some(crate::aprs::Holder::Beacon);
+        let pager = app.aprs_holder() == Some(crate::aprs::Holder::Pager); // DEC-20.2: `last` is the newest page
         if !tracker {
             kq(l, "last", last.as_bytes());
         }
         kq(l, "beacon", beacon.as_bytes());
-        if !tracker {
+        if !tracker && !pager {
             let (boot, hour, _) = app.heard_counts(data);
             kn(l, "heard", boot as u32); // APRS-17.2: the card's counts, since power-on and in the last hour
             kn(l, "hour", hour as u32);
@@ -1376,6 +1377,7 @@ fn card<S: ChannelStore>(app: &App, cx: &Cx<S>, s: u8, d: &mut Desc) {
                     kn(l, "frames", heard as u32);
                 }
                 crate::aprs::Holder::Beacon => kq(l, "line", k.line.as_bytes()),
+                crate::aprs::Holder::Pager => kn(l, "pages", app.pages_boot as u32), // DEC-20.2
                 // LINK-19.4: which count the small card shows now (APRS-17.2: "14 heard", 1 "3 /hr")
                 crate::aprs::Holder::Mode => kn(l, "turn", 0), // APRS-17.2.1: the small card no longer flips
             }

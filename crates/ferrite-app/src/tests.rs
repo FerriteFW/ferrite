@@ -168,8 +168,10 @@ fn ram_is_small() {
     // refusal count seen and as at the key-up (TX-50: 2 bytes, an old refusal no longer ends a key-up), 8, to 2168;
     // SSTV's state (chapter 27a: the picture coming in and going out, the one shown, 48 bytes), 56 with padding, to 2224;
     // the beacon mode to put back when 0 5 3 leaves Tracker (APRS-29.2: 2 bytes), 8 with padding, to 2232;
-    // the end of the satellite screen's keep-lit window (SAT-24: 4 bytes), 8 with padding, to 2240
-    assert!(n <= 2240, "App is {n} bytes");
+    // the end of the satellite screen's keep-lit window (SAT-24: 4 bytes), 8 with padding, to 2240; Pager mode's
+    // (DEC-20, DEC-22: the APRS mode to put back, the unread pages, the pages since power-on and the newest one's
+    // capcode and time, 15 bytes), 16 with padding, to 2256
+    assert!(n <= 2256, "App is {n} bytes");
     let s = core::mem::size_of::<crate::settings::Settings>();
     std::println!("Settings: {s} bytes");
     assert!(s <= 512, "Settings is {s} bytes");

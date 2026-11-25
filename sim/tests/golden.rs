@@ -372,3 +372,20 @@ fn wfm_mode_and_refusal_match_their_goldens() {
     failures.extend(check("wfm-ptt-released", &r.sim.screen_rgb()));
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// DEC-20.1: C's pager card, small (A active) and large (C active), after the fake system's first page; DEC-21's
+/// hint bar says "OK Pages".
+#[test]
+fn pager_card_matches_its_goldens() {
+    use ferrite_core::keys::Key;
+    let mut r = Radio::new();
+    r.run("menu 0 4 2 2; press OK; home");
+    r.wait(26_000);
+    let mut failures: Vec<String> = check("pager-card-small", &r.sim.screen_rgb()).into_iter().collect();
+    while r.sim.app().active() != 2 {
+        r.press(Key::Slot).wait(300);
+    }
+    r.wait(4000); // the page's toast gone
+    failures.extend(check("pager-card-large", &r.sim.screen_rgb()));
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

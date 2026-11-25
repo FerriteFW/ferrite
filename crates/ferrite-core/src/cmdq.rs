@@ -56,6 +56,7 @@ pub fn key(c: &RadioCmd) -> Option<u16> {
         RadioCmd::AprsSlot(_) => 16,
         RadioCmd::DtmfRx(_) => 17,
         RadioCmd::SlotOff(_) => 18,
+        RadioCmd::Pager(_) => 19,
         RadioCmd::TuneSlot { slot, .. } => 0x100 | slot as u16,
         RadioCmd::SlotParam { slot, param, .. } => 0x200 | (slot as u16) << 5 | param as u16,
         _ => return None,
@@ -221,6 +222,7 @@ mod tests {
             RadioCmd::Same(true),
             RadioCmd::AprsSlot(1),
             RadioCmd::DtmfRx(true),
+            RadioCmd::Pager(1200),
             RadioCmd::TuneSlot { slot: 1, freq: 1 },
             RadioCmd::SlotParam { slot: 1, param: Param::Power, value: 1 },
         ];

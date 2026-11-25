@@ -700,6 +700,9 @@ impl Data for Sample {
             }
             Op::MessagesReadAll => {
                 self.msgs_read.set(u32::MAX);
+                // DEC-22: the pages shown among the messages are read with them
+                let pages = EVENTS.iter().enumerate().filter(|(_, e)| e.0 == Src::Pocsag).fold(0u32, |m, (i, _)| m | 1 << i);
+                self.events_read.set(self.events_read.get() | pages);
                 (0..self.sent_n()).for_each(|i| self.aprs.read(i));
                 true
             }

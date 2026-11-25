@@ -95,7 +95,7 @@ fn bar_inbox() {
     let mut r = Radio::new();
     let count = |r: &mut Radio| bar(r).into_iter().find(|t| t.s.chars().all(|c| c.is_ascii_digit()) && t.x0 < 100);
     let c = count(&mut r).expect("the sample has unread messages");
-    assert_eq!(c.s, "1", "the sample's one unread message, not its log entries");
+    assert_eq!(c.s, "2", "the sample's one unread message and its one unread page (DEC-22), not its other log entries");
     let red = |r: &mut Radio, t: &TextItem| {
         let px = r.sim.screen_rgb();
         (t.y0..=t.y1).any(|y| (t.x0..=t.x1).any(|x| px[(y * 240 + x) as usize] == rgb565_to_rgb(RED)))
@@ -105,7 +105,7 @@ fn bar_inbox() {
     r.press(Key::Menu).wait(300); // OK acknowledges the alert screen
     r.home();
     let c = count(&mut r).expect("count after the alert");
-    assert_eq!(c.s, "1", "an alert is the log's: the count stays the messages'");
+    assert_eq!(c.s, "2", "an alert is the log's: the count stays the messages' and pages'");
     assert!(red(&mut r, &c), "red while the alert is unread");
 }
 

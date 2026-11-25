@@ -68,12 +68,12 @@ fn moving_in_an_open_message_reads_the_next() {
 fn stop_and_send_again() {
     let mut t = T::new();
     t.open(Dest::AprsMessages);
-    t.taps(&[Key::Down, Key::Down]); // VA3RTX, retrying
+    t.taps(&[Key::Down; 4]); // VA3RTX, retrying (DEC-22: two pages are newer)
     t.hold(Key::Menu);
     assert!(matches!(t.screen(), Screen::Options(o) if o.of == crate::screens::opts::Of::MsgSending), "{}", t.name());
     t.tap(Key::Exit);
     // From the list: stop it.
-    t.app.screen = Screen::Msgs(Msgs { cur: crate::screens::lists::Cursor { sel: 2, top: 0 }, open: false });
+    t.app.screen = Screen::Msgs(Msgs { cur: crate::screens::lists::Cursor { sel: 4, top: 0 }, open: false });
     msgs::stop_or_resend(&mut t.app, &t.s, true);
     assert_eq!(t.toast(), "Not sending / VA3RTX", "the sample's own rows can't change");
     compose(&mut t, b"VE3KPW-9", b"Test");
@@ -369,12 +369,13 @@ fn delete_one() {
     assert!(matches!(t.screen(), Screen::Msgs(m) if m.cur.sel == 0 && !m.open));
     t.draw();
     t.hides("On my way");
-    // The last row, open: deleted, and the cursor on the new last one.
-    t.app.screen = Screen::Msgs(Msgs { cur: crate::screens::lists::Cursor { sel: n - 2, top: 0 }, open: true });
+    // The last row, open: deleted, and the cursor on the new last one (DEC-22: the sample's three pages among them,
+    // the oldest page now last).
+    t.app.screen = Screen::Msgs(Msgs { cur: crate::screens::lists::Cursor { sel: n + 1, top: 0 }, open: true });
     t.hold(Key::Menu); // a failed one of ours: Send again, then Delete message
     t.taps(&[Key::Down, Key::Menu, Key::Menu]);
     assert_eq!(t.toast(), "Message deleted / VE3JLH");
-    assert!(matches!(t.screen(), Screen::Msgs(m) if m.cur.sel == n - 3 && !m.open), "{}", t.name());
+    assert!(matches!(t.screen(), Screen::Msgs(m) if m.cur.sel == n && !m.open), "{}", t.name());
 }
 
 /// APRS-6.4: a message to everyone shows above the stored messages (its addressee as the tag, unread dot); OK opens

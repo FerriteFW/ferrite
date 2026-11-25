@@ -9,6 +9,13 @@ fn git(args: &[&str]) -> Option<String> {
 }
 
 fn main() {
+    // FERRITE_COMMIT: set by tools/remote.sh, whose copy has no .git of its own (the commit already carries "+" if dirty)
+    println!("cargo:rerun-if-env-changed=FERRITE_COMMIT");
+    if let Ok(c) = std::env::var("FERRITE_COMMIT") {
+        println!("cargo:rustc-env=FERRITE_BUILD={c}");
+        println!("cargo:rerun-if-changed=build.rs");
+        return;
+    }
     let sha = git(&["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "unknown".into());
     // --no-optional-locks: git status otherwise refreshes the index, which (watched below) rebuilt everything
     // after ferrite-core on every build

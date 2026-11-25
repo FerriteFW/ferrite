@@ -84,6 +84,8 @@ def git(*a):
 
 
 def host_commit():
+    if os.environ.get("FERRITE_COMMIT"):  # tools/remote.sh: the copy has no .git of its own
+        return os.environ["FERRITE_COMMIT"]
     h = git("rev-parse", "--short=7", "HEAD") or "unknown"
     return h + ("+" if git("status", "--porcelain", "--untracked-files=no") else "")
 

@@ -51,7 +51,7 @@ def build_info(build):
     flavour, stem = BUILDS[build]
     btf, bin_ = (os.path.join(ROOT, "target", stem + ext) for ext in (".btf", ".bin"))
     img = open(bin_, "rb").read()
-    commit = run("git", "rev-parse", "--short", "HEAD").stdout.strip()
+    commit = os.environ.get("FERRITE_COMMIT") or run("git", "rev-parse", "--short", "HEAD").stdout.strip()
     dirty = bool(run("git", "status", "--porcelain", "--", ".").stdout.strip())
     version = re.search(r'^version = "([^"]+)"', open(os.path.join(ROOT, "Cargo.toml")).read(), re.M).group(1)
     return dict(build=build, version=version, commit=commit, dirty=dirty,

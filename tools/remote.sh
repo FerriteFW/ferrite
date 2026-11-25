@@ -16,7 +16,10 @@ rsync -az --delete "${ex[@]}" ./ "$host:$dir/ferrite/"
 for s in docs testdata; do
     if [ -d "../$s" ]; then rsync -az --delete "${ex[@]}" "../$s/" "$host:$dir/$s/"; fi
 done
+# the remote copy has no .git: the commit goes along, for the build stamp and the test reports
+commit=$(git rev-parse --short=7 HEAD)
+if [ -n "$(git status --porcelain --untracked-files=no)" ]; then commit+=+; fi
 args=$(printf ' %q' "$@")
-exec ssh "$host" "cd $dir/ferrite && export PATH=\$HOME/.cargo/bin:\$PATH &&
+exec ssh "$host" "cd $dir/ferrite && export PATH=\$HOME/.cargo/bin:\$PATH FERRITE_COMMIT=$commit &&
     if ! command -v just >/dev/null; then echo 'just is not installed on $host: cargo install just' >&2; exit 127; fi &&
     just$args"

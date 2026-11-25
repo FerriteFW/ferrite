@@ -60,8 +60,11 @@ pub const TEXT_PACK: Range<u32> = 0x09_0000..0x0A_0000;
 pub const MAILBOX: Range<u32> = 0x0A_0000..0x0B_0000;
 /// Predictive text's words (decision 345): an SPI part, with room for a bigger dictionary.
 pub const DICTIONARY: Range<u32> = 0x0B_0000..0x0C_0000;
+/// The airline table (ACARS-6, on trial): IATA code to ICAO code and name, written by Console
+/// ([`crate::airlines`]). The first 32 KB of what was free.
+pub const AIRLINES: Range<u32> = 0x0C_0000..0x0C_8000;
 /// Free (what goes here is for a later decision).
-pub const FREE: Range<u32> = 0x0C_0000..0x0E_0000;
+pub const FREE: Range<u32> = 0x0C_8000..0x0E_0000;
 /// The stock bootloader's fonts (decision 404): its update screen draws "UPDATE" and its messages with the GB2312
 /// glyphs from 0x0E0000 (75 bytes each, to 0x15BED0) and the ASCII ones at 0x15C000 (39 bytes each), read from here
 /// at every update (rt950pro_bootloader.bin 0x08002212, 0x08002232). Never written: not in [`WRITABLE`]. SSTV's
@@ -104,7 +107,7 @@ pub static WRITABLE: [Range<u32>; 3] =
 pub const DATA: Range<u32> = 0..UPDATE_AREA.start;
 
 /// Every region in address order, with its name as the developer page and the build report show it.
-pub const REGIONS: [(&str, Range<u32>); 29] = [
+pub const REGIONS: [(&str, Range<u32>); 30] = [
     ("Layout header", LAYOUT_HEADER),
     ("Settings and slots", SETTINGS),
     ("User trims", TRIMS),
@@ -125,6 +128,7 @@ pub const REGIONS: [(&str, Range<u32>); 29] = [
     ("Text pack", TEXT_PACK),
     ("Packet mailbox (held)", MAILBOX),
     ("Dictionary", DICTIONARY),
+    ("Airline table (ACARS)", AIRLINES),
     ("Free", FREE),
     ("Stock bootloader's fonts (kept)", BOOT_FONTS),
     ("SSTV pictures", SSTV),
@@ -196,7 +200,8 @@ mod tests {
         assert_eq!((sectors(&CONTACTS) * 127, sectors(&WAYPOINTS) * 127), (1016, 2032));
         assert_eq!((sectors(&HEARD) * 31, sectors(&MESSAGES) * 31, sectors(&EVENT_LOG) * 31), (496, 496, 992));
         assert_eq!(sectors(&SCRATCH_RING), 32);
-        assert_eq!((SSB_PATCH.len(), LANGUAGES.len(), FREE.len()), (16 << 10, 192 << 10, 128 << 10));
+        assert_eq!((SSB_PATCH.len(), LANGUAGES.len(), FREE.len()), (16 << 10, 192 << 10, 96 << 10));
+        assert_eq!((AIRLINES.start, AIRLINES.len()), (0x0C_0000, 32 << 10), "ACARS-6: 32 KB at the start of what was free");
         assert!(sectors(&SSTV) >= 4 * 41, "SSTV-4: four pictures of 41 sectors");
         assert!(!overlaps(&V2_HEADER, &LAYOUT_HEADER) && CHANNELS.contains(&V2_HEADER.start), "layout 2's header sits where channels go now");
         assert_eq!(DATA.end, UPDATE_AREA.start);

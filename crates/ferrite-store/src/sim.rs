@@ -7,11 +7,11 @@
 //!
 //! It holds the parts of layout 3 Ferrite uses (decision 333): the low part, from the layout header to the end of
 //! the packet mailbox, the high part, the event log and the scratch ring, and the SPI parts' slots in the boot
-//! screens region (decision 335: the logo and the terminal's templates). The rest of the 4 MB reads erased and
+//! screens region (decision 335: the logo and the terminal's templates), and the airline table (ACARS-6). The rest of the 4 MB reads erased and
 //! refuses writes (a link's raw write there fails in the simulator).
 
 use crate::{Nor, NorError, Result, SECTOR};
-use ferrite_core::layout::{EVENT_LOG, MAILBOX, SCRATCH_RING, SCREENS, SSTV, WRITABLE};
+use ferrite_core::layout::{AIRLINES, EVENT_LOG, MAILBOX, SCRATCH_RING, SCREENS, SSTV, WRITABLE};
 
 /// The low part: the chip from 0 to the end of the packet mailbox.
 pub const LOW: usize = MAILBOX.end as usize;
@@ -19,7 +19,9 @@ pub const LOW: usize = MAILBOX.end as usize;
 pub const HIGH: core::ops::Range<u32> = EVENT_LOG.start..SCRATCH_RING.end;
 /// The SPI parts' slots in the boot screens region (`ferrite_core::part`), after the high part in `mem`.
 pub const PARTS: core::ops::Range<u32> = SCREENS.start..SCREENS.start + 0x1_0000;
-pub const SIZE: usize = LOW + (HIGH.end - HIGH.start) as usize + (PARTS.end - PARTS.start) as usize;
+/// The airline table (ACARS-6), after the parts' slots.
+const AIR_AT: usize = LOW + (HIGH.end - HIGH.start) as usize + (PARTS.end - PARTS.start) as usize;
+pub const SIZE: usize = AIR_AT + (AIRLINES.end - AIRLINES.start) as usize;
 /// What the simulator keeps between runs ([`SimFlash::image`]): the low part and the event log (not the scratch
 /// ring, empty whenever nothing is being written).
 pub const IMAGE_LEN: usize = LOW + (EVENT_LOG.end - EVENT_LOG.start) as usize;
@@ -55,6 +57,7 @@ impl SimFlash {
             a if (a as usize) < LOW => Some(a as usize),
             a if HIGH.contains(&a) => Some(LOW + (a - HIGH.start) as usize),
             a if PARTS.contains(&a) => Some(LOW + (HIGH.end - HIGH.start) as usize + (a - PARTS.start) as usize),
+            a if AIRLINES.contains(&a) => Some(AIR_AT + (a - AIRLINES.start) as usize),
             _ => None,
         }
     }
@@ -255,7 +258,7 @@ mod tests {
         assert!(SimFlash::from_image(&[0; 300]).mem.iter().all(|&b| b == 0xFF), "an image from another layout");
         let mut b = [0u8; 2];
         assert!(f.read(0x10_0000, &mut b).is_ok() && b == [0xFF; 2]);
-        assert!(f.start_erase(0x0C_0000).is_err() && f.start_program(0x0C_0000, &[0]).is_err());
+        assert!(f.start_erase(0x0D_0000).is_err() && f.start_program(0x0D_0000, &[0]).is_err());
     }
 
     /// The power off: every call fails, nothing changes, until it is back on.

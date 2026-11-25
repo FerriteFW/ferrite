@@ -502,6 +502,11 @@ pub trait Data {
         0
     }
 
+    /// ACARS (chapter 27b): the messages heard, in RAM (None: not kept here).
+    fn acars(&self) -> Option<&crate::acars::AcarsLive> {
+        None
+    }
+
     /// The event log, newest first.
     fn events(&self) -> u16 {
         0

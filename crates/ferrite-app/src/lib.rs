@@ -44,6 +44,7 @@ pub mod remote;
 pub mod sample;
 pub mod sat;
 pub mod sstv;
+pub mod acars;
 pub mod screens;
 pub mod slotctl;
 pub mod settings;

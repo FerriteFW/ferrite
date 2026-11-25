@@ -10,7 +10,9 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod acars;
 pub mod acc;
+pub mod airlines;
 pub mod audio;
 pub mod battery;
 pub mod chipid;

@@ -2348,6 +2348,9 @@ impl<N: Nor, D: Data> Data for FlashStore<N, D> {
     fn event_seq(&self, i: u16) -> Option<u32> {
         self.events.seq(i)
     }
+    fn acars(&self) -> Option<&ferrite_app::acars::AcarsLive> {
+        self.extra.acars()
+    }
     fn stations(&self) -> u16 {
         self.extra.stations()
     }

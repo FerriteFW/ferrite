@@ -103,8 +103,11 @@ impl PagerRx {
             self.neg = inv > plain;
         }
         for i in 0..self.n as usize {
-            let cw = self.batch[i];
-            self.dec.word(if self.neg { !cw } else { cw }, |m| found(Page::from(m)));
+            let cw = if self.neg { !self.batch[i] } else { self.batch[i] };
+            // all zeros (or ones) is what a stalled modem's FIFO reads back, and it passes the check as address 0:
+            // taken as idle, never as a page
+            let cw = if cw == 0 || cw == u32::MAX { upocsag::IDLE } else { cw };
+            self.dec.word(cw, |m| found(Page::from(m)));
         }
         self.n = 0;
     }
@@ -174,6 +177,19 @@ mod tests {
         let n = page(42, 0, upocsag::encode::Content::Numeric(b"5551234"));
         let p = run(&n, false, 1200);
         assert_eq!((p[0].capcode, p[0].numeric, &p[0].text[..p[0].len as usize]), (42, true, &b"5551234"[..]));
+    }
+
+    /// A stalled FIFO's zero words make no page.
+    #[test]
+    fn zero_words_make_no_page() {
+        let mut rx = PagerRx::new(1200);
+        let mut out = Vec::new();
+        rx.sync(|p| out.push(p));
+        for _ in 0..64 {
+            rx.word(0, |p| out.push(p));
+        }
+        rx.end(|p| out.push(p));
+        assert!(out.is_empty());
     }
 
     /// Two bit errors in a codeword are corrected; a batch cut short ends the page with what came.

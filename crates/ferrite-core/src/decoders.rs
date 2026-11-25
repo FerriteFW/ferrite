@@ -5,7 +5,6 @@
 
 use udsc::Receiver as Dsc;
 use uafsk::Demodulator as Afsk;
-use upocsag::Receiver as Pocsag;
 
 /// Audio rate the DSP task feeds the decoders.
 pub const RATE_HZ: u32 = 24_000;
@@ -18,8 +17,6 @@ pub enum Decoder {
     Off,
     /// APRS and other 1200-baud AFSK packet (uaprs parses the frames).
     Afsk(Afsk),
-    /// Pagers at 512, 1200 and 2400 baud.
-    Pocsag(Pocsag),
     /// Marine DSC, channel 70.
     Dsc(Dsc),
     /// SSTV pictures (chapter 27a), while the SSTV screen is open.
@@ -34,7 +31,6 @@ pub enum Found<'a> {
     Fx25(&'a uafsk::Fx25Block),
     /// A frame heard but not decoded (APRS-56): its FCS failed on every slicer.
     Miss(&'a uafsk::Miss),
-    Page(&'a upocsag::Message<'a>),
     Call(&'a udsc::Call<'a>),
     /// SSTV-2: a picture started (its VIS code), a line of it, or its end (whole or not).
     SstvStart(u8),
@@ -62,9 +58,6 @@ impl Decoder {
         Decoder::Afsk(Afsk::new(uafsk::fsk::Config::new(RATE_HZ)))
     }
 
-    pub fn pocsag() -> Self {
-        Decoder::Pocsag(Pocsag::new(RATE_HZ))
-    }
 
     pub fn dsc() -> Self {
         Decoder::Dsc(Dsc::new(uafsk::fsk::Config::new(RATE_HZ)))
@@ -87,7 +80,6 @@ impl Decoder {
             (true, _) => *self = Decoder::sstv(),
             (false, DecoderKind::Off) => {}
             (false, DecoderKind::Afsk) => *self = Decoder::afsk(),
-            (false, DecoderKind::Pocsag) => *self = Decoder::pocsag(),
             (false, DecoderKind::Dsc) => *self = Decoder::dsc(),
         }
     }
@@ -124,7 +116,6 @@ impl Decoder {
                     found(Found::Miss(&m)); // a miss's window (32 bits) is longer than a block: one at most
                 }
             }
-            Decoder::Pocsag(d) => block.iter().for_each(|&x| d.push(x, |m| found(Found::Page(m)))),
             Decoder::Dsc(d) => block.iter().for_each(|&x| d.push(x, |c| found(Found::Call(c)))),
             Decoder::Sstv(d) => d.feed(block, &mut SstvOut(&mut found)),
         }
@@ -224,10 +215,6 @@ mod tests {
         let n = core::mem::size_of::<Decoder>();
         std::println!("decoder slot: {n} B");
         assert!(n <= BUDGET);
-        let mut d = Decoder::pocsag();
-        let mut hits = 0;
-        d.push(&[0; 1200], |_| hits += 1);
-        assert_eq!(hits, 0, "silence decodes nothing");
     }
 
     /// The other slots: Off takes audio and does nothing; DSC and AFSK decode nothing from silence.

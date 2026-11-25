@@ -236,13 +236,13 @@ mod tests {
         assert_eq!(class(&RadioCmd::Chime { sound: 0, level: 0 }), Class::Drop);
         assert_eq!(class(&RadioCmd::BootSound { at: 0 }), Class::Drop);
         // All of them queue side by side; a second round replaces each in place of none.
-        let mut r = CmdRing::<16>::default();
+        let mut r = CmdRing::<17>::default();
         for c in settings {
             assert_eq!(r.push(c), None);
         }
-        assert_eq!(r.len(), 16);
+        assert_eq!(r.len(), 17);
         assert_eq!(r.push(RadioCmd::Squelch(5)), None, "replaced its own kind, so room was made");
-        assert_eq!(r.len(), 16);
+        assert_eq!(r.len(), 17);
         assert_eq!(drain(&mut r).last(), Some(&RadioCmd::Squelch(5)));
     }
 

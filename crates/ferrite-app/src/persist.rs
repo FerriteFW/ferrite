@@ -362,7 +362,7 @@ mod tests {
     /// 5's Local zone (CHAN-34), the satellite list's minimum elevation (SAT-22) and 0 5 9 8's decode log
     /// (APRS-56), a byte each; then 0 9 5's squelch again at the end (SQL-18.3, SQL-18.7: the old byte is ignored);
     /// then 0 5 3's Tracker and 0 5 8's KISS port (APRS-29.2, KISS-6.1), and 0.9.6's mark (VOX-15.1), last.
-    const AFTER_SPARE: usize = 23;
+    const AFTER_SPARE: usize = 24; // DEC-23 added 0 4 2 5's speed
 
     /// APRS-29.2, KISS-6.1: 0 5 3's Tracker and 0 5 8's KISS port are saved; a record from before them (0.9.5) loads
     /// with Tracker off and the port Bluetooth, so no radio starts beaconing on its own after the update.
@@ -375,7 +375,7 @@ mod tests {
         b.load(&mut SliceSource(&v.0));
         assert_eq!((b.tracker, b.kiss_via, b.aprs_select()), (true, 1, 1));
         let mut old = Settings::DEFAULT;
-        old.load(&mut SliceSource(&v.0[..v.0.len() - 3])); // 0.9.5's: no Tracker, KISS port or 0.9.6 mark
+        old.load(&mut SliceSource(&v.0[..v.0.len() - 4])); // 0.9.5's: no Tracker, KISS port, 0.9.6 mark or 0 4 2 5
         assert_eq!((old.tracker, old.kiss_via, old.aprs_select()), (false, 2, 0));
     }
 
@@ -430,7 +430,7 @@ mod tests {
             a.save(&mut v);
             let mut b = Settings::DEFAULT;
             b.mic_v2 = false; // as the store's loader sets it
-            b.load(&mut SliceSource(&v.0[..v.0.len() - 1]));
+            b.load(&mut SliceSource(&v.0[..v.0.len() - 2])); // before `mic_v2` and 0 4 2 5's speed
             b.mic_upgrade();
             assert_eq!((b.mic_gain, b.mic_v2), (want, true), "old record at {stored}");
         }

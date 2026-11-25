@@ -760,6 +760,7 @@
   | set 0 4 2 2 Off                   # Decode
   | set 0 4 2 3 439.987               # Frequency
   | set 0 4 2 4 None                  # Capcode filter
+  | set 0 4 2 5 1200                  # Speed
   | set 0 4 3 On                      # DTMF decode
   | set 0 4 4 On                      # Popups
   | set 0 5 3 Off                     # APRS mode
@@ -1022,6 +1023,7 @@
   | set 0 4 2 2 Off                   # Decode
   | set 0 4 2 3 439.987               # Frequency
   | set 0 4 2 4 None                  # Capcode filter
+  | set 0 4 2 5 1200                  # Speed
   | set 0 4 3 On                      # DTMF decode
   | set 0 4 4 On                      # Popups
   | set 0 5 3 Off                     # APRS mode

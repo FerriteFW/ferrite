@@ -256,6 +256,8 @@ pub struct Fsk {
     /// REG_5C (CRC enable is bit 6; stock's other bits kept as they are).
     pub crc: u16,
     pub scramble: bool,
+    /// REG_59 bit 10: received data inverted (the modem then takes the other polarity's sync as its own).
+    pub rx_invert: bool,
     /// Packet length in bytes, 1-2048.
     pub len: u16,
 }
@@ -603,7 +605,7 @@ impl<B: Bus> Bk4829<B> {
     }
 
     fn fsk_ctrl(&self, f: &Fsk) -> u16 {
-        (f.scramble as u16) << 13 | ((f.preamble.clamp(1, 16) - 1) as u16) << 4 | (f.sync4 as u16) << 3
+        (f.scramble as u16) << 13 | (f.rx_invert as u16) << 10 | ((f.preamble.clamp(1, 16) - 1) as u16) << 4 | (f.sync4 as u16) << 3
     }
 
     /// Receive packets: FIFO cleared, receive on, the receive interrupts enabled (sync, FIFO almost full, done).
@@ -612,6 +614,13 @@ impl<B: Bus> Bk4829<B> {
         self.write(reg::FSK_CTRL, c | 1 << 14);
         self.write(reg::FSK_CTRL, c | 1 << 12);
         self.modify(reg::INT_EN, int::FSK_ALL, int::FSK_RX_DONE | int::FSK_FIFO_FULL | int::FSK_SYNC);
+    }
+
+    /// The receive FIFO emptied, receive staying on (REG_59 bit 14 with bit 12).
+    pub fn fsk_rx_clear(&mut self, f: &Fsk) {
+        let c = self.fsk_ctrl(f) | 1 << 12;
+        self.write(reg::FSK_CTRL, c | 1 << 14);
+        self.write(reg::FSK_CTRL, c);
     }
 
     /// One word from the receive FIFO (on FIFO almost full: REG_5E bits 2:0 words; on done: the rest).

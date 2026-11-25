@@ -292,9 +292,6 @@ pub struct SameDecoded {
 pub enum DspCmd {
     /// What the APRS task wants in the decoder slot (AFSK or off).
     Decoder(DecoderKind),
-    /// The pager decoder wanted (POCSAG on and a slot on its frequency) or not. The slot runs one decoder:
-    /// APRS's AFSK first, the pager decoder when APRS doesn't want it (DEC-18).
-    Pager(bool),
     /// LINK-13.4: receive audio wanted for the PC (the cable's session listens): the capture runs for it too, and
     /// the DSP task sends its blocks. The `AUDIO` request's mode: 0 off, 1 the 12 kHz µ-law stream, 2 or 3 the bench's
     /// raw stream (LINK-13.9, [`crate::rawaudio`]).
@@ -322,7 +319,6 @@ pub const AFTER_TX_MS: u32 = 5000;
 pub enum DecoderKind {
     Off,
     Afsk,
-    Pocsag,
     Dsc,
 }
 

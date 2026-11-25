@@ -87,7 +87,7 @@ impl Refusal {
     pub fn why(self) -> &'static str {
         match self {
             Refusal::RxRange => "0.15-64 MHz (HF), 64-630 or 756-1300 MHz",
-            Refusal::HfMode => "an HF channel is AM, USB, LSB or CW (FM from 18 MHz)",
+            Refusal::HfMode => "an HF channel is AM, USB, LSB or CW (FM or NFM from 18 MHz)",
             Refusal::HfSimplex => "an HF channel is simplex",
             Refusal::NotHf => "USB, LSB and CW are for HF channels",
             Refusal::Relay => "Split TX needs the HF relay: not allowed with this RX frequency",
@@ -243,6 +243,24 @@ impl ChField {
             (ChField::Rx, Op::Step(d)) => n.rx = freq_step(c.rx, d, cx.region),
             (ChField::Tx, Op::Step(d)) if c.cfg.split => {
                 n.cfg.offset = freq_step(c.cfg.offset.max(0) as Freq10, d, cx.region).clamp(mhz(64), mhz(1000) - 1) as i32
+            }
+            (ChField::It(Item::Mode), Op::Step(d)) if d.abs() == 1 => {
+                // CHAN-26.2 (ferrite#84): the step goes on past the modes the frequency doesn't have (an 18-64 MHz
+                // channel: FM, NFM, AM), so the knob reaches every one it does; none: the first step's refusal
+                let at = Item::Mode.get(&c.cfg).0 + d;
+                let mut why = None;
+                for k in 0..crate::slot::SLOT_MODES as i32 - 1 {
+                    set_item(&mut n, Item::Mode, at + k * d, cx.region);
+                    match check_change(c, &n) {
+                        Ok(()) => {
+                            *c = n;
+                            return Ok(());
+                        }
+                        Err(r @ (Refusal::HfMode | Refusal::NotHf)) => why = why.or(Some(r)),
+                        Err(r) => return Err(why.unwrap_or(r)),
+                    }
+                }
+                return Err(why.unwrap_or(Refusal::HfMode));
             }
             (ChField::It(it), Op::Step(d)) => set_item(&mut n, it, it.get(&c.cfg).0 + d, cx.region),
             (ChField::It(Item::Squelch), Op::Reset) => set_item(&mut n, Item::Squelch, 0, cx.region),

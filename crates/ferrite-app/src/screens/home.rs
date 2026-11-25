@@ -450,6 +450,16 @@ impl View for Home {
             (Key::Left | Key::Right, Short) if app.bcast_slot() == Some(app.active) && !app.slots[app.active as usize].on_channel() => {
                 app.fm_seek(e.key == Key::Right)
             }
+            // BCR-25.1 (ferrite#154, #95): a hold that starts on the broadcast VFO steps one band, to the neighbour,
+            // and its further repeats do nothing; a hold elsewhere repeats through the bands as ever (KEY-4)
+            (Key::Left | Key::Right, Repeat) if !app.slots[app.active as usize].on_channel() => {
+                let m = app.keys.mark(e.key);
+                if m != HOLD_OFF_BCAST {
+                    let off = m == 0 && app.bcast_slot() == Some(app.active);
+                    group(app, if e.key == Key::Right { 1 } else { -1 }, store);
+                    app.keys.set_mark(e.key, if off { HOLD_OFF_BCAST } else { HOLD_STEPPED });
+                }
+            }
             (Key::Left | Key::Right, Short | Repeat) => group(app, if e.key == Key::Right { 1 } else { -1 }, store),
             (Key::Slot, Short) => {
                 // NAV-5
@@ -1102,6 +1112,11 @@ pub(crate) fn step(app: &mut App, d: i32, big: bool, store: &impl ChannelStore) 
         }
     }
 }
+
+/// BCR-25.1: an ◀▶ hold on a home VFO that has stepped a band (its mark on the key tracker)...
+const HOLD_STEPPED: u8 = 1;
+/// ...and one that started on the broadcast VFO and stepped off it: its further repeats do nothing.
+const HOLD_OFF_BCAST: u8 = 2;
 
 /// ◀▶ on home: next band in VFO mode (NAV-2), next zone with channels in channel mode (NAV-1, CHAN-11); Local,
 /// when on, after the last stored zone (CHAN-34).

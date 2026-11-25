@@ -116,6 +116,14 @@ impl App {
         if ch.mode.is_some_and(|m| !crate::slot::slot_mode_ok(m)) {
             return Err("mode: fm, nfm, am, nam or wfm");
         }
+        if let Some(m) = ch.mode.filter(|_| !ch.vfo && ch.freq.is_none() && self.slots[s as usize].on_channel()) {
+            let mut c = *self.slots[s as usize].cfg();
+            let at = crate::slot::SLOT_MODE_IDS.iter().position(|&x| x == m).unwrap_or(0) as i32;
+            let _ = Item::Mode.set(&mut c, at, 0);
+            if self.channel_ok(s, c).is_err() {
+                return Err("mode: not on this channel's frequency (CHAN-26)");
+            }
+        }
         if ch.power.is_some_and(|p| p > 2) {
             return Err("power: low, mid or high");
         }

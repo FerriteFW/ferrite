@@ -434,3 +434,27 @@ fn wfm_is_a_broadcast_slot_on_64_to_108() {
     assert_eq!(crate::screens::transmit::refusal(&t.app, 0), Some(ferrite_core::txplan::Refusal::WfmRxOnly), "TX-20.6: WFM says it is broadcast");
     assert_eq!(crate::screens::transmit::short(ferrite_core::txplan::Refusal::WfmRxOnly), "WFM is broadcast: RX only");
 }
+
+/// BCR-25.1, KEY-4 (ferrite#154, #95): an ◀▶ hold that starts on the broadcast VFO steps one band, to the
+/// neighbour, and the rest of that hold's repeats do nothing; a hold from any other band repeats through the bands
+/// as before, and a short ◀▶ on broadcast still seeks (BCR-25).
+#[test]
+fn hold_leaves_broadcast_one_band() {
+    use crate::slot::{band_of, BAND_AIR};
+    let mut t = ready();
+    tune(&mut t, 0, FM1005);
+    assert_eq!(t.app.bcast_slot(), Some(0));
+    t.press(Key::Right, 1500); // about 12 repeats
+    assert_eq!(band_of(t.freq()), Some(BAND_AIR), "one band up from broadcast (6 m's neighbour): {}", t.freq());
+    // the next hold is a fresh one: it repeats through the bands as ever
+    t.press(Key::Right, 650); // three repeats
+    assert_eq!(band_of(t.freq()), Some(BAND_AIR + 3), "three bands on: {}", t.freq());
+    // ◀ back onto broadcast's band memory, then a hold the other way: one band down
+    tune(&mut t, 0, FM1005);
+    t.press(Key::Left, 1500);
+    assert_eq!(band_of(t.freq()), Some(0), "one band down (HF): {}", t.freq());
+    tune(&mut t, 0, FM1005);
+    t.cmds();
+    t.tap(Key::Right);
+    assert!(t.cmds().contains(&RadioCmd::Broadcast(BroadcastCmd::Seek { up: true })), "a tap still seeks");
+}

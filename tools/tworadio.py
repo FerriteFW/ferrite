@@ -4,8 +4,8 @@ other hears a metre away), the other receives and is read back (LINK-19's UI rea
 the link). The checks that needed the clear radio keying into Ferrite, run by the PC. Tests: tools/tworadio_tests/.
 
     tools/tworadio.py --dry-plan                               # the plan, key-ups and keyed time; touches nothing
-    tools/tworadio.py --tx /dev/cu.usbserial-114220 --rx ble:UUID      # run: TX keys, RX is read back
-    tools/tworadio.py --tx ble:UUID --rx /dev/cu.usbserial-114220      # the same radios the other way round, or:
+    tools/tworadio.py --tx /dev/cu.usbserial-XXXX --rx ble:UUID        # run: TX keys, RX is read back
+    tools/tworadio.py --tx ble:UUID --rx /dev/cu.usbserial-XXXX        # the same radios the other way round, or:
     tools/tworadio.py --tx PORT1 --rx PORT2 --swap                     # roles reversed (the other receive path)
     tools/tworadio.py ... -k scan --rules 'SCAN-*' --module tones      # a selection
     tools/tworadio.py --list                                   # the tests, their rules and key-ups
@@ -66,7 +66,7 @@ Bluetooth about 1 s, so the tests that time things to tenths (fast) are skipped 
 Bluetooth: `--swap` runs them with the cable radio receiving.
 
 Needs the project's .venv (numpy, for bench.py's DutyLimiter; pyserial; bleak for Bluetooth): run with python3 and it
-re-runs itself under ../.venv/bin/python when numpy is missing.
+re-runs itself under the repo's .venv (just setup), or the older ../.venv, when numpy is missing.
 """
 import os
 import sys
@@ -77,7 +77,8 @@ ROOT = os.path.dirname(FERRITE)
 VENV_PY = os.path.join(ROOT, ".venv", "bin", "python")
 
 def _venv():
-    """The project's .venv python: beside the ferrite checkout, or beside the main checkout of a git worktree."""
+    """The project's .venv python: in the checkout (just setup), beside it, or beside the main checkout of a worktree."""
+    yield os.path.join(FERRITE, ".venv", "bin", "python")
     yield VENV_PY
     import subprocess
     r = subprocess.run(["git", "-C", FERRITE, "rev-parse", "--path-format=absolute", "--git-common-dir"],

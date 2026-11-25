@@ -18,7 +18,7 @@ manual's rules. The tests are in tools/uitests/*.py, each tagged with the rule I
     tools/uitest.py --with reset,fm-station             # also the tests that need these (needs=, uitests/core.py
                                                         #   CAPS: a factory reset, a local FM station, ...)
     tools/uitest.py --bt ble:walkie-talkie              # a Bluetooth link beside the cable (0 9 2 1 on): needs=("bt",)
-    tools/uitest.py --port ble:walkie-talkie --cablelog /dev/cu.usbserial-114220   # keys over Bluetooth while the
+    tools/uitest.py --port ble:walkie-talkie --cablelog /dev/cu.usbserial-XXXX     # keys over Bluetooth while the
                                                         #   cable carries the cable log (0 9 9 5): needs=("cablelog",)
     tools/uitest.py --flash before --module install     # around a flash (tools/flash.py): what the install and
     tools/uitest.py --flash after --module install      #   update checks compare (needs=("flash",))
@@ -63,7 +63,6 @@ sys.path.insert(0, HERE)
 import ferrite_link as fl  # noqa: E402
 from uitests import core  # noqa: E402
 
-DEFAULT_PORT = "/dev/cu.usbserial-114220"
 RESULTS = os.path.join(ROOT, "bench-results")
 
 
@@ -950,7 +949,8 @@ def run_parallel(a, sel):
 
 def main_args(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--port", default=DEFAULT_PORT, help="the cable (default %(default)s), or ble:NAME_OR_ADDRESS for Bluetooth")
+    ap.add_argument("--port", help="the cable, ble:NAME_OR_ADDRESS for Bluetooth, or a radio's name (radios.toml); default: "
+                    "FERRITE_PORT, radios.toml's default, the only cable")
     ap.add_argument("--sim", metavar="tcp:HOST:PORT|auto", help="the simulator's link instead of the radio")
     ap.add_argument("--pin", help="the radio's PIN (Bluetooth with a PIN lock)")
     ap.add_argument("-k", help="tests whose name has one of these (comma list)")
@@ -1024,6 +1024,13 @@ def main(argv=None):
             return 1
         return 0
     proc = None
+    try:
+        a.port = (a.port or "") if a.sim else fl.resolve_port(a.port)  # a name, FERRITE_PORT, the default, the cable
+        if a.cablelog:
+            a.cablelog = fl.resolve_port(a.cablelog, cable_only=True)
+    except fl.PortError as e:
+        say(str(e))
+        return 2
     port, sim = a.port, a.port.startswith("tcp:") or bool(a.sim)
     sel = select(tests, a, sim)
     # --sim auto: in parallel simulators with -j N, and whenever a test needs a simulator of its own (sim_args).

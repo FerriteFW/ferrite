@@ -7,7 +7,7 @@ session, the simulator's too, and touch no radio.
 The rest compare the radio before and after a flash (needs=("flash",)): run
 
     tools/uitest.py --module install --flash before     # keeps the readings in --flash-state
-    ../.venv/bin/python tools/flash.py PORT target/ferrite-txdry.btf --backup ../backups/blackradio/flash.bin \
+    .venv/bin/python tools/flash.py PORT target/ferrite-txdry.btf --backup ../backups/blackradio/flash.bin \
         [--ssb-from STOCK.BTF]
     tools/uitest.py --module install --flash after      # compares
 

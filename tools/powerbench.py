@@ -2,7 +2,7 @@
 """The power bench: the radio on the DPS-150, each state set over the link, its current logged.
 
     tools/powerbench.py RADIO SUPPLY [--label 120MHz] [--seconds 60] [--settle 10] [--only "NAME;..."]
-    tools/powerbench.py /dev/cu.usbserial-142220 /dev/cu.usbmodemXXXX --label 240MHz
+    tools/powerbench.py auto /dev/cu.usbmodemXXXX --label 240MHz
 
 RADIO is a ferrite_link port (cable, or ble:ID); SUPPLY the DPS-150's. With --tx PORT --tx-slot a|b|c, a second
 radio keys that slot in short bursts so the radio under test receives a signal (states marked rx): the second radio

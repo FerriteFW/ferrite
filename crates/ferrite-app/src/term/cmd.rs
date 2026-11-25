@@ -1678,6 +1678,8 @@ const CMDS: &[(&str, C)] = &[
     ("lcd", C::Bench(9)),
     #[cfg(feature = "bench")]
     ("crash", C::Bench(10)),
+    #[cfg(feature = "bench")]
+    ("dac", C::Bench(11)),
     ("load", C::Load),
     ("sat", C::Sat),
     ("clear", C::Clear),
@@ -1738,7 +1740,7 @@ fn line_run<S: ChannelStore>(app: &mut App, st: &S, dev: &Device, loading: bool,
         #[cfg(feature = "bench")]
         C::Job(j) => Ok(Done::Debug(Job::new([Kind::Gpio, Kind::Mic(false), Kind::Mic(true)][j as usize]))),
         #[cfg(feature = "bench")]
-        C::Bench(b) => [txtest, bk, fsk, meter, synthfsk, pin, si, bt, rx, lcd, crash][b as usize](t),
+        C::Bench(b) => [txtest, bk, fsk, meter, synthfsk, pin, si, bt, rx, lcd, crash, dac][b as usize](t),
         C::Load => Ok(Done::Load),
         C::Sat => sat(st, t, loading),
         C::Clear => clear(app, st, t),
@@ -1885,7 +1887,7 @@ use super::debug::{BK_REGS, MEM_MAX};
 /// TERM-38 (decision 151): the bench builds' commands (bring-up and tx-bench, the `bench` cargo feature). A receive
 /// or tx build compiles them out but knows their names, so it can say where they are; `gps` alone (the last fix)
 /// is in every build, its `query`, `nmea` and `standby` are the bench's.
-pub const BENCH_ONLY: [&str; 16] = ["pin", "mem", "mem32", "gpio", "bk", "si", "bt", "rx", "mic", "af", "txtest", "lcd", "fsk", "meter", "synthfsk", "crash"];
+pub const BENCH_ONLY: [&str; 17] = ["dac", "pin", "mem", "mem32", "gpio", "bk", "si", "bt", "rx", "mic", "af", "txtest", "lcd", "fsk", "meter", "synthfsk", "crash"];
 
 /// TERM-38: what a user build says to a bench command.
 #[cfg(not(feature = "bench"))]
@@ -2065,6 +2067,30 @@ fn pin(t: &mut Toks) -> Result<Done, No> {
         return Err(t.say_t(USAGE));
     }
     Ok(Done::Debug(Job::new(Kind::Pin { which, mode })))
+}
+
+#[cfg(feature = "bench")]
+/// TERM-54 (a bench test): `dac HZ [LEVEL]` plays DAC1's triangle tone now (HZ 100-5000, LEVEL 1-11, 6 if left
+/// out), `dac off` stops it; nothing is keyed and no pin is changed.
+fn dac(t: &mut Toks) -> Result<Done, No> {
+    const USAGE: Txt = txt!("dac HZ [LEVEL] (HZ 100-5000, LEVEL 1-11), or dac off");
+    let (hz, level) = match t.next()? {
+        Some(Tok::Word(w)) if same(w, b"off") => (0, 0),
+        Some(Tok::Word(w)) => {
+            let hz = number(w).filter(|n| (100..=5000).contains(n)).ok_or_else(|| t.say_t(USAGE))?;
+            let level = match t.next()? {
+                None => 6,
+                Some(Tok::Word(l)) => number(l).filter(|l| (1..=11).contains(l)).ok_or_else(|| t.say_t(USAGE))?,
+                _ => return Err(t.say_t(USAGE)),
+            };
+            (hz as u16, level as u8)
+        }
+        _ => return Err(t.say_t(USAGE)),
+    };
+    if t.next()?.is_some() {
+        return Err(t.say_t(USAGE));
+    }
+    Ok(Done::Debug(Job::new(Kind::Dac { hz, level })))
 }
 
 #[cfg(feature = "bench")]

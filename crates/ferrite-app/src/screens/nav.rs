@@ -110,6 +110,8 @@ pub enum Dest {
     Satellites,
     /// B25: SSTV pictures (MENU 0 3 7).
     Sstv,
+    /// B26: ACARS messages (MENU 0 3 8; on trial).
+    Acars,
     /// B15: frequency counter (MENU 0 3 2).
     Counter,
     /// B17: an alert (SAME, DSC distress).
@@ -231,6 +233,7 @@ impl Dest {
             ToneSearch => ("Tone search", "22", "B14"),
             Satellites => ("Satellites", "28a", "B22"),
             Sstv => ("SSTV", "27a", "B25"),
+            Acars => ("ACARS", "27b", "B26"),
             Counter => ("Frequency counter", "22", "B15"),
             Alert => ("Alert", "23", "B17"),
             Crossband => ("Crossband repeater", "19", "B18"),
@@ -308,7 +311,7 @@ impl Dest {
 }
 
 /// Every destination once (groups and lists by one example each), for tests and the screen inventory.
-pub const ALL: [Dest; 70] = {
+pub const ALL: [Dest; 71] = {
     use Dest::*;
     [
         Entry(1), ChannelEdit, Value(Item::Squelch), Tones, Text(super::text::TextFor::Callsign), PositionEntry, SaveChannel, AddRepeater, RangePreset,
@@ -318,13 +321,13 @@ pub const ALL: [Dest; 70] = {
         Browse, Zones, RangePresets, SkipList, Waypoints, WaypointGo, GpsPosition, HfRecent, Quick,
         Advanced, Group(5), Sub(9, 1), Status, About, Calibration, KeyTest, AdvSquelch, SsbConfirm, SsbPatch,
         LinkStatus, WriteProgress, PowerOff, EmptyBattery, Mailbox,
-        Group(1), Sub(4, 2), Value(Item::Power), FinishUpdate, Satellites, AutoReply, Sstv,
+        Group(1), Sub(4, 2), Value(Item::Power), FinishUpdate, Satellites, AutoReply, Sstv, Acars,
     ]
 };
 
 /// MENU 0 paths that open a screen or a third-level list (manual Appendix A). Every other path
 /// is a plain value, edited in its group's list.
-pub const MENU0: [(&[u8], Dest); 56] = [
+pub const MENU0: [(&[u8], Dest); 57] = [
     (&[1, 6], Dest::Sub(1, 6)),
     (&[1, 4], Dest::RangePresets),
     (&[1, 5], Dest::SkipList),
@@ -340,6 +343,7 @@ pub const MENU0: [(&[u8], Dest); 56] = [
     (&[3, 5], Dest::ToneSearch),
     (&[3, 6], Dest::Satellites), // SAT-1
     (&[3, 7], Dest::Sstv), // SSTV-1
+    (&[3, 8], Dest::Acars), // ACARS-1
     (&[4, 1], Dest::EventLog),
     (&[4, 2], Dest::Sub(4, 2)),
     (&[4, 2, 1], Dest::Pages), // DEC-22
@@ -476,6 +480,7 @@ pub fn enter(dest: Dest, app: &mut App) -> Screen {
         Dest::HfMode => hf::open(app),
         Dest::Satellites => sat::open(app),
         Dest::Sstv => super::sstv::open(app),
+        Dest::Acars => super::acars::open(app),
         Dest::Alert => Screen::Alert(super::alert::Alert { silenced: false }),
         // Every destination has its own screen now; a new one shows the placeholder until it is built.
         #[allow(unreachable_patterns)]

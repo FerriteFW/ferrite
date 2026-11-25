@@ -176,7 +176,7 @@ persist!(Settings {
     scope_dwell, scope_trig, scope_line, scope_wf, scope_mode, term_colour,
     aprs_mode, predictive,
     lpm, lpm_below, spare_tokens, backlight, keypad_light, leds, auto_off, auto_lock, dtmf_sidetone, arrival_tone,
-} bits { show_hidden, chan_only, cable_log, aprs_fixed, scan_tx } then { pon, pon_text, tone_level, scan_resume, scan_prio, tail_mode, tail_phase, end_tone, dtmf_ms, dtmf_delay, cw_id, gps, gps_rxtx, arrival, kiss_port, pocsag_on, pocsag_freq, pocsag_cap, popups, key_beep, beep_vol, alert_tones, vox, vox_level, vox_tail, fm_sleep, brightness, brightness_night, tx_light, wake_on, spare_temp, mic_gain, tx_timeout, menu_timeout, pause_time, spare_lock, busy_default, smeter_dbm, ch_display, scan_down, scan_return_hit, msg_vol, mcu_fixed, sq_chip_old, aprs_mute, dtmf_rx, aprs_share, local, sat_min_el, decode_log, sq_soft, tracker, kiss_via, mic_v2, pocsag_fast });
+} bits { show_hidden, chan_only, cable_log, aprs_fixed, scan_tx } then { pon, pon_text, tone_level, scan_resume, scan_prio, tail_mode, tail_phase, end_tone, dtmf_ms, dtmf_delay, cw_id, gps, gps_rxtx, arrival, kiss_port, pocsag_on, pocsag_freq, pocsag_cap, popups, key_beep, beep_vol, alert_tones, vox, vox_level, vox_tail, fm_sleep, brightness, brightness_night, tx_light, wake_on, spare_temp, mic_gain, tx_timeout, menu_timeout, pause_time, spare_lock, busy_default, smeter_dbm, ch_display, scan_down, scan_return_hit, msg_vol, mcu_fixed, sq_chip_old, aprs_mute, dtmf_rx, aprs_share, local, sat_min_el, decode_log, sq_soft, tracker, kiss_via, mic_v2, pocsag_fast, acars_freq });
 
 /// The format of [`App::save_state`]; a reader of a different one keeps the defaults. 2 (decision 333): a slot's
 /// zone is 2 bytes; version 1's one byte (255 no zone, 254 Local) still reads, so a settings record copied over
@@ -361,8 +361,9 @@ mod tests {
     /// 5's squelch (SQL-18.3), 0 5 9 6's APRS mute, 0 4 3's DTMF decode, 0 5 9 7's shared VHF (WATCH-17.3), 0 2
     /// 5's Local zone (CHAN-34), the satellite list's minimum elevation (SAT-22) and 0 5 9 8's decode log
     /// (APRS-56), a byte each; then 0 9 5's squelch again at the end (SQL-18.3, SQL-18.7: the old byte is ignored);
-    /// then 0 5 3's Tracker and 0 5 8's KISS port (APRS-29.2, KISS-6.1), and 0.9.6's mark (VOX-15.1), last.
-    const AFTER_SPARE: usize = 24; // DEC-23 added 0 4 2 5's speed
+    /// then 0 5 3's Tracker and 0 5 8's KISS port (APRS-29.2, KISS-6.1), 0.9.6's mark (VOX-15.1), 0 4 2 5's speed
+    /// (DEC-23) and the ACARS frequency (ACARS-3), last.
+    const AFTER_SPARE: usize = 25;
 
     /// APRS-29.2, KISS-6.1: 0 5 3's Tracker and 0 5 8's KISS port are saved; a record from before them (0.9.5) loads
     /// with Tracker off and the port Bluetooth, so no radio starts beaconing on its own after the update.
@@ -375,7 +376,7 @@ mod tests {
         b.load(&mut SliceSource(&v.0));
         assert_eq!((b.tracker, b.kiss_via, b.aprs_select()), (true, 1, 1));
         let mut old = Settings::DEFAULT;
-        old.load(&mut SliceSource(&v.0[..v.0.len() - 4])); // 0.9.5's: no Tracker, KISS port, 0.9.6 mark or 0 4 2 5
+        old.load(&mut SliceSource(&v.0[..v.0.len() - 5])); // 0.9.5's: no Tracker, KISS port, 0.9.6 mark, 0 4 2 5 or ACARS frequency
         assert_eq!((old.tracker, old.kiss_via, old.aprs_select()), (false, 2, 0));
     }
 
@@ -419,7 +420,7 @@ mod tests {
         }
     }
 
-    /// VOX-15.1 (decision 436): a record from before 0.9.6 (no `mic_v2`, its last byte) with Mic gain at the old
+    /// VOX-15.1 (decision 436): a record from before 0.9.6 (no `mic_v2`, its last byte then; ACARS-3's byte is after it) with Mic gain at the old
     /// default 5 loads with the new default 8; another choice stays; a 0.9.6 record keeps a 5 chosen since.
     #[test]
     fn an_old_records_default_mic_gain_goes_to_9() {
@@ -430,7 +431,7 @@ mod tests {
             a.save(&mut v);
             let mut b = Settings::DEFAULT;
             b.mic_v2 = false; // as the store's loader sets it
-            b.load(&mut SliceSource(&v.0[..v.0.len() - 2])); // before `mic_v2` and 0 4 2 5's speed
+            b.load(&mut SliceSource(&v.0[..v.0.len() - 3])); // before `mic_v2`, 0 4 2 5's speed and the ACARS frequency
             b.mic_upgrade();
             assert_eq!((b.mic_gain, b.mic_v2), (want, true), "old record at {stored}");
         }

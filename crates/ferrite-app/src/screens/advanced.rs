@@ -46,7 +46,7 @@ fn step(app: &App, row: u8, d: i32) -> u8 {
 pub(crate) const GROUPS: [(&str, crate::text::Txt); 9] = [
     ("Watch and scan", txt!("Watch, resume, priority, ranges, skips.")),
     ("Channels", txt!("Browse channels and zones, add a repeater.")),
-    ("Tools", txt!("FM, scope, counter, HF, crossband, tones.")),
+    ("Tools", txt!("FM, scope, counter, HF, crossband, tones, ACARS.")),
     ("Decoders and alerts", txt!("Event log, pagers, DTMF, weather alerts.")),
     ("APRS", txt!("Heard, messages, beacons, your station.")),
     ("GPS and time", txt!("GPS, position, units, time zone, clock.")),

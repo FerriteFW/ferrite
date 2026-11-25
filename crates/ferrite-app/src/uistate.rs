@@ -772,6 +772,7 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
         Screen::Hf(h) => hf_lines(app, cx, h, d),
         Screen::Sat(s) => sat_lines(app, &s, d),
         Screen::Sstv(s) => sstv_lines(app, cx, &s, d),
+        Screen::Acars(a) => acars_lines(app, cx, &a, d),
         Screen::Pin(p) => {
             // PIN-2, PIN-3: the heading, a star per digit typed (never the digits), the wait or attempts left
             if let Some(l) = d.ln() {
@@ -938,6 +939,33 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
             });
         }
         _ => {}
+    }
+}
+
+/// ACARS (chapter 27b, ACARS-9): `acars page=list n=10 sel=0 freq=131.550 strip=0 airlines=10`; on a message's
+/// page also its fields: ` flight="AC0115" reg="C-FIUA" label="H1" up=0 crc=1 blocks=2 line=0`.
+fn acars_lines<S: ChannelStore>(app: &App, cx: &Cx<S>, s: &screens::acars::Acars, d: &mut Desc) {
+    let Some(l) = d.ln() else { return };
+    let live = cx.store.data().acars();
+    l.push(b"acars");
+    kq(l, "page", if s.detail { b"message" } else { b"list" });
+    kn(l, "n", live.map_or(0, |a| a.len()) as u32);
+    kn(l, "sel", s.cur.sel as u32);
+    let mut f = Buf::<16>::new();
+    screens::lists::mhz_text(crate::acars::FREQS[app.set.acars_freq as usize % crate::acars::FREQS.len()], &mut f);
+    kq(l, "freq", f.as_bytes());
+    kn(l, "strip", s.strip as u32);
+    if s.air != u16::MAX {
+        kn(l, "airlines", s.air as u32);
+    }
+    if let Some((m, _)) = live.filter(|_| s.detail).and_then(|a| a.get(s.cur.sel, &mut [])) {
+        kq(l, "flight", m.flight());
+        kq(l, "reg", m.reg());
+        kq(l, "label", &ferrite_core::acars::label_text(m.label));
+        kn(l, "up", m.up() as u32);
+        kn(l, "crc", m.crc_ok() as u32);
+        kn(l, "blocks", m.blocks as u32);
+        kn(l, "line", s.line as u32);
     }
 }
 
@@ -1443,6 +1471,7 @@ pub fn id(s: Screen) -> &'static str {
         Screen::Value(_) => "Value",
         Screen::Tones(_) => "Tones",
         Screen::Sstv(_) => "Sstv",
+        Screen::Acars(_) => "Acars",
         Screen::Text(_) => "Text",
         Screen::Save(_) => "Save",
         Screen::Confirm(_) => "Confirm",

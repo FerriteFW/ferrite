@@ -227,6 +227,8 @@ pub struct Sample {
     pos_set: [Cell<Option<PosSet>>; 8],
     no_positions: Cell<bool>,
     pub call: Cell<Option<Buf<10>>>,
+    /// ACARS (chapter 27b): the sample traffic, heard just before power-on (ACARS-8).
+    pub acars: crate::acars::AcarsLive,
 }
 
 /// A channel's position as set since: its number and the position (None: cleared).
@@ -252,6 +254,12 @@ impl Sample {
     }
 
     pub fn new() -> Self {
+        let s = Self::blank();
+        crate::acars::sample::feed(&s.acars, usize::MAX, 0, 0);
+        s
+    }
+
+    fn blank() -> Self {
         let zc = |z: usize| ZoneCfg { scan_all: z == 1, shown: z != 5, resume: if z == 3 { 11 } else { 0 }, dwell: 255, pri: [if z == 1 { Some(11) } else { None }, None], ..ZoneCfg::default() };
         Sample {
             chans: core::array::from_fn(|i| Cell::new(CHANNELS.get(i).copied())),
@@ -299,6 +307,7 @@ impl Sample {
             call: Cell::new(Some(txt("VA7FER-9"))),
             pos_set: core::array::from_fn(|_| Cell::new(None)),
             no_positions: Cell::new(false),
+            acars: crate::acars::AcarsLive::new(),
         }
     }
 
@@ -509,6 +518,10 @@ impl ChannelStore for Sample {
 impl Data for Sample {
     fn version(&self) -> u32 {
         self.version.get()
+    }
+
+    fn acars(&self) -> Option<&crate::acars::AcarsLive> {
+        Some(&self.acars)
     }
 
     fn events(&self) -> u16 {

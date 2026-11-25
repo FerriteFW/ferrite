@@ -693,7 +693,7 @@ fn every_destination_draws() {
         }
     }
     let ids: std::collections::BTreeSet<_> = ALL.iter().map(|d| d.info().2).collect();
-    assert_eq!(ids.len(), 66, "one inventory ID per destination (B25 SSTV: decision 403; B11 FM broadcast: decision 352; groups and lists share D3; B16 weather radio removed: decision 63; C7 sensor reader: decision 75; D18-D20 approvals: decision 104; C5a contacts: decision 226; C3a sent beacons: APRS-53; C19 FM presets: decision 258; D25 finish the update: decision 333; B22 satellites: chapter 28a; A16b auto reply: APRS-57)");
+    assert_eq!(ids.len(), 67, "one inventory ID per destination (B26 ACARS: decision 454; B25 SSTV: decision 403; B11 FM broadcast: decision 352; groups and lists share D3; B16 weather radio removed: decision 63; C7 sensor reader: decision 75; D18-D20 approvals: decision 104; C5a contacts: decision 226; C3a sent beacons: APRS-53; C19 FM presets: decision 258; D25 finish the update: decision 333; B22 satellites: chapter 28a; A16b auto reply: APRS-57)");
 }
 
 mod group_a;
@@ -1107,6 +1107,8 @@ mod remote_edges;
 mod aprs_text;
 /// Satellite mode's radio commands, alarm and mark (chapter 28a).
 mod sat;
+/// ACARS's screen (chapter 27b, on trial).
+mod acars;
 /// Property tests: random streams over the exclusive modes, monitors and scans (MODE-1, PWR-24.4, SQL-14.1, SCAN-6).
 mod props_modes;
 

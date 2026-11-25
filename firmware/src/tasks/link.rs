@@ -8,6 +8,7 @@
 
 use crate::board::BT_PWR;
 use ferrite_radio::bt::BtPower;
+use ferrite_radio::cable::Flow;
 use ferrite_core::link::{bt_other_rate, BtPace, BtPacer, BT_BAUD, BT_FAST};
 use crate::chan::{BT_HELLOS, BT_IN, BT_LINK_BAUD, BT_LINK_ON, BT_ON, BT_OUT, BT_PACE, BT_PACE_FAST, BT_RATE, CABLE_BAUD, DRY_TX, LINK_BAUD, LINK_HELLOS, LINK_ON, RF_BUSY_KEYED, RF_STATE, TERM_IN, TERM_OUT, TERM_WAKE};
 use crate::hal::uart;
@@ -21,15 +22,9 @@ const BAUD: u32 = 115_200;
 /// Bytes sent per turn: transmit is polled (87 us a byte), so a turn stays under 3 ms and the other tasks on
 /// this executor keep running (TERM-4). With both ports sending, they take turns.
 const CHUNK: usize = 32;
-/// Software flow control for a terminal program sending a file (the terminal's `load`, TERM-13): XOFF once this
-/// many bytes wait (each UART's receive ring holds 512, so a slow sender still fits), XON again when it has
-/// drained.
-const XOFF_AT: u16 = 160;
-const XON_AT: u16 = 32;
-const XOFF: u8 = 0x13;
-const XON: u8 = 0x11;
-/// A new rate stays only if a `HELLO` arrives at it within this long (LINK-11).
-const BAUD_PROOF: Duration = Duration::from_secs(1);
+/// A new rate stays only if a `HELLO` arrives at it within this long (LINK-11: 3 s, so one late answer at the new
+/// rate isn't the end of it, Console issue #94; it was 1 s).
+const BAUD_PROOF: Duration = Duration::from_secs(3);
 /// LINK-15.1: Bluetooth's new rate stays only if a `HELLO` arrives at it within this long (the host writes the
 /// module's unlock after the answer, then a `HELLO`: a BLE write and its answer take about 150-400 ms).
 const BT_BAUD_PROOF: Duration = Duration::from_secs(3);
@@ -49,7 +44,8 @@ struct Port {
     tx: &'static Ring<'static>,
     /// The link holds the port: its binary frames can't carry XON/XOFF.
     link: &'static AtomicBool,
-    held: bool,
+    /// XON/XOFF for the terminal (TERM-13).
+    flow: Flow,
     /// The cable: sends nothing while keyed (TX-43). Bluetooth: only what USART1 takes without waiting, paced.
     cable: bool,
     /// Bluetooth's bursts and gaps (LINK-36; at 115200 LINK-36.1's); the cable's is never asked.
@@ -71,20 +67,17 @@ impl Port {
         let mut got = false;
         while self.rx.room() > 0 {
             let Some(c) = uart::getc(self.uart) else { break };
+            self.flow.got(c);
             self.rx.put(c);
             got = true;
         }
         let waiting = uart::rx_count(self.uart) + self.rx.count();
         if self.link.load(Relaxed) {
-            self.held = false;
+            self.flow.link();
         } else if !self.may_send() {
             // TX-43: flow control waits too; the receive rings still fill as before.
-        } else if !self.held && waiting >= XOFF_AT {
-            self.write_now(XOFF);
-            self.held = true;
-        } else if self.held && waiting <= XON_AT {
-            self.write_now(XON);
-            self.held = false;
+        } else if let Some(b) = self.flow.step(waiting) {
+            self.write_now(b);
         }
         got
     }
@@ -203,8 +196,8 @@ fn bt_log_line(was: &UartStats, now: &UartStats) {
 #[embassy_executor::task]
 pub async fn task() {
     uart::init(UART_CPS, BAUD); // every boot starts at 115200 (LINK-10)
-    let mut cable = Port { uart: UART_CPS, rx: &TERM_IN, tx: &TERM_OUT, link: &LINK_ON, held: false, cable: true, pacer: BtPacer::default(), waiting: false };
-    let mut bt = Port { uart: UART_BT, rx: &BT_IN, tx: &BT_OUT, link: &BT_LINK_ON, held: false, cable: false, pacer: BtPacer::default(), waiting: false };
+    let mut cable = Port { uart: UART_CPS, rx: &TERM_IN, tx: &TERM_OUT, link: &LINK_ON, flow: Flow::default(), cable: true, pacer: BtPacer::default(), waiting: false };
+    let mut bt = Port { uart: UART_BT, rx: &BT_IN, tx: &BT_OUT, link: &BT_LINK_ON, flow: Flow::default(), cable: false, pacer: BtPacer::default(), waiting: false };
     // LINK-15.1: Bluetooth's new rate on probation (deadline, `HELLO`s then); LINK-25.2: its framing errors, and
     // when USART1 last swapped rates for them.
     let mut bt_probation: Option<(Instant, u16)> = None;

@@ -642,7 +642,7 @@
 > dump
   writes false
   dump
-  | # Ferrite dump v1, firmware 0.9.6
+  | # Ferrite dump v1, firmware 0.9.7
   | # One command per line, as typed after : in the terminal; :load reads it back. # starts a note.
   | # Channels and zones are merged by number: lines replace what they name, nothing else is deleted.
   | # Settings, by their numbers in the radio's menu
@@ -903,7 +903,7 @@
 > dump
   writes false
   dump
-  | # Ferrite dump v1, firmware 0.9.6
+  | # Ferrite dump v1, firmware 0.9.7
   | # One command per line, as typed after : in the terminal; :load reads it back. # starts a note.
   | # Channels and zones are merged by number: lines replace what they name, nothing else is deleted.
   | # Settings, by their numbers in the radio's menu

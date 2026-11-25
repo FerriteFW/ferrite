@@ -423,9 +423,10 @@ impl Reader {
         uart::flush(UART_CPS);
         uart::set_stop2(UART_CPS, false);
         uart::set_rate(UART_CPS, proto::CONSOLE_BAUD);
-        // Console switches back 50-100 ms after the last ACK: the result line waits for it (hwtest's came at once,
-        // and Console then waited out its 3 s for a line it had missed).
-        proto::Link::pause(&mut Dump, 150);
+        // Console switches back 50-100 ms after the last ACK, longer on Windows where Web Serial reopens the port:
+        // the result line waits for it (hwtest's came at once, and Console then waited out its 3 s for a line it had
+        // missed; 150 ms was still too short, FerriteFW/console#87).
+        proto::Link::pause(&mut Dump, proto::RESULT_PAUSE_MS);
         uart::clear_rx(UART_CPS);
         match r {
             Ok(d) => proto::fdump_end(&mut Cable, d.crc, len, d.blocks, d.resends, d.ms),

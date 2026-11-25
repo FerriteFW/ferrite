@@ -240,6 +240,7 @@ pub fn encode(f: &Fields, out: &mut [u8]) -> usize {
 
 /// What a label is: a tag for the list (up to 4 characters) and a short meaning. Written for Ferrite from the
 /// labels commonly heard; airlines use many more of their own.
+#[derive(Clone, Copy, Debug)]
 pub struct Label {
     pub code: [u8; 2],
     pub tag: &'static str,
@@ -250,8 +251,9 @@ const fn l(code: &[u8; 2], tag: &'static str, meaning: &'static str) -> Label {
     Label { code: *code, tag, meaning }
 }
 
-/// The labels Ferrite names, in code order for the binary search.
-pub static LABELS: [Label; 32] = [
+/// The labels Ferrite names, in code order for the binary search. A `const`: read only when a screen draws, so in
+/// the slow flash with the other unnamed constants.
+pub const LABELS: [Label; 32] = [
     l(b"10", "AIRL", "Airline: free text"),
     l(b"5U", "WX", "Weather request"),
     l(b"5Z", "AIRL", "Airline designated"),
@@ -287,15 +289,15 @@ pub static LABELS: [Label; 32] = [
 ];
 
 /// A numbered label not in [`LABELS`] (airlines define their own).
-static AIRLINE: Label = l(b"00", "AIRL", "Airline defined");
-static UNKNOWN: Label = l(b"??", "MSG", "Unknown label");
+const AIRLINE: Label = l(b"00", "AIRL", "Airline defined");
+const UNKNOWN: Label = l(b"??", "MSG", "Unknown label");
 
 /// What label `code` (as received, DEL and all) is.
-pub fn label(code: [u8; 2]) -> &'static Label {
+pub fn label(code: [u8; 2]) -> Label {
     match LABELS.binary_search_by(|x| x.code.cmp(&code)) {
-        Ok(i) => &LABELS[i],
-        Err(_) if code[0].is_ascii_digit() => &AIRLINE,
-        Err(_) => &UNKNOWN,
+        Ok(i) => LABELS[i],
+        Err(_) if code[0].is_ascii_digit() => AIRLINE,
+        Err(_) => UNKNOWN,
     }
 }
 

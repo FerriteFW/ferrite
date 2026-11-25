@@ -19,7 +19,7 @@ pub type AcarsLog = Log<KEEP, POOL>;
 
 /// ACARS-3: the frequencies ◀▶ step through (10 Hz units), the first the default: 131.550 worldwide, then North
 /// America's others, Japan's and Europe's.
-pub static FREQS: [Freq10; 7] = [13_155_000, 13_172_500, 13_002_500, 12_912_500, 13_045_000, 13_145_000, 13_690_000];
+pub const FREQS: [Freq10; 7] = [13_155_000, 13_172_500, 13_002_500, 12_912_500, 13_045_000, 13_145_000, 13_690_000];
 
 /// The messages heard since power-on.
 pub struct AcarsLive {

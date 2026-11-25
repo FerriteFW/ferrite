@@ -1,3 +1,9 @@
-# The tools that talk to a radio. flash.py, term.py, ferrite_link.py: the cable; ferrite_link.py ble:...: Bluetooth.
-pyserial>=3.5
-bleak>=0.22
+# The tools' Python packages (just setup puts them in .venv). CI's tools need none of them.
+pyserial>=3.5     # the cable: flash.py, term.py, ferrite_link.py
+bleak>=0.22       # Bluetooth: ferrite_link.py ble:...
+numpy>=1.26       # bench.py, the SDR and two-radio tests, the bench-blade scripts
+matplotlib>=3.8   # bench.py's and sdrtx.py's plots
+Pillow>=10        # art.py, mklogo.py, the promo videos' key chips
+fonttools>=4.40   # fontgen.py, tighten.py
+segno>=1.5        # mkqr.py
+Markdown>=3.5     # the manual (just manual, in ../docs)

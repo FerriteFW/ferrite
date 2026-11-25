@@ -15,6 +15,18 @@ Ferrite is Rust on [Embassy](https://embassy.dev), for the AT32F403A in the RT-9
   - macOS: `brew install arm-none-eabi-binutils`
 - Everything else is in this repo, the chip drivers and the digital modes included.
 
+## Commands
+
+- The everyday commands are [just](https://just.systems) recipes: `just --list` shows them.
+- First time: `just setup` makes `.venv` from `tools/requirements.txt`, installs the toolchain and cargo-nextest, and says what is missing.
+- `just doctor` checks the installed versions against the pins.
+- `just test`, `just image tx` and `just uitest` print summaries; test and image keep the full log in `target/just/`.
+- Your settings: copy `.env.example` to `.env` (git-ignored).
+- Your radios by name: copy `radios.example.toml` to `~/.config/ferrite/radios.toml`, or `just radio-add NAME`. A name works wherever a tool takes a port.
+- No port given: `FERRITE_PORT`, then the default radio, then the only cable plugged in.
+- Another machine for the heavy runs: `FERRITE_REMOTE=user@host:path` in `.env`, then `just remote test`.
+- Recipes that need the private `../docs` or `../testdata` say they skipped without them.
+
 ## Run it on the PC
 
 ```sh
@@ -33,7 +45,7 @@ The terminal (manual chapter 37) runs in the simulator too:
 ## Build for the radio
 
 ```sh
-python3 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
+just setup                 # or: python3 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
 tools/mkbtf.sh tx          # target/ferrite-tx.ffw (and .btf): the user build
 tools/mkbtf.sh tx-bench    # target/ferrite-txbench.ffw: plus bench commands, Dry TX on at power-on
 tools/mkbtf.sh reader      # target/ferrite-reader.btf: the read-only backup reader Console loads

@@ -1,0 +1,33 @@
+# The maintainers' bench and release recipes. Copy to personal.just (git-ignored); the justfile imports it.
+# Keys these use (in .env): FERRITE_DPS (the DPS-150's port), FERRITE_XEON (the bladeRF's ssh host), MINISIGN_KEY_FILE.
+
+# The DPS-150 bench supply: info, set VOLTS AMPS (refuses over 8.4 V), on, off, log SECONDS [--csv F]
+dps *args:
+    {{py}} tools/dps150.py "${FERRITE_DPS:-$(ls /dev/cu.usbmodem* | head -1)}" "$@"
+
+# Supply current while the radio runs, against the DPS-150 (tools/powerbench.py --help)
+powerbench *args:
+    {{py}} tools/powerbench.py {{radio}} "${FERRITE_DPS:-$(ls /dev/cu.usbmodem* | head -1)}" "$@"
+
+# The SDR transmit suite: Dry TX on only (MENU 0 8 8 5), the approved frequencies only; --auto picks by what changed
+bench *args:
+    {{py}} tools/bench.py "$@"
+
+# A bladeRF script on FERRITE_XEON: just blade bladetx.sh FILE.sc16 446.475 (tools/bench-blade/)
+blade script *args:
+    PY={{py}} tools/bench-blade/{{script}} "${@:2}"
+
+# The cable log while the radio runs (Cable log on, 0 9 9 5): just cablelog 60 log.txt
+cablelog seconds file:
+    {{py}} tools/cablelog.py {{seconds}} {{file}}
+
+# Sign a release .ffw as CI does: the manifest's signature inside, then checked against minisign.pub
+sign file:
+    {{py}} tools/ffw.py manifest {{file}} > target/manifest.json
+    minisign -S -s "${MINISIGN_KEY_FILE:?MINISIGN_KEY_FILE in .env}" -m target/manifest.json
+    {{py}} tools/ffw.py add-sig {{file}} target/manifest.json.minisig
+    {{py}} tools/ffw.py check {{file}}
+
+# A promo video from a storyboard (tools/promo/README.md): -> target/promo/
+video story="tools/promo/preview.story" *args:
+    {{py}} tools/promo/mkvideo.py {{story}} "${@:2}"

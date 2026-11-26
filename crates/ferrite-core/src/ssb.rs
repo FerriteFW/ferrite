@@ -38,6 +38,11 @@ fn len_ok(len: u32, records: u32) -> bool {
     len.is_multiple_of(8) && records == len / 8 && records >= 500 && (HEADER as u32 + len) <= SSB_PATCH.end - SSB_PATCH.start
 }
 
+/// LINK-73: a patch of this length may be stored (whole records, enough of them, fitting the region).
+pub fn len_valid(len: u32) -> bool {
+    len_ok(len, len / 8)
+}
+
 /// The flasher's bundle header: b"FERRSSB1", u32 length, u32 records, u32 reserved, SHA-256.
 pub fn bundle(h: &[u8; HEADER]) -> Option<Patch> {
     (h[..8] == BUNDLE_MAGIC && len_ok(u32le(h, 8), u32le(h, 12))).then(|| Patch { len: u32le(h, 8), sha: h[20..52].try_into().unwrap() })

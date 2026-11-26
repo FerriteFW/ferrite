@@ -1,8 +1,10 @@
-//! udsc on calls built by an independent encoder (dsc_generator; `tools/fetch_dsc_testdata.sh`): exact symbols and
+//! udsc on calls built by an independent encoder (dsc_generator; the test data's `dsc/`, made by the
+//! testdata repo's `tools/make-dsc.sh`, found by `ferrite_fuzzkit::testdata_dir`'s rule, skipped when missing): exact symbols and
 //! fields, then in noise and with radio-like audio.
 //!
 //! `cargo test --release -p udsc --test report -- --ignored --nocapture`
 
+use ferrite_fuzzkit::{testdata_dir, testdata_file};
 use serde_json::Value;
 use std::path::PathBuf;
 use udsc::message::{Address, Message};
@@ -10,11 +12,11 @@ use udsc::Receiver;
 use uafsk::fsk::Config;
 
 fn dir() -> PathBuf {
-    PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../testdata/dsc"))
+    testdata_dir().join("dsc")
 }
 
 fn read_wav(name: &str) -> Vec<i16> {
-    let d = std::fs::read(dir().join(format!("{name}.wav"))).unwrap_or_else(|e| panic!("{name}: {e} (run tools/fetch_dsc_testdata.sh)"));
+    let d = std::fs::read(dir().join(format!("{name}.wav"))).unwrap_or_else(|e| panic!("{name}: {e} (the testdata repo's tools/make-dsc.sh)"));
     d[44..].as_chunks::<2>().0.iter().map(|c| i16::from_le_bytes(*c)).collect()
 }
 
@@ -87,7 +89,8 @@ fn fields_match(m: &Message, f: &Value) -> Result<(), String> {
 #[test]
 #[ignore]
 fn generated_calls() {
-    let vectors: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(dir().join("vectors.json")).unwrap()).unwrap();
+    let Some(path) = testdata_file("dsc/vectors.json") else { return };
+    let vectors: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let mut results = Vec::new();
     println!("\nCalls from dsc_generator, clean:\n");
     let mut exact = 0;

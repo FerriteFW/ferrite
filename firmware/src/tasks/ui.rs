@@ -259,6 +259,8 @@ fn own_frame<F: core::future::Future>(f: F) -> OwnFrame<F> {
 
 /// DISP-27: the ST7789's wait after sleep out before drawing, and between sleep in and sleep out.
 const PANEL_SLEEP_MS: u32 = 120;
+/// DISP-32: how often an awake panel's mode registers (colour format, orientation, inversion) are sent again.
+const PANEL_MODES_MS: u32 = 10_000;
 
 /// PWR-24.5: the shortest gap between redraws for live changes in Low Power Mode.
 const LPM_FRAME_MS: u32 = 1000;
@@ -543,7 +545,8 @@ pub async fn task() {
     // The slots as they were saved (frequencies, VFO settings, the channel each is on, watch, Battery Save).
     store.restore(&mut app);
     // After the self-test: setup on first boot (BOOT-12); MENU held: the settings reset (PIN-6, BOOT-14), which
-    // asks before the PIN; else the PIN if one is set (BOOT-13).
+    // asks before the PIN; else the PIN if one is set (BOOT-13), then the tool open at power off, unless a check
+    // failed or this start follows a fault or a hang (BOOT-19: a tool that faults doesn't reopen in a loop).
     if cfg!(feature = "bringup") {
         // No setup, reset or PIN: nothing is stored. A key at boot: straight to the key test (hold BACK leaves).
         if key_seen {
@@ -555,7 +558,8 @@ pub async fn task() {
     } else if menu_held {
         app.power_on_reset();
     } else {
-        app.ask_pin();
+        let failed = checks.iter().any(|c| c.state == State::Fail);
+        app.power_on(!failed && crate::restart::RESTARTED.load(Relaxed) == 0);
     }
     app.redraw_all();
     if cfg!(all(feature = "tx", feature = "bench")) {
@@ -587,7 +591,8 @@ pub async fn task() {
     let mut bat_logged = 0u32;
     let mut battery = ferrite_core::battery::Battery::default();
     // About and Self-test (SELF-5 to SELF-7): what the boot checks found. The BK4829s from the Radio task's
-    // snapshot below; the SI4732 isn't tested at boot; the SSB patch store comes with the link's SSB_WRITE.
+    // snapshot below; the SI4732 isn't tested at boot; the SSB patch's state is the store's (kept up below:
+    // the link's SSB_WRITE changes it).
     {
         let t = &mut dev.selftest;
         t.idcode = crate::hal::sys::idcode();
@@ -623,6 +628,8 @@ pub async fn task() {
     let mut bt_q: Option<BtQuery> = None;
     // DISP-27: the panel asleep while the screen is dark, and when it last changed.
     let (mut panel_asleep, mut panel_at) = (false, now_ms());
+    // DISP-32: when the panel's mode registers were last sent.
+    let mut modes_at = panel_at;
     // TERM-40: the display's bench state (the power bench); default is normal.
     #[cfg(feature = "bench")]
     let mut lcdb = ferrite_core::msg::LcdBench::default();
@@ -640,6 +647,7 @@ pub async fn task() {
     // SAME and the pager decoder (roadmap 6b).
     let mut decode = super::decode::Decode::new();
     let mut sstv = super::sstv::Sstv::new();
+    let mut acars = super::acars::Acars::new();
     // MODE-6: the command taken from the App that the Radio task's channel had no room for; it goes first.
     let mut held: Option<RadioCmd> = None;
     // LINK-38: when the screen was last drawn, and whether input since wants it drawn now.
@@ -805,6 +813,8 @@ pub async fn task() {
         }
         sec!(0); // ports in, battery
         dev.selftest.chips = live.chips;
+        // HF-20, LINK-73: the patch held now: one written over the link shows USB, LSB and CW without a restart
+        dev.selftest.ssb_patch = ferrite_app::data::Data::ssb(store).is_some();
         // SBAR-20: the Radio task's MCU temperature reading, in whole degrees.
         let t = crate::chan::MCU_TEMP.load(Relaxed);
         dev.mcu_temp = (t != i16::MIN).then(|| ferrite_core::mcutemp::whole(t));
@@ -973,6 +983,12 @@ pub async fn task() {
                         if new.partial != lcdb.partial {
                             lcd.0.partial(new.partial.then_some(ferrite_core::msg::LCD_PARTIAL));
                         }
+                        if (new.hz, new.dither) != (lcdb.hz, lcdb.dither) {
+                            // DISP-23.1 on the fly: the screen light's PWM frequency and dither.
+                            use ferrite_core::screenpwm::{DITHER_TENTHS, SCREEN_HZ};
+                            backlight::tune(new.hz.map_or(SCREEN_HZ, u32::from), new.dither.unwrap_or(DITHER_TENTHS));
+                        }
+                        new.dithering = backlight::dithering();
                         lcdb = new;
                         ports.debug_answer(ferrite_core::msg::DebugAns::Lcd(lcdb));
                     }
@@ -1002,6 +1018,10 @@ pub async fn task() {
             // SSTV (chapter 27a): every turn while its screen is open or a picture goes out
             if house || sstv.due(&app) {
                 sstv.poll(&mut app, store, &live, now_ms());
+            }
+            // ACARS-11: every turn while it decodes, or a frame waits
+            if house || acars.due(&app, &live) {
+                acars.poll(&app, store, &live);
             }
         }
         sec!(2); // aprs, decode
@@ -1114,12 +1134,19 @@ pub async fn task() {
             } else {
                 lcd.0.sleep(false);
                 Timer::after_millis(PANEL_SLEEP_MS as u64).await;
+                lcd.0.modes(); // DISP-32: lost while dark (#182), set again before anything shows
                 lcd.0.on(true);
                 app.redraw_all();
                 urgent = true;
             }
             (panel_asleep, panel_at) = (want_sleep, now_ms());
+            modes_at = panel_at;
             crate::chan::SCREEN_DARK.store(want_sleep, Relaxed); // PWR-26.17
+        } else if !panel_asleep && now_ms().wrapping_sub(modes_at) >= PANEL_MODES_MS {
+            // DISP-32 (#182: every colour inverted after hours with the APRS tracker on, until a restart): the
+            // panel's mode registers again now and then while it is awake. Six bytes, a few microseconds.
+            lcd.0.modes();
+            modes_at = now_ms();
         }
         // PWR-24.9, PWR-26: the MCU clock. In Low Power Mode 24 MHz after LPM_CLOCK_MS (and the boost after
         // input, PWR-24.10; transmit stays at 24 MHz); otherwise the governor: 24 MHz at rest, the build's speed
@@ -1466,6 +1493,9 @@ fn boot_report(flash: Option<(u32, u32)>, checks: &[Check], key_seen: bool) {
             let _ = ufmt::uwrite!(b, "Ferrite {} bring-up build: nothing is written to the SPI flash", VERSION);
         } else {
             let _ = ufmt::uwrite!(b, "Ferrite {} {}", VERSION, ferrite_core::build());
+            if !ferrite_core::OFFICIAL {
+                b.push(b" (unofficial build)"); // SELF-5.1
+            }
         }
     });
     if cfg!(all(feature = "tx", feature = "bench")) {

@@ -125,3 +125,26 @@ fn off_the_channel_goes_home() {
     t.tap(Key::Down);
     assert_eq!(t.screen(), Screen::Home);
 }
+
+/// CHAN-26.1, CHAN-26.2, VFO-14 (ferrite#84): on a CB channel (18-64 MHz) the editor's Mode cell steps FM, NFM, AM
+/// and round, over the modes the frequency doesn't have, never stuck on a refusal; NFM is the narrow filter.
+#[test]
+fn cb_channel_mode_cycles() {
+    let mut t = editor();
+    let a = t.app.active as usize;
+    let mut c = t.app.slots[a].ch.unwrap();
+    (c.rx, c.cfg.offset, c.cfg.split, c.cfg.mode, c.cfg.narrow) = (mhz(27) + 18_500, 0, false, 0, false);
+    t.app.slots[a].ch = Some(c);
+    t.app.screen = Screen::ChEdit(ChEdit { cell: 3 }); // the grid's first cell: Mode
+    let mut seen = std::vec::Vec::new();
+    for _ in 0..3 {
+        t.knob(1);
+        seen.push(t.app.slots[a].ch.unwrap().cfg.mode);
+    }
+    assert_eq!(seen, [1, 2, 0], "FM, NFM, AM round");
+    t.knob(-1);
+    assert_eq!(t.app.slots[a].ch.unwrap().cfg.mode, 2, "back over WFM and NAM to AM");
+    t.knob(-1);
+    let g = t.app.slots[a].ch.unwrap().cfg;
+    assert_eq!((g.mode, g.narrow), (1, true), "NFM, narrow");
+}

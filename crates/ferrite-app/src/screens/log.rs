@@ -33,6 +33,12 @@ impl Log {
         Log { cur: Cursor::default(), filter: 0, detail: false }
     }
 
+    /// DEC-22: Pages, the log on its POCSAG filter.
+    pub fn pages() -> Self {
+        let i = Src::ALL.iter().position(|&s| s == Src::Pocsag).unwrap_or(0);
+        Log { filter: i as u8 + 1, ..Log::new() }
+    }
+
     fn src(self) -> Option<Src> {
         self.filter.checked_sub(1).map(|i| Src::ALL[i as usize])
     }
@@ -79,7 +85,9 @@ impl View for Log {
             (Key::Left | Key::Right, Short | Repeat) => self.knob(app, if e.key == Key::Right { 1 } else { -1 }, store),
             (Key::Menu, Short) if !self.detail && sel.is_some() => {
                 d.request(Op::Read(self.cur.sel));
-                app.log_unread = app.log_unread.saturating_sub(sel.is_some_and(|e| e.unread) as u8);
+                if let Some(e) = sel {
+                    app.event_read(&e); // INBOX-7, DEC-22
+                }
                 app.screen = Screen::Log(Log { detail: true, ..self });
             }
             // INBOX-10: Go
@@ -98,12 +106,25 @@ impl View for Log {
         let cur = self.cur.step(d, n, ROWS2, &keep(store, self.src()));
         if self.detail && cur.sel != self.cur.sel {
             store.data().request(Op::Read(cur.sel));
+            if let Some(e) = store.data().event(cur.sel) {
+                app.event_read(&e); // INBOX-7, DEC-22
+            }
         }
         app.screen = Screen::Log(Log { cur, ..self });
     }
 
     fn render(self, app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
         let data = cx.store.data();
+        if !self.detail && self.filter != 0 {
+            // DEC-22: opened on a filter (Pages) the cursor starts on the first event the filter keeps
+            let k = keep(cx.store, self.src());
+            let first = Cursor::first(data.events(), &k);
+            if !k(self.cur.sel) && k(first.sel) {
+                let s = Log { cur: first, ..self };
+                app.screen = Screen::Log(s);
+                return s.render(app, lcd, cx);
+            }
+        }
         app.page(lcd, self.detail);
         if !app.gate((self, data.version(), cx.dev.clock_min)) {
             return;

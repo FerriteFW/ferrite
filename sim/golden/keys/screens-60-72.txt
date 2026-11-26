@@ -244,7 +244,7 @@ knob +1    -> = | Watch(0)
 knob -1    -> = | Watch(3)
 
 ## 65 D3 Settings list
-MENU       -> =
+MENU       -> Event log
 BACK       -> Home | VoxScreen(true)
 UP         -> =
 DOWN       -> =
@@ -255,11 +255,11 @@ V/M        -> =
 STAR       -> =
 HASH       -> =
 0          -> = | toast "No item" "with that number"
-1          -> =
-2          -> Frequency entry
-3          -> Text entry
-4          -> = | toast "No item" "with that number"
-5          -> = | toast "No item" "with that number"
+1          -> Event log
+2          -> =
+3          -> Frequency entry
+4          -> Text entry
+5          -> =
 6          -> = | toast "No item" "with that number"
 7          -> = | toast "No item" "with that number"
 8          -> = | toast "No item" "with that number"
@@ -491,6 +491,104 @@ knob -1    -> =
 ## 70 B25 SSTV
 MENU       -> =
 BACK       -> Home | Watch(7); VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> =
+RIGHT      -> =
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> =
+hold RIGHT -> =
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 71 B26 ACARS
+MENU       -> ACARS message
+BACK       -> Home | AcarsRx(0); VoxScreen(true)
+UP         -> =
+DOWN       -> =
+LEFT       -> = | AcarsRx(13690000)
+RIGHT      -> = | AcarsRx(13172500)
+ABC        -> =
+V/M        -> =
+STAR       -> =
+HASH       -> =
+0          -> =
+1          -> =
+2          -> =
+3          -> =
+4          -> =
+5          -> =
+6          -> =
+7          -> =
+8          -> =
+9          -> =
+SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE2      -> =
+hold MENU  -> = | toast "No options here" ""
+hold BACK  -> Home | AcarsRx(0); VoxScreen(true)
+hold UP    -> =
+hold DOWN  -> =
+hold LEFT  -> = | AcarsRx(13690000); AcarsRx(13145000); AcarsRx(13045000); AcarsRx(12912500); AcarsRx(13002500)
+hold RIGHT -> = | AcarsRx(13172500); AcarsRx(13002500); AcarsRx(12912500); AcarsRx(13045000); AcarsRx(13145000)
+hold ABC   -> =
+hold V/M   -> =
+hold STAR  -> =
+hold HASH  -> = | popup "Keypad locked" "* all · 0 all but PTT"
+hold 0     -> =
+hold 1     -> =
+hold 2     -> =
+hold 3     -> =
+hold 4     -> =
+hold 5     -> =
+hold 6     -> =
+hold 7     -> =
+hold 8     -> =
+hold 9     -> =
+hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE2 -> =
+PTT        -> Home | AcarsRx(0); TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+knob +1    -> =
+knob -1    -> =
+
+## 72 C3b APRS traffic
+MENU       -> APRS station
+BACK       -> Home | VoxScreen(true)
 UP         -> =
 DOWN       -> =
 LEFT       -> =

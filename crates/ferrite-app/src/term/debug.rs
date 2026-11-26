@@ -407,6 +407,9 @@ impl Job {
                 let pct = |p: Option<u8>| p.map_or(Num(None), |p| Num(Some(p)));
                 put!(out, "  lcd: idle {}, partial {}, sleep {}, fps {}, bl {}, keys {}", onoff(l.idle), onoff(l.partial), onoff(l.sleep),
                      if l.fps == 0 { Num(None) } else { Num(Some(l.fps)) }, pct(l.bl), pct(l.keys));
+                // DISP-23.1: the screen light's PWM as set (the bench's or the rule's) and whether it dithers now.
+                let (hz, d) = (l.hz.map_or(ferrite_core::screenpwm::SCREEN_HZ, u32::from), l.dither.unwrap_or(ferrite_core::screenpwm::DITHER_TENTHS));
+                put!(out, ", hz {}, dither {}.{} % ({})", hz, d / 10, d % 10, if l.dithering { "running" } else { "plain" });
                 if let Some((us, mhz)) = l.bus {
                     put!(out, "; bus: full-screen fill {} us, {} ns a byte at {} MHz", us, us * 1000 / 153_600, mhz as u32);
                 }
@@ -790,14 +793,16 @@ fn fsk_line(r: &ferrite_core::fskbench::Report, k: u8, out: &mut Line) {
         (0, None) => {
             out.push(b"  fsk rx ");
             speed_word(c.speed, out);
-            put!(out, " (chip CRC {}){}: ", crc, odd);
+            put!(out, " (chip CRC {}){}", crc, odd);
+            opts_words(&c.opt, out);
+            out.push(b": ");
             match r.chip {
                 Some(n) => put!(out, "chip {} listening", n),
                 None => out.push(b"no chip has the active slot now (asleep, or another slot's turn)"),
             }
         }
-        (1, _) => put!(out, "  syncs {} ({} inverted), frames {}: chip CRC ok {} bad {}; clean {}, short {}, low byte first {}, PRBS bit errors {}",
-                       s.syncs, s.sync_neg, s.frames, s.crc_ok, s.crc_bad, s.clean, s.short, s.lo_first, s.bit_errors),
+        (1, _) => put!(out, "  syncs {} ({} inverted), frames {}: chip CRC ok {} bad {}; clean {}, short {}, low byte first {}, shifted {}, PRBS bit errors {}",
+                       s.syncs, s.sync_neg, s.frames, s.crc_ok, s.crc_bad, s.clean, s.short, s.lo_first, s.shifted, s.bit_errors),
         (k, _) => {
             let half = k as usize - 2;
             let n = s.last_n as usize;
@@ -814,13 +819,44 @@ fn fsk_line(r: &ferrite_core::fskbench::Report, k: u8, out: &mut Line) {
     }
 }
 
-/// TERM-43: a speed as typed (`2400`, `ffsk1800`).
+/// TERM-43: the framing words a run was started with, those not the bench frame's ([`ferrite_core::fskbench::Opts`]).
+#[cfg(feature = "bench")]
+fn opts_words(o: &ferrite_core::fskbench::Opts, out: &mut Line) {
+    use ferrite_core::fskbench::{Opts, BASE_FSK};
+    let d = Opts::FRAME;
+    if (o.sync, o.sync4) != (d.sync, d.sync4) {
+        out.push(b" sync=");
+        for b in &o.sync[..if o.sync4 { 4 } else { 2 }] {
+            hex(*b as u32, 2, out);
+        }
+    }
+    if o.pre != d.pre {
+        put!(out, " pre={}", o.pre);
+    }
+    if o.ptype != d.ptype {
+        put!(out, " ptype={}", o.ptype);
+    }
+    if o.inv {
+        out.push(b" inv");
+    }
+    if o.scr {
+        out.push(b" scr");
+    }
+    match o.base {
+        Some(BASE_FSK) => out.push(b" base=fsk"),
+        Some(_) => out.push(b" base=ffsk"),
+        None => {}
+    }
+}
+
+/// TERM-43: a speed as typed (`2400`, `ffsk1800`, `acars`).
 #[cfg(feature = "bench")]
 fn speed_word(sp: ferrite_core::fskbench::Speed, out: &mut Line) {
     use ferrite_core::fskbench::Mode;
     match sp.mode {
         Mode::Fsk => put!(out, "{}", sp.baud),
         Mode::Ffsk1800 => out.push(b"ffsk1800"),
+        Mode::Ffsk2400 if sp.baud == 2400 => out.push(b"acars"),
         Mode::Ffsk2400 => out.push(b"ffsk2400"),
     }
 }

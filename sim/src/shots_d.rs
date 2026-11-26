@@ -141,6 +141,13 @@ pub fn run(scale: u32) {
     s.keys(&[D(1), D(9)]);
     s.save("pin");
     s.keys(&[D(5), D(0), Key::Menu]);
+    // With an owner card (PIN-2.1).
+    let keep = (s.app.settings().owner, s.app.settings().boot_card);
+    ferrite_app::sample::owner_card(s.app.settings_mut());
+    s.app.ask_pin();
+    s.save("pin-owner");
+    s.keys(&[D(1), D(9), D(5), D(0), Key::Menu]);
+    (s.app.settings_mut().owner, s.app.settings_mut().boot_card) = keep;
 
     // About and the read-only pages.
     s.menu0(&[9, 8]);

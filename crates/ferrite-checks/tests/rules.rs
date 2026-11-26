@@ -248,8 +248,14 @@ fn tones_never_use_the_dac() {
     };
     let (beep, chime) = (span("async fn beep"), span("async fn chime")); // APRS-6.1: the message sound
     let boot = span("async fn boot_sound"); // BOOT-18.2: the boot sound
-    let inside = |i: usize| [beep, chime, boot].iter().any(|s| i > s.0 && i < s.1);
-    assert!(uses.iter().all(|&i| inside(i)), "only the beep, the chime and the boot sound use the DAC tone");
+    // TERM-54: the bench builds' `dac` command plays the tone on request (debug.rs, `DebugReq::Dac`'s arm).
+    let dac = {
+        let at = radio.find("DebugReq::Dac {").expect("the dac command's arm");
+        let ans = at + radio[at..].find("DebugAns::Dac").expect("its answer");
+        (at, ans + radio[ans..].find('\n').expect("the answer's line"))
+    };
+    let inside = |i: usize| [beep, chime, boot, dac].iter().any(|s| i > s.0 && i < s.1);
+    assert!(uses.iter().all(|&i| inside(i)), "only the beep, the chime, the boot sound and the bench's dac use the DAC tone");
 }
 
 /// BCR-14: PA7/PC5, the SI4732's input switch, are set only by the Radio task's path state.

@@ -44,11 +44,12 @@ pub enum Mode {
     Fsk,
     /// FFSK 1200 baud on 1200/1800 Hz audio tones (MDC-1200's).
     Ffsk1800,
-    /// FFSK 1200 baud on 1200/2400 Hz audio tones.
+    /// FFSK on 1200/2400 Hz audio tones: 1200 baud as documented, or 2400 baud (`acars`, ACARS's tones and rate,
+    /// ferrite#192: the same mode with REG_72 at 2400, a bench question).
     Ffsk2400,
 }
 
-/// A speed: the mode and its bit rate (FFSK is always 1200).
+/// A speed: the mode and its bit rate (FFSK is 1200 but for `acars`, FFSK 1200/2400 at 2400).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Speed {
     pub mode: Mode,
@@ -56,9 +57,12 @@ pub struct Speed {
 }
 
 impl Speed {
-    /// `1200`, `2400` or any rate from [`BAUD_MIN`] to [`BAUD_MAX`] (plain FSK); `ffsk1800`, `ffsk2400`.
+    /// `1200`, `2400` or any rate from [`BAUD_MIN`] to [`BAUD_MAX`] (plain FSK); `ffsk1800`, `ffsk2400`; `acars`.
     pub fn parse(w: &[u8]) -> Option<Speed> {
         let is = |s: &[u8]| w.eq_ignore_ascii_case(s);
+        if is(b"acars") {
+            return Some(Speed { mode: Mode::Ffsk2400, baud: 2400 });
+        }
         if is(b"ffsk1800") {
             return Some(Speed { mode: Mode::Ffsk1800, baud: 1200 });
         }
@@ -74,7 +78,10 @@ impl Speed {
 
     /// The modes the documents name: FSK 1200 and 2400, both FFSKs. Other plain FSK rates are the bench's guesses.
     pub fn documented(self) -> bool {
-        self.mode != Mode::Fsk || self.baud == 1200 || self.baud == 2400
+        if self.mode != Mode::Fsk {
+            return self.baud == 1200; // `acars` (FFSK at 2400) is the bench's guess
+        }
+        self.baud == 1200 || self.baud == 2400
     }
 
     /// REG_58 without its enable bit (the driver sets bit 0): transmit mode 15:13, receive mode 12:10, receive gain
@@ -114,11 +121,95 @@ impl Speed {
     }
 }
 
-/// A run's set-up: the speed and the chip's CRC on or off (`nocrc`).
+/// A run's set-up: the speed, the chip's CRC on or off (`nocrc`), and the framing ([`Opts`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Cfg {
     pub speed: Speed,
     pub crc: bool,
+    pub opt: Opts,
+}
+
+impl Cfg {
+    /// The bench frame's framing ([`Opts::FRAME`]).
+    pub const fn new(speed: Speed, crc: bool) -> Self {
+        Cfg { speed, crc, opt: Opts::FRAME }
+    }
+
+    /// REG_5C: [`Speed::reg5c`], or with `base=` that mode's base instead, bit 6 the CRC as asked.
+    pub fn reg5c(&self) -> u16 {
+        match self.opt.base {
+            None => self.speed.reg5c(self.crc),
+            Some(b) => (b & !(1 << 6)) | (self.crc as u16) << 6,
+        }
+    }
+
+    /// REG_58 without its enable bit: [`Speed::reg58`] with the preamble type (bits 5:4) asked.
+    pub fn reg58(&self) -> u16 {
+        (self.speed.reg58() & !0x30) | (self.opt.ptype as u16 & 3) << 4
+    }
+}
+
+/// Stock's REG_5C bases: FSK's and FFSK's (`base=fsk|ffsk`).
+pub const BASE_FSK: u16 = 0x5665;
+pub const BASE_FFSK: u16 = 0xA730;
+
+/// The framing an `fsk` run sets the modem up with (ferrite#192: ACARS's sync and preamble on the bench, without
+/// `bk` pokes, which the run's set-up writes over at every retune, wake and frame): `sync=HEX` (2 or 4 bytes; REG_59
+/// bit 3), `pre=N` preamble bytes (1-16, REG_59 7:4), `ptype=N` preamble type (0-3, REG_58 5:4), `inv` received data
+/// inverted (REG_59 bit 10), `scr` scramble (REG_59 bit 13), `base=fsk|ffsk` REG_5C's other bits from that mode.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Opts {
+    pub sync: [u8; 4],
+    pub sync4: bool,
+    pub pre: u8,
+    pub ptype: u8,
+    pub inv: bool,
+    pub scr: bool,
+    pub base: Option<u16>,
+}
+
+impl Opts {
+    /// The bench frame's: [`SYNC`], [`PREAMBLE`] bytes of type 00, no inversion or scramble, the speed's REG_5C.
+    pub const FRAME: Opts = Opts { sync: SYNC, sync4: true, pre: PREAMBLE, ptype: 0, inv: false, scr: false, base: None };
+
+    /// One option word into `self`; false if it isn't one.
+    pub fn word(&mut self, w: &[u8]) -> bool {
+        let is = |s: &[u8]| w.eq_ignore_ascii_case(s);
+        let val = |k: &[u8]| (w.len() > k.len() && w[..k.len()].eq_ignore_ascii_case(k)).then(|| &w[k.len()..]);
+        let num = |v: &[u8]| (!v.is_empty() && v.len() <= 2 && v.iter().all(u8::is_ascii_digit)).then(|| v.iter().fold(0u8, |n, &c| n * 10 + (c - b'0')));
+        if is(b"inv") {
+            self.inv = true;
+        } else if is(b"scr") {
+            self.scr = true;
+        } else if is(b"base=fsk") {
+            self.base = Some(BASE_FSK);
+        } else if is(b"base=ffsk") {
+            self.base = Some(BASE_FFSK);
+        } else if let Some(v) = val(b"pre=") {
+            match num(v).filter(|n| (1..=16).contains(n)) {
+                Some(n) => self.pre = n,
+                None => return false,
+            }
+        } else if let Some(v) = val(b"ptype=") {
+            match num(v).filter(|&n| n <= 3) {
+                Some(n) => self.ptype = n,
+                None => return false,
+            }
+        } else if let Some(v) = val(b"sync=") {
+            if (v.len() != 4 && v.len() != 8) || !v.iter().all(u8::is_ascii_hexdigit) {
+                return false;
+            }
+            let h = |c: u8| (c as char).to_digit(16).unwrap_or(0) as u8;
+            let mut s = [0u8; 4];
+            for (i, p) in v.chunks(2).enumerate() {
+                s[i] = h(p[0]) << 4 | h(p[1]);
+            }
+            (self.sync, self.sync4) = (s, v.len() == 8);
+        } else {
+            return false;
+        }
+        true
+    }
 }
 
 /// What `fsk` asks the Radio task.
@@ -157,8 +248,10 @@ pub struct Stats {
     pub crc_bad: u16,
     /// Frames whose bytes passed our own check ([`check`]: our CRC and the PRBS exact), whatever the chip said.
     pub clean: u16,
-    /// Frames whose bytes fit better with each FIFO word's low byte first (else high first, as sent).
+    /// Frames whose bytes fit better with each FIFO word's low byte first (else high first, as sent), and starting
+    /// one byte late ([`Check::shifted`]).
     pub lo_first: u16,
+    pub shifted: u16,
     /// Frames with fewer than [`WORDS`] words read (the FIFO overran between ticks).
     pub short: u16,
     /// PRBS bit errors over every frame read whole.
@@ -220,6 +313,7 @@ impl Stats {
             self.last_counter = c.counter;
             self.bit_errors = self.bit_errors.saturating_add(c.errors as u32);
             self.lo_first = self.lo_first.saturating_add(c.lo_first as u16);
+            self.shifted = self.shifted.saturating_add(c.shifted as u16);
             self.clean = self.clean.saturating_add((c.crc && c.errors == 0) as u16);
         }
         f.got = 0;
@@ -270,26 +364,35 @@ pub struct Check {
     pub crc: bool,
     /// The bytes fit better taking each word's low byte first.
     pub lo_first: bool,
+    /// The FIFO's bytes start one late: the frame's first byte (the counter's high byte) isn't in it, and the
+    /// counter's high byte is taken as 0 (ferrite#192: FFSK 1200/2400 at 2400 baud, Nov 25, 2026, gives the frame
+    /// from its second byte on, low byte first, every bit right).
+    pub shifted: bool,
 }
 
-/// A received frame checked against [`payload`], both byte orders tried; the one with fewer PRBS errors counts.
+/// A received frame checked against [`payload`], both byte orders and both starts tried; the one with fewer PRBS
+/// errors counts (the PRBS bytes are in the frame either way).
 pub fn check(w: &[u16; WORDS]) -> Check {
     let want = prbs();
-    let one = |lo: bool| {
-        let b: [u8; LEN] = core::array::from_fn(|i| {
+    let one = |lo: bool, sh: bool| {
+        let got: [u8; LEN] = core::array::from_fn(|i| {
             let x = w[i / 2].to_be_bytes();
             x[(i & 1) ^ lo as usize]
         });
+        // the frame as sent: shifted, byte 0 is taken as 0 (the FIFO's last byte, after our CRC, is the chip's)
+        let b: [u8; LEN] = core::array::from_fn(|i| if !sh { got[i] } else if i == 0 { 0 } else { got[i - 1] });
         let errors = b[2..2 + PRBS_LEN].iter().zip(want).map(|(a, e)| (a ^ e).count_ones() as u16).sum();
         let crc = crc16(&b[..LEN - 2]) == u16::from_be_bytes([b[LEN - 2], b[LEN - 1]]);
-        Check { counter: u16::from_be_bytes([b[0], b[1]]), errors, crc, lo_first: lo }
+        Check { counter: u16::from_be_bytes([b[0], b[1]]), errors, crc, lo_first: lo, shifted: sh }
     };
-    let (hi, lo) = (one(false), one(true));
-    if lo.errors < hi.errors {
-        lo
-    } else {
-        hi
+    let mut best = one(false, false);
+    for (lo, sh) in [(true, false), (false, true), (true, true)] {
+        let c = one(lo, sh);
+        if c.errors < best.errors {
+            best = c;
+        }
     }
+    best
 }
 
 #[cfg(test)]
@@ -319,13 +422,23 @@ mod tests {
     #[test]
     fn check_counts_errors_and_byte_order() {
         let w = words(&payload(7));
-        assert_eq!(check(&w), Check { counter: 7, errors: 0, crc: true, lo_first: false });
+        assert_eq!(check(&w), Check { counter: 7, errors: 0, crc: true, lo_first: false, shifted: false });
         let mut bad = w;
         bad[3] ^= 0x0100;
         let c = check(&bad);
         assert_eq!((c.errors, c.crc), (1, false));
         let swapped = w.map(u16::swap_bytes);
-        assert_eq!(check(&swapped), Check { counter: 7, errors: 0, crc: true, lo_first: true });
+        assert_eq!(check(&swapped), Check { counter: 7, errors: 0, crc: true, lo_first: true, shifted: false });
+    }
+
+    /// TERM-43 (ferrite#192): the FIFO as the chip gave it on Nov 25, 2026 (`fsk rx acars`, frame 19 of the bench
+    /// file, AM and FM alike): low byte first, from the frame's second byte on: clean, counter 19.
+    #[test]
+    fn check_finds_the_shifted_frame() {
+        let got = [
+            0x0713, 0x2EBE, 0x1264, 0xA39D, 0x9BCF, 0x2315, 0xAB8D, 0x8889, 0x4280, 0x9C30, 0x0DAB, 0xB9E9, 0x2B14, 0xD94F, 0x6525, 0xAAFB,
+        ];
+        assert_eq!(check(&got), Check { counter: 19, errors: 0, crc: true, lo_first: true, shifted: true });
     }
 
     /// TERM-43: the counts: a sync, the words, the end with the chip's CRC; a frame cut short counts as short.
@@ -355,11 +468,33 @@ mod tests {
         let ffsk = s("FFSK1800").unwrap();
         assert_eq!((ffsk.reg58() | 1, ffsk.rate_word(), ffsk.tone_gain(), ffsk.reg5c(false)), (0x3FC3, 0x3065, 0x6C, 0xA730));
         assert_eq!(s("ffsk2400").unwrap().reg58(), 0x73C8);
+        // ferrite#192: `acars` is FFSK 1200/2400's mode and filter at 2400 baud (stock's FSK 2400 rate word)
+        let acars = s("ACARS").unwrap();
+        assert_eq!((acars.reg58(), acars.rate_word(), acars.tone_gain(), acars.documented()), (0x73C8, 0x60CA, 0x6C, false));
         assert_eq!(s("1200").unwrap().reg58(), 0x00C0);
         assert_eq!(s("4800").map(|s| (s.reg58(), s.documented())), Some((0x00C8, false)));
         assert!(fsk2400.documented() && ffsk.documented());
         for bad in ["299", "9601", "fsk", "", "12000"] {
             assert_eq!(s(bad), None, "{bad}");
         }
+    }
+
+    /// TERM-43 (ferrite#192): the framing options, and REG_58/5C with them.
+    #[test]
+    fn options_set_the_framing() {
+        let mut o = Opts::FRAME;
+        for w in ["sync=01A3a33f", "pre=1", "ptype=2", "inv", "scr", "base=fsk"] {
+            assert!(o.word(w.as_bytes()), "{w}");
+        }
+        assert_eq!(o, Opts { sync: [0x01, 0xA3, 0xA3, 0x3F], sync4: true, pre: 1, ptype: 2, inv: true, scr: true, base: Some(BASE_FSK) });
+        assert!(o.word(b"sync=8c5c"));
+        assert_eq!((o.sync[..2].to_vec(), o.sync4), (std::vec![0x8C, 0x5C], false));
+        for bad in ["pre=0", "pre=17", "ptype=4", "sync=123", "sync=12345g78", "nocrc", "base=x", "pre="] {
+            assert!(!Opts::FRAME.clone().word(bad.as_bytes()), "{bad}");
+        }
+        let acars = Speed::parse(b"acars").unwrap();
+        let c = Cfg { opt: o, ..Cfg::new(acars, false) };
+        assert_eq!((c.reg58(), c.reg5c()), (0x73E8, 0x5625));
+        assert_eq!((Cfg::new(acars, true).reg58(), Cfg::new(acars, true).reg5c()), (0x73C8, 0xA770));
     }
 }

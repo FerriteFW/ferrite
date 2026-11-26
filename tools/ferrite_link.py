@@ -3,7 +3,7 @@
 the radio's side is ferrite-core's link.rs and ferrite-app's link.rs).
 
     pip install pyserial
-    python3 tools/ferrite_link.py PORT hello
+    python3 tools/ferrite_link.py PORT hello      # PORT: a device, ble:ID, tcp:HOST:PORT, a radio's name, or auto
     python3 tools/ferrite_link.py PORT info
     python3 tools/ferrite_link.py PORT read-settings settings.bin
     python3 tools/ferrite_link.py PORT write-settings settings.bin
@@ -69,7 +69,7 @@ facts tests poll, cheap on Bluetooth where the whole readback takes seconds.
 As a library (the test runner's):
 
     from ferrite_link import Radio
-    with Radio("tcp:127.0.0.1:7300") as r:      # or "/dev/cu.usbserial-114220", or "ble:walkie-talkie" (pin="1234")
+    with Radio("tcp:127.0.0.1:7300") as r:      # or "/dev/cu.usbserial-XXXX", a radio's name, or "ble:walkie-talkie" (pin="1234")
         r.keys("MENU 0 7")                      # or r.press("MENU"), r.press("HASH", long=True)
         r.knob(+2)
         ui = r.ui()                             # {"screen": {...}, "rows": [...], "sel": {...}, "hints": [...]}
@@ -99,6 +99,7 @@ CONTACT = 6  # APRS-42
 POSITION = 7  # LINK-53: a channel's position by number, <ii lat, lon in 1e-7 degree; b"" clears it
 DATA_READ, DATA_WRITE = 0x61, 0x62  # LINK-59, LINK-60 (decision 333): the SPI data range raw (writes: the cable only)
 CLOCK = 0x63  # LINK-65 (decision 340): set or read the radio's clock
+SSB_WRITE = 0x64  # LINK-73 (decision 457): the SSB patch into a radio on Ferrite (Console sends it)
 STATE, TUNE = 0x34, 0x35  # LINK-67, LINK-68 (decision 373): the radio state record, a slot tuned by command
 BEACON = 0x36  # LINK-69: a beacon now, as the radio's own
 PHONE_POS = 0x37  # LINK-72: the phone's position (GPS-3.1: used locally, never beaconed)
@@ -265,8 +266,102 @@ class BlePort:
             self._loop.call_soon_threadsafe(self._loop.stop)
 
 
+# Port and radio names (#217): one resolver for every tool that takes a port.
+RADIOS_TOML = os.path.join(os.path.expanduser("~"), ".config", "ferrite", "radios.toml")
+CABLE_GLOBS = {"darwin": "/dev/cu.usbserial-*", "linux": "/dev/ttyUSB*"}  # the CH340 programming cable
+AUTO = (None, "", "auto", "-")
+
+
+class PortError(Exception):
+    """No port could be chosen: the message says why and what is there."""
+
+
+def cables(glob_fn=None, platform=None):
+    """The CH340 cables present, sorted (macOS /dev/cu.usbserial-*, Linux /dev/ttyUSB*)."""
+    import glob
+    pattern = CABLE_GLOBS.get(platform or sys.platform)
+    return sorted((glob_fn or glob.glob)(pattern)) if pattern else []
+
+
+def load_radios(path=None):
+    """radios.toml as a dict ({} when it isn't there): `default` and a [radios.NAME] table a radio."""
+    path = path or os.environ.get("FERRITE_RADIOS") or RADIOS_TOML
+    if not os.path.exists(path):
+        return {}
+    import tomllib
+    with open(path, "rb") as f:
+        return tomllib.load(f)
+
+
+def is_port(spec):
+    """An explicit port: ble:..., tcp:..., a device path or a Windows COM port (names are plain words)."""
+    return (spec.startswith(("ble:", "tcp:")) or "/" in spec or "\\" in spec
+            or (spec.upper().startswith("COM") and spec[3:].isdigit()))
+
+
+def _the_cable(found, why):
+    if len(found) == 1:
+        return found[0]
+    if not found:
+        raise PortError(f"{why}: no cable found ({' or '.join(CABLE_GLOBS.values())}); plug it in, or give a port "
+                        "(PORT, ble:ID, tcp:HOST:PORT) or a radio name from radios.toml")
+    raise PortError(f"{why}: {len(found)} cables found, say which: {', '.join(found)}")
+
+
+def resolve_port(spec=None, *, cable_only=False, env=None, radios=None, glob_fn=None, platform=None):
+    """PORT as the tools take it, to a port Port() opens:
+    - an explicit port (a device, ble:ID, tcp:HOST:PORT) as given;
+    - a radio's name from ~/.config/ferrite/radios.toml (NAME:ble forces Bluetooth, NAME:cable the cable): the cable
+      when the radio has `cable` and exactly one CH340 is present, else its `ble` ID;
+    - nothing (or "auto"): FERRITE_PORT (a port or a name), else radios.toml's `default`, else the only CH340.
+    cable_only: the tool needs the cable (flash.py, term.py): a name gives its cable or an error, never BLE."""
+    env = os.environ if env is None else env
+    found = lambda: cables(glob_fn, platform)  # noqa: E731
+    if spec in AUTO:
+        if env.get("FERRITE_PORT") not in AUTO:
+            return resolve_port(env["FERRITE_PORT"], cable_only=cable_only, env={}, radios=radios,
+                                glob_fn=glob_fn, platform=platform)
+        radios = load_radios() if radios is None else radios
+        if radios.get("default"):
+            return resolve_port(radios["default"], cable_only=cable_only, env={}, radios=radios,
+                                glob_fn=glob_fn, platform=platform)
+        return _the_cable(found(), "no port given (nor FERRITE_PORT, nor a default in radios.toml)")
+    if is_port(spec):
+        if cable_only and spec.startswith(("ble:", "tcp:")):
+            raise PortError(f"{spec}: this needs the cable")
+        return spec
+    radios = load_radios() if radios is None else radios
+    name, _, how = spec.partition(":")
+    table = radios.get("radios", {})
+    if name not in table:
+        known = ", ".join(sorted(table)) or "none configured (radios.example.toml shows the format)"
+        raise PortError(f"{spec}: not a port nor a radio in radios.toml ({known})")
+    r = table[name]
+    if how not in ("", "ble", "cable"):
+        raise PortError(f"{spec}: {name}:ble or {name}:cable")
+    if cable_only and how == "ble":
+        raise PortError(f"{spec}: this needs the cable")
+    cable = r.get("cable")
+    if how != "ble" and cable:
+        if isinstance(cable, str):  # a fixed device
+            if how == "cable" or cable_only or os.path.exists(cable):
+                return cable
+        else:
+            got = found()
+            if how == "cable" or cable_only or not r.get("ble"):
+                return _the_cable(got, f"{name}'s cable")
+            if len(got) == 1:
+                return got[0]
+    if how == "cable" or cable_only:
+        raise PortError(f"{name}: no cable in radios.toml")
+    if r.get("ble"):
+        return "ble:" + r["ble"]
+    raise PortError(f"{name}: radios.toml gives it neither cable nor ble")
+
+
 def Port(spec):  # noqa: N802 (a class once; callers construct it)
     """The transport for PORT: ble:NAME_OR_ADDRESS, tcp:HOST:PORT, or a serial device."""
+    spec = resolve_port(spec)  # a radio's name, or nothing: FERRITE_PORT, the default, the only cable
     if spec.startswith("ble:"):
         return BlePort(spec[4:])
     return StreamPort(spec)
@@ -537,6 +632,11 @@ class Link:
     def data_stamp(self, layout=3):
         """LINK-62: the layout header written last; the radio restarts on it."""
         self.ok(DATA_WRITE, struct.pack("<BH", 2, layout))
+
+    def ssb_held(self):
+        """LINK-73: the SHA-256 (hex) of the SSB patch the radio holds, verified, or None."""
+        a = self.ok(SSB_WRITE, bytes([3]))
+        return a[1:33].hex() if a[:1] == b"\x01" else None
 
     def used(self, what):
         """LINK-39: the indexes of `what` that hold a record (protocol 3: in parts from a first index)."""
@@ -1173,7 +1273,7 @@ def ago(s):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("port")
+    ap.add_argument("port", help="a device, ble:ID, tcp:HOST:PORT, a name from radios.toml (NAME:ble), or auto")
     ap.add_argument("cmd")
     ap.add_argument("args", nargs="*")
     ap.add_argument("--name")
@@ -1188,7 +1288,10 @@ def main():
                     help="audio: the decoders' samples as 12-bit PCM at 12000 (default) or 16000 Hz (LINK-13.9, bench builds)")
     ap.add_argument("--poke", metavar="REG=HEX,...", help="audio --raw on a bench build: rewrite chip 1's registers every 100 ms in the same session (the radio's tune and audio routing rewrite them), e.g. 47=6942")
     a = ap.parse_args()
-    port = Port(a.port)
+    try:
+        port = Port(a.port)
+    except PortError as e:
+        sys.exit(str(e))
     try:
         sys.exit(run(Link(port), a))
     finally:
@@ -1342,13 +1445,14 @@ def raw_audio(link, seconds, path, rate, poke=None):
 
 
 BENCH_BIT = 0x80  # LINK-35: bit 7 of the build byte marks a bench build (decision 151: tx-dry is 0x82)
+UNOFFICIAL_BIT = 0x40  # SELF-5.1: bit 6 marks a build that isn't an official release (decision 466)
 
 
 def build_name(rest):
     """LINK-35: the build byte after HELLO's version or INFO's callsign (absent before Oct 13, 2026): its flavour,
-    bit 7 (a bench build) masked off; build_bench() says whether it is set. "tx+dry" (3): a full-power tx build with
+    bits 7 (a bench build) and 6 (unofficial, SELF-5.1) masked off; build_bench() says whether it is set. "tx+dry" (3): a full-power tx build with
     Dry TX on (TX-48), the PA drive held at 0 until it is turned off on the radio; build_dry() covers both dry kinds."""
-    return {0: "receive", 1: "tx", 2: "tx-dry", 3: "tx+dry"}.get(rest[0] & 0x7F, f"unknown {rest[0]}") if rest else "not given"
+    return {0: "receive", 1: "tx", 2: "tx-dry", 3: "tx+dry"}.get(rest[0] & 0x3F, f"unknown {rest[0]}") if rest else "not given"
 
 
 def build_dry(rest):
@@ -1359,6 +1463,11 @@ def build_dry(rest):
 def build_bench(rest):
     """LINK-35: a bench build (bit 7): the bench terminal commands (txtest, bk, mem, gpio, ...) are in it."""
     return bool(rest and rest[0] & BENCH_BIT)
+
+
+def build_official(rest):
+    """SELF-5.1: an official release (bit 6 clear; a radio before it was added never sets it)."""
+    return bool(rest) and not rest[0] & UNOFFICIAL_BIT
 
 
 UID_DIGITS = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base32 (ferrite_core::uid)
@@ -1395,6 +1504,16 @@ def ble_fast(link, name=b"ferrite_link.py"):
             time.sleep(0.5)
     link.hello(name)
     return 9_600
+
+
+def read_info(link):
+    """INFO (LINK-35, LINK-35.1) as a dict: version, build, bench, channels, zones, presets, settings, region,
+    callsign, uid."""
+    ver, r = text(link.ok(INFO))
+    chans, zones, presets, slen, region = struct.unpack("<HHBHB", r[:8])
+    call, rest = text(r[8:])
+    return {"version": ver, "build": build_name(rest), "bench": build_bench(rest), "channels": chans, "zones": zones,
+            "presets": presets, "settings": slen, "region": region, "callsign": call, "uid": uid_text(rest[1:13])}
 
 
 def run(link, a):
@@ -1451,15 +1570,13 @@ def run(link, a):
     if a.cmd == "hello":
         ver, rest = text(hello[3:])
         print(f"protocol {hello[0]}, max payload {hello[1]}, may write {bool(hello[2])}, firmware {ver}, "
-              f"build {build_name(rest)}{' (bench)' if build_bench(rest) else ''}")
+              f"build {build_name(rest)}{' (bench)' if build_bench(rest) else ''}"
+              f"{'' if build_official(rest) else ', unofficial'}")
     elif a.cmd == "info":
-        r = link.ok(INFO)
-        ver, r = text(r)
-        chans, zones, presets, slen, region = struct.unpack("<HHBHB", r[:8])
-        call, rest = text(r[8:])
-        uid = uid_text(rest[1:13])
-        print(f"firmware {ver} ({build_name(rest)}{', bench' if build_bench(rest) else ''}); {chans} channels, {zones} zones, {presets} presets; "
-              f"settings {slen} B; region {region}; callsign {call or '-'}; unique ID {uid or 'not given'}")
+        i = read_info(link)
+        print(f"firmware {i['version']} ({i['build']}{', bench' if i['bench'] else ''}); {i['channels']} channels, "
+              f"{i['zones']} zones, {i['presets']} presets; settings {i['settings']} B; region {i['region']}; "
+              f"callsign {i['callsign'] or '-'}; unique ID {i['uid'] or 'not given'}")
     elif a.cmd == "read-settings":
         rec = link.read(SETTINGS, 0)
         open(a.args[0], "wb").write(rec)

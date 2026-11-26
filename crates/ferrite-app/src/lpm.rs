@@ -104,6 +104,7 @@ impl App {
         for s in 0..SLOTS as u8 {
             if self.scan_mask & 1 << s != 0 {
                 self.out.push(RadioCmd::Scan { slot: s, on: false });
+                self.send_slot(s); // SCAN-6: back from the scan's last step (ferrite#213)
             }
         }
         self.scan_mask = 0;

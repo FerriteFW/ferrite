@@ -169,7 +169,8 @@ fn hello_and_info() {
 /// LINK-35: HELLO's answer ends with the build after the version, INFO's after the callsign: 0 receive, 1 tx,
 /// 3 tx with Dry TX on (TX-48), from the firmware's features (`Device::tx_built`) and the switch, with bit 7 set when
 /// the bench commands are in (`Device::bench`, TERM-38): the tx-bench build answers 0x83 from power-on (TX-48.1).
-/// 2 is the retired tx-dry build's (decision 193), still named for an older radio.
+/// 2 is the retired tx-dry build's (decision 193), still named for an older radio. SELF-5.1: bit 6 set on any build
+/// but an official release.
 /// LINK-35.2: HELLO ends with the capability byte (decision 385: compression, audio, the line commands), the layouts
 /// and the lists generation.
 #[test]
@@ -188,6 +189,9 @@ fn hello_and_info_give_the_build() {
         (pc.dev.tx_built, pc.dev.bench) = (tx, bench);
         pc.app.set_dry_tx(on);
         assert_eq!(build::dry(b), tx && on, "dry {b:#x}");
+        // SELF-5.1: bit 6 on every build but an official release's (the tests are never one)
+        let b = b | if ferrite_core::OFFICIAL { 0 } else { build::UNOFFICIAL };
+        assert_eq!(build::dry(b), tx && on, "dry {b:#x}, unofficial");
         let (_, a) = pc.ask(msg::HELLO, &[PROTOCOL]);
         let v = 4 + a[3] as usize;
         let cmds = if cfg!(feature = "line-cmds") { ferrite_core::link::caps::LINE_CMDS } else { 0 };
@@ -1567,7 +1571,8 @@ fn ui_status_line() {
     assert_eq!(s, Status::BadArg as u8);
 }
 
-/// LINK-19.6: `UI` what=4 is the radio's own report for Console's debug info: the flash chip and the store's
+/// LINK-19.6, SELF-5.1: `UI` what=4 is the radio's own report for Console's debug info: the build and whether it's
+/// official, the flash chip and the store's
 /// mount (a user's radio whose writes didn't stay, Nov 19, 2026), calibration, the chips, what is stored, and no
 /// callsign.
 #[test]
@@ -1588,6 +1593,9 @@ fn ui_radio_report() {
         i += 1;
     }
     assert!(all.starts_with("firmware version="), "{all}");
+    // SELF-5.1: the build ID and whether it's an official release (the tests aren't, unless FERRITE_OFFICIAL=1)
+    let official = ferrite_core::OFFICIAL as u8;
+    assert!(all.contains(&std::format!(" build={} official={official} tx=", ferrite_core::build())), "{all}");
     assert!(all.contains("flash id=0xef4016 mb=4 store=FAILED layout="), "{all}");
     assert!(all.contains("cal state=unknown") && all.contains("chips bk4829=0x3 ") && all.contains("data channels="), "{all}");
     assert!(all.contains("restart after=start in_a_row=0"), "{all}");
@@ -2045,6 +2053,36 @@ fn raw_data_shapes_ranges_and_ports() {
     let mut bt = Pc::new(false);
     assert_eq!(bt.ask(msg::DATA_WRITE, &[ERASE, 0, 0, 1, 0]).0, Status::Refused as u8, "never over Bluetooth");
     assert_eq!(bt.ask(msg::DATA_READ, &[READ, 0, 0, 0, 0, 16]).0, Status::NotFound as u8, "reads go on over Bluetooth");
+}
+
+/// LINK-73, LINK-8, HF-18: `SSB_WRITE`'s shapes are checked before the store is asked: only the known stock patch's
+/// hash (the radio's question for another, D15, isn't asked over the link), a length the region takes, pieces only
+/// after a `BEGIN` and only whole records inside its length; `CHECK` says what is held. Bluetooth past the PIN only.
+#[test]
+fn ssb_write_shapes() {
+    use ferrite_core::link::ssb::{begin, CHECK, FINISH, PROGRAM};
+    use ferrite_core::ssb::KNOWN_SHA256;
+    let mut pc = Pc::new(true);
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[CHECK]), (Status::Ok as u8, std::vec![0]), "none held");
+    let (st, why) = pc.ask(msg::SSB_WRITE, &begin(15_832, &[0x5A; 32]));
+    assert_eq!((st, &why[..]), (Status::Invalid as u8, &b"ssb: not the stock patch Ferrite knows"[..]));
+    assert_eq!(pc.ask(msg::SSB_WRITE, &begin(15_830, &KNOWN_SHA256)).0, Status::BadArg as u8, "not whole records");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &begin(16_384, &KNOWN_SHA256)).0, Status::BadArg as u8, "past the region");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &begin(15_832, &KNOWN_SHA256)[..36]).0, Status::BadArg as u8);
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[PROGRAM, 0, 0, 0x15, 0, 0, 0, 0, 0, 0, 0]).0, Status::BadArg as u8, "no BEGIN");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[FINISH]).0, Status::BadArg as u8, "no BEGIN");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &begin(15_832, &KNOWN_SHA256)).0, Status::Busy as u8, "no store to queue it");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[9]).0, Status::BadArg as u8);
+    // Past a BEGIN (the session's own), a piece is checked against its length and the records' framing.
+    pc.link.ssb = Some(ferrite_core::ssb::Patch { len: 800, sha: KNOWN_SHA256 });
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[PROGRAM, 0, 0, 0x16, 0, 0, 0, 0, 0, 0, 0]).0, Status::BadArg as u8, "a 0x15 first");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[PROGRAM, 0x20, 0x03, 0x16, 0, 0, 0, 0, 0, 0, 0]).0, Status::BadArg as u8, "past 800");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[PROGRAM, 8, 0, 0x16, 0, 0, 0, 0, 0, 0, 0]).0, Status::Busy as u8, "shape ok: no store");
+    let mut bt = Pc::new(false);
+    (bt.app.set.pin, bt.app.set.pin_len, bt.app.set.pin_mode) = (1234, 4, 1);
+    assert_eq!(bt.ask(msg::SSB_WRITE, &[CHECK]).0, Status::NotAuthorised as u8, "Bluetooth: the PIN first");
+    assert_eq!(bt.ask(msg::AUTH, b"1234").0, Status::Ok as u8);
+    assert_eq!(bt.ask(msg::SSB_WRITE, &[CHECK]).0, Status::Ok as u8);
 }
 
 /// UPD-16.2: `DATA_WRITE` `PART` names the part the installer writes now, for the Updating page; nothing is written.

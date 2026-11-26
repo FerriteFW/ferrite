@@ -21,6 +21,14 @@ pub fn set_chip_decides(on: bool) {
     CHIP.store(on, Relaxed);
 }
 
+/// SQL-9.4, SQL-13.2: whether home's scope strip holds on its slot's frequency, open, instead of sweeping: a monitor
+/// on that slot, or its squelch at level 0 (always open, as on home without the strip; ferrite#140, #44: level 0
+/// was heard only while a carrier held the strip, so home stayed silent until a menu stopped it). Not while the slot
+/// is muted or off (HOME-15): nothing would be heard.
+pub const fn strip_held(monitor: bool, level: u8, silenced: bool) -> bool {
+    !silenced && (monitor || level == 0)
+}
+
 /// SQL-18.7: how long the chip's squelch bit must read open, at least [`MIN_READS`] readings, before receive opens:
 /// stock's three polls in a row at its 10 ms loop (V0.27 0x0801D3AA), after the chip's own open delay. In time, so a
 /// lone slot's 50 ms poll opens on two readings.
@@ -207,6 +215,18 @@ impl SoftSq {
 
 #[cfg(test)]
 mod tests {
+    /// SQL-13.2, SQL-9.4: level 0 holds the strip on its slot, open, as monitor does; any other level sweeps on
+    /// until a carrier; a muted or off slot never holds it.
+    #[test]
+    fn strip_held_at_level_0_or_monitor() {
+        assert!(super::strip_held(false, 0, false));
+        assert!(super::strip_held(true, 5, false));
+        for l in 1..=9 {
+            assert!(!super::strip_held(false, l, false));
+        }
+        assert!(!super::strip_held(true, 0, true));
+    }
+
     use super::*;
 
     impl SoftSq {

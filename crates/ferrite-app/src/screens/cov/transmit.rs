@@ -340,6 +340,28 @@ fn aprs_frequency_prompt() {
     t.shows("carries APRS packets; voice blocks them.");
 }
 
+/// TX-35.5.1: an automatic transmission's refusal toast fits the hint bar's line whatever the transmission and the
+/// reason: "Beacon not sent:" and the reason, else the transmission alone as the head, else "Not sent:"; only WFM's
+/// reason is ever cut (crash hunts, ferrite#144).
+#[test]
+fn not_sent_toast_fits() {
+    use ferrite_ui::widgets::toast_fits;
+    let mut t = T::ready();
+    let refusals = ALL.into_iter().chain([Refusal::WfmRxOnly]).map(tx::short);
+    let whys = refusals.chain(["emergency frequency", "no callsign set", "callsign over 6", "no position", "channel busy"]);
+    for why in whys {
+        for what in ["Beacon", "KISS", "Digipeat", "Message", "Ack", "Query reply", "SSTV"] {
+            tx::not_sent(&mut t.app, what.as_bytes(), why.as_bytes());
+            let shown = t.toast();
+            let (head, body) = shown.split_once(" / ").unwrap();
+            assert!(toast_fits(head.as_bytes(), body.as_bytes(), false), "{what}, {why}: {shown}");
+            assert!(head == std::format!("{what} not sent:") || head == std::format!("{what}:") || head == "Not sent:", "{shown}");
+            // WFM's reason only, on no automatic transmission's slot but SSTV's (which has it whole)
+            assert!(body == why || why.starts_with(body) && why.starts_with("WFM") && what != "SSTV", "{what}, {why}: cut to {body:?}");
+        }
+    }
+}
+
 /// TX-35: automatic transmissions are refused with a toast: an emergency frequency, no callsign, a callsign over
 /// 6 (KISS excepted), the repeater running; a frame that couldn't be built says why too.
 #[test]
@@ -358,7 +380,7 @@ fn automatic_transmissions_checks() {
     assert_eq!(tx::refusal(&t.app, a), Some(Refusal::Crossband));
     assert_eq!(tx::ptt_refusal(&t.app, a), None, "XB-14: a person's PTT isn't refused");
     assert!(!tx::auto_tx(&mut t.app, a, b"Beacon"));
-    assert_eq!(t.toast(), "Beacon not sent: / repeater running");
+    assert_eq!(t.toast(), "Beacon: / repeater running", "too long after \"Beacon not sent:\": the head shortened");
     t.app.radio.mode = crate::screens::activity::Mode::Off;
     t.app.radio.keyed = Some(1);
     assert_eq!(tx::ptt_refusal(&t.app, a), Some(Refusal::InProgress));

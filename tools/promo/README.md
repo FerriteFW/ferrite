@@ -5,9 +5,9 @@ frame), each block gets a 1920 x 1080 card with its captions, and the blocks are
 
 ```sh
 tools/promo/music/fetch.sh                      # the music (once; not committed)
-../.venv/bin/python tools/promo/mkvideo.py                  # tools/promo/preview.story -> target/promo/preview.mp4
-../.venv/bin/python tools/promo/mkvideo.py my.story -o out.mp4
-../.venv/bin/python tools/promo/mkvideo.py --only 3         # just block 3, to tune its script
+.venv/bin/python tools/promo/mkvideo.py                  # tools/promo/preview.story -> target/promo/preview.mp4
+.venv/bin/python tools/promo/mkvideo.py my.story -o out.mp4
+.venv/bin/python tools/promo/mkvideo.py --only 3         # just block 3, to tune its script
 ```
 
 Needs ffmpeg, Google Chrome (headless, for the cards) and Pillow (the key chips; in the project's `.venv`). From `ferrite/`.

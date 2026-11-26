@@ -41,24 +41,24 @@ def slot_in_the_band_is_broadcast(t):
 
 @test("BCR-22", pages=("Home", "Status"))
 def one_broadcast_slot_and_handover(t):
-    """One slot plays broadcast at a time: the one that came into the band last. The other reads "FM on A"; when
+    """One slot plays broadcast at a time: the one that came into the band last. The other reads "WFM on A"; when
     the playing slot leaves, the one still in the band takes the broadcast."""
     t.cmd(f"slot A vfo {QUIET}")
     t.cmd("slot B vfo 100.1")
     b = card(t, "B")
     t.eq(b["kind"], "broadcast", "B in the band")
-    t.check(b["state"] in ("FM", "muted"), "B plays (or is muted by a slot heard)", b["state"])
+    t.check(b["state"] in ("WFM", "muted"), "B plays (or is muted by a slot heard)", b["state"])
     t.cmd("slot A vfo 98.5")
     u = t.ui(0.5)
-    t.eq(u.cards["B"]["state"], "FM on A", "A came in last: B says the broadcast is on A")
-    t.check(u.cards["A"]["state"] in ("FM", "muted"), "A has it", u.cards["A"]["state"])
+    t.eq(u.cards["B"]["state"], "WFM on A", "A came in last: B says the broadcast is on A")
+    t.check(u.cards["A"]["state"] in ("WFM", "muted"), "A has it", u.cards["A"]["state"])
     t.cmd(f"slot A vfo {QUIET}")
     u = t.ui(0.5)
     t.eq(u.cards["A"]["kind"], "slot", "A tuned out")
-    t.check(u.cards["B"]["state"] in ("FM", "muted"), "B, still in the band, takes the broadcast back",
+    t.check(u.cards["B"]["state"] in ("WFM", "muted"), "B, still in the band, takes the broadcast back",
             u.cards["B"]["state"])
     u = t.keys("MENU 0 0")
-    t.eq(u.row("Broadcast")["value"], "FM 100.1 on B", "Status: the broadcast and its slot")
+    t.eq(u.row("Broadcast")["value"], "WFM 100.1 on B", "Status: the broadcast and its slot")
 
 
 @test("BCR-23", "BCR-15", pages=("Home", "Scan"))
@@ -71,11 +71,11 @@ def broadcast_ignores_watch_and_drops_relay_slots(t):
         t.cmd("slot B vfo 28.4")
         t.set("0 1 1", "Off")
         # A slot heard just before has the speaker for 2 s more (BCR-24): wait for the broadcast to play.
-        u = t.wait(lambda u: u.cards["A"]["state"] == "FM", timeout=5, what="watch off: A plays")
+        u = t.wait(lambda u: u.cards["A"]["state"] == "WFM", timeout=5, what="watch off: A plays")
         t.eq(u.cards["A"]["kind"], "broadcast", "watch off: A still the broadcast slot")
         t.eq(u.cards["B"]["state"], "Watch off: relay", "B on 28 MHz")
         t.set("0 1 1", "A+B+C")
-        u = t.wait(lambda u: u.cards["A"]["state"] == "FM", timeout=5, what="watch A+B+C: A plays")
+        u = t.wait(lambda u: u.cards["A"]["state"] == "WFM", timeout=5, what="watch A+B+C: A plays")
         t.eq(u.cards["B"]["state"], "Watch off: relay", "B on 28 MHz still isn't watched")
         t.eq(u.cards["B"]["rx"], 0, "and isn't heard")
         t.cmd("slot B vfo 146.52")

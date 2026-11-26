@@ -1,0 +1,20 @@
+# Your radios by name, for every tool that takes a port (and `just flash NAME`).
+# Copy to ~/.config/ferrite/radios.toml (FERRITE_RADIOS points elsewhere); `just radio-add NAME` writes entries.
+# A name works anywhere a port does: `bench`, `bench:ble` (Bluetooth), `bench:cable`.
+# No port given: FERRITE_PORT, then `default`, then the only cable plugged in.
+
+default = "bench"
+
+[radios.bench]
+cable = true                    # the CH340 cable, used when exactly one is plugged in (or a fixed "/dev/...")
+ble = "AA:BB:CC:DD:EE:FF"       # the Bluetooth address (macOS: the ID bleak shows); used when the cable isn't
+build = "tx-bench"              # the build `just flash` makes (tools/mkbtf.sh): receive, tx or tx-bench
+backup = "~/ferrite-backups/bench.bin"  # its whole-chip backup: flash.py refuses without one
+confirm_flash = true            # `just flash` asks first
+note = "the bench radio, Dry TX on"
+
+[radios.daily]
+ble = "00000000-1111-2222-3333-444444444444"
+build = "tx"
+backup = "~/ferrite-backups/daily.bin"
+note = "the radio in daily use"

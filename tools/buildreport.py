@@ -51,10 +51,12 @@ def build_info(build):
     flavour, stem = BUILDS[build]
     btf, bin_ = (os.path.join(ROOT, "target", stem + ext) for ext in (".btf", ".bin"))
     img = open(bin_, "rb").read()
-    commit = run("git", "rev-parse", "--short", "HEAD").stdout.strip()
+    commit = os.environ.get("FERRITE_COMMIT") or run("git", "rev-parse", "--short", "HEAD").stdout.strip()
     dirty = bool(run("git", "status", "--porcelain", "--", ".").stdout.strip())
     version = re.search(r'^version = "([^"]+)"', open(os.path.join(ROOT, "Cargo.toml")).read(), re.M).group(1)
-    return dict(build=build, version=version, commit=commit, dirty=dirty,
+    # SELF-5.1: About's "Unofficial build" label is in the image unless the release workflow built it (FERRITE_OFFICIAL=1)
+    official = b"Unofficial build" not in img
+    return dict(build=build, version=version, commit=commit, dirty=dirty, official=official,
                 date=datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
                 rustc=run("rustc", "-V").stdout.strip(), image=os.path.basename(btf),
                 image_bytes=os.path.getsize(btf), crc32=f"{zlib.crc32(img):08X}",
@@ -252,7 +254,8 @@ def page(r):
     out = [f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
            f"<title>Ferrite {e(b['version'])} {e(b['build'])} build report</title><style>{CSS}</style><main>",
            f"<h1>Ferrite {e(b['version'])}, {e(b['build'])} build</h1>",
-           f"<p class=sub>Commit <code>{e(b['commit'])}</code>{' (with uncommitted changes)' if b['dirty'] else ''} · "
+           f"<p class=sub>{'Official release build' if b.get('official') else 'Unofficial build'} · "
+           f"commit <code>{e(b['commit'])}</code>{' (with uncommitted changes)' if b['dirty'] else ''} · "
            f"{e(b['date'])} · {e(b['rustc'])}</p>",
            "<div class=grid>",
            f"<div class=card>Image<b>{kb(b['image_bytes'])}</b>{e(b['image'])}, image CRC-32 {b['crc32']} (as mkbtf.sh's first line)</div>",

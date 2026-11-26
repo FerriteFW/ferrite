@@ -121,6 +121,7 @@ impl Aprs {
         let kiss_on = app.kiss_on(); // PWR-24: none in Low Power Mode. KISS-9: C is the APRS slot meanwhile (`App::aprs_c`)
         let on = app.aprs_on();
         let send = app.aprs_sending();
+        let paused = app.auto_tx_paused(); // TX-51: HF mode, the scope, the counter, tone search, the satellite screen
         let decode = on || kiss_on || app.aprs_flag_decode(); // APRS-22
         // KISS-13: a client's frame doesn't outlive KISS (nor wait in Low Power Mode, PWR-24).
         if !kiss_on {
@@ -132,7 +133,10 @@ impl Aprs {
         if decode != self.on && DSP.try_send(DspCmd::Decoder(if decode { DecoderKind::Afsk } else { DecoderKind::Off })).is_ok() {
             self.on = decode;
         }
-        let now_s = now_ms / 1000;
+        // Seconds since power-on from the 64-bit count, never going back: `now_ms / 1000` went back to 0 after 49.7
+        // days, and our messages being tried (APRS-13.6), a digipeat waiting and the beacon's timer then waited
+        // another 49.7 days for the clock to come round (found by fuzz_aprs_clock).
+        let now_s = embassy_time::Instant::now().as_secs() as u32;
         // Frames heard (APRS-3, APRS-6), and FX.25 blocks corrected here (APRS-44: 3 to 13 ms of this task's
         // time, not the DSP task's).
         while let Ok(h) = APRS_RX.try_receive() {
@@ -232,8 +236,11 @@ impl Aprs {
             // APRS-10.1: APRS mode or beacons turned off (or Low Power Mode, or KISS) while it waited: dropped,
             // never keyed on C's own channel.
             &Tx::Clearing { what } if !send.may_send(what) => self.tx = Tx::Idle,
-            // TX-24.2: another key-up under way (an SSTV picture, PTT): waited out, not timed against the channel
-            Tx::Clearing { .. } if app.tx_busy() => {}
+            // TX-51.2: an ack or a digipeat would be stale once the mode ends: dropped
+            &Tx::Clearing { what: "Ack" | "Digipeat" } if paused => self.tx = Tx::Idle,
+            // TX-24.2: another key-up under way (an SSTV picture, PTT): waited out, not timed against the channel;
+            // TX-51.1: so is HF mode, the scope, the counter, tone search or the satellite screen
+            Tx::Clearing { .. } if app.tx_busy() || paused => {}
             &Tx::Clearing { what } => {
                 let busy = live.slots[SLOT_C as usize].carrier; // SQL-13.1
                 let r = self.random();
@@ -272,8 +279,15 @@ impl Aprs {
             // KISS-2: the app's frame, exempt from the 30 s spacing, once the channel is clear (p-persistence).
             // KISS-13: a frame the channel stays busy for gives up after APRS-10's 5 s (the client resends as it
             // sees fit), so it neither waits for ever nor holds back the frames after it.
-            Tx::Idle if kiss_on && self.kiss_q.is_some() && now_ms.wrapping_sub(self.kiss_at) >= CLEAR_WAIT_MS => self.kiss_q = None,
-            Tx::Idle if kiss_on && self.kiss_q.is_some() && !app.tx_busy() => {
+            // TX-51.3 (HF-7): one that waited out a paused mode is refused with the reason.
+            Tx::Idle if kiss_on && self.kiss_q.is_some() && now_ms.wrapping_sub(self.kiss_at) >= CLEAR_WAIT_MS => {
+                self.kiss_q = None;
+                if let Some(why) = app.auto_tx_pause() {
+                    transmit::not_sent(app, b"KISS", why.as_bytes());
+                }
+            }
+            // TX-51.3: and while automatic transmissions are paused it just waits (within KISS-13's 5 s).
+            Tx::Idle if kiss_on && self.kiss_q.is_some() && !app.tx_busy() && !paused => {
                 let busy = live.slots[SLOT_C as usize].carrier; // SQL-13.1
                 let r = self.random();
                 if self.access.may_send(&self.params, now_ms, busy, r) {
@@ -283,6 +297,11 @@ impl Aprs {
                         self.tx = Tx::Keying { at_ms: now_ms, beacon: false };
                     }
                 }
+            }
+            // TX-51.1, TX-51.2: paused, beacons and our messages wait for the mode's end; acks and digipeats go
+            Tx::Idle if paused && now_s != self.last_s => {
+                self.last_s = now_s;
+                extra.aprs.paused();
             }
             Tx::Idle if now_s != self.last_s => {
                 self.last_s = now_s;

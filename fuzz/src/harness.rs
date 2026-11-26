@@ -222,3 +222,28 @@ pub fn aprs_live(data: &[u8]) {
         now += 7;
     }
 }
+
+/// ACARS (chapter 27b): frames after their SOH through the parser, and into the RAM log as the Radio task will hand
+/// them (ferrite_app::acars::AcarsLive: copies dropped, blocks joined, the text pool). Input: frames separated by
+/// SOH (0x01, as each burst's sync ends); 7 s between frames, so copies, joins and overdue blocks all happen.
+pub fn acars(data: &[u8]) {
+    use ferrite_core::acars::{parse, JOIN_MAX, SOH, TEXT_MAX};
+    let live = ferrite_app::acars::AcarsLive::new();
+    let mut now = 1000u32;
+    let mut text = [0u8; JOIN_MAX];
+    for f in data.split(|&b| b == SOH) {
+        if let Ok(p) = parse(f) {
+            assert!(p.text().len() <= TEXT_MAX);
+            let _ = (p.reg(), ferrite_core::acars::label(p.label), p.up());
+        }
+        let _ = live.frame(f, (now % 7) as u8, now);
+        now += 7;
+    }
+    live.tick(now + 60);
+    assert!(live.len() as usize <= ferrite_app::acars::KEEP);
+    for i in 0..live.len() {
+        let (m, n) = live.get(i, &mut text).expect("every message counted is there");
+        assert!(n <= JOIN_MAX && m.blocks >= 1);
+        let _ = (m.airline(), m.flight(), m.reg());
+    }
+}

@@ -84,12 +84,13 @@ impl Default for Cfg {
 /// VOX-12: the ID goes at the next unkey once this long has passed since the last one.
 pub const CW_ID_MS: u32 = 10 * 60_000;
 /// TX-31's duty limit (TX-38), a leaky bucket (to confirm on the bench): keyed time fills it, weighted by the power
-/// level (High heats the PA most), idle time drains it at a quarter of High's rate, and a full bucket unkeys and
-/// refuses until it is half empty.
-pub const DUTY_FULL_MS: u32 = 120_000;
-pub const DUTY_DRAIN_DIV: u32 = 4;
+/// level (High heats the PA most), idle time drains it at half of High's rate, and a full bucket unkeys and
+/// refuses until it is half empty. Doubled from 120 s with the drain from a quarter (Alex, Nov 24, 2026, ferrite#228:
+/// 2 min on High cut longer QSOs off).
+pub const DUTY_FULL_MS: u32 = 240_000;
+pub const DUTY_DRAIN_DIV: u32 = 2;
 /// How fast keyed time fills the bucket per power level, in quarters: Low 1/4, Mid 1/2, High 1 (decided Oct 7,
-/// 2026; weights to confirm on the bench). Continuous transmit from cold: High 2 min, Mid 4 min, Low 8 min.
+/// 2026; weights to confirm on the bench). Continuous transmit from cold: High 4 min, Mid 8 min, Low 16 min.
 /// A `static`: read at key-up by the Radio task, and only named statics stay in the firmware's fast flash.
 pub static DUTY_WEIGHT: [u32; 3] = [1, 2, 4];
 
@@ -297,7 +298,7 @@ impl TxSeq {
     fn heat(&mut self, now: u32) {
         let dt = now.wrapping_sub(self.duty_at);
         self.duty_at = now;
-        // Quarter ms: High's weight 4 is a ms a ms, and the drain a quarter of that (DUTY_DRAIN_DIV) is one.
+        // Quarter ms: High's weight 4 is a ms a ms, and the drain a half of that (DUTY_DRAIN_DIV) is two.
         self.duty = if self.since.is_some() {
             self.duty.saturating_add(dt.saturating_mul(self.weight as u32))
         } else {
@@ -555,8 +556,8 @@ mod tests {
     /// TX-38: the power level weights the duty bucket: Low lasts four times as long as High from cold.
     #[test]
     fn duty_by_power() {
-        let cfg = Cfg { timeout_s: 600, prealert_s: 0, ..Cfg::default() };
-        for (power, full) in [(2u8, DUTY_FULL_MS), (1, DUTY_FULL_MS * 2), (0, DUTY_FULL_MS * 4)] {
+        let cfg = Cfg { timeout_s: 1200, prealert_s: 0, ..Cfg::default() };
+        for (power, full) in [(2u8, DUTY_FULL_MS), (1, DUTY_FULL_MS * 2)] {
             let mut t = TxSeq::new();
             let mut p = rx_on(mhz(446));
             let r = Req { power, ..req(mhz(446)) };
@@ -564,15 +565,23 @@ mod tests {
             assert_eq!(t.tick(&cfg, true, &mut p, full - 4, &mut Steps::default()), None, "power {power}");
             assert_eq!(t.tick(&cfg, true, &mut p, full, &mut Steps::default()), Some(Event::Hot), "power {power}");
         }
+        // Low's 16 min is past the longest timeout (10 min, TX-30), so it is reached over key-ups: one of 590 s
+        // leaves the bucket at a quarter of High's fill, not hot.
+        let mut t = TxSeq::new();
+        let mut p = rx_on(mhz(446));
+        t.key(&Req { power: 0, ..req(mhz(446)) }, &mut p, 0, &mut Steps::default()).unwrap();
+        assert_eq!(t.tick(&cfg, true, &mut p, 590_000, &mut Steps::default()), None);
+        assert_eq!(t.duty, 590_000);
+        const _: () = assert!(DUTY_FULL_MS * 4 > 600_000, "Low outlasts the longest timeout");
     }
 
     /// TX-38 at the Radio task's keyed tick (10 ms, or any odd interval): the weights hold whatever the tick, so Low
-    /// still lasts 8 min from cold (it filled 2 ms a 10 ms tick for 2.5, and took 10 min), and the bucket drains
-    /// at a quarter rate over any number of short calls.
+    /// fills at exactly its quarter rate (it once filled 2 ms a 10 ms tick for 2.5), and the bucket drains
+    /// at half rate over any number of short calls.
     #[test]
     fn duty_rates_hold_at_any_tick() {
-        let cfg = Cfg { timeout_s: 600, prealert_s: 0, ..Cfg::default() };
-        for (power, full, tick) in [(0u8, DUTY_FULL_MS * 4, 10u32), (0, DUTY_FULL_MS * 4, 13), (1, DUTY_FULL_MS * 2, 13), (2, DUTY_FULL_MS, 7)] {
+        let cfg = Cfg { timeout_s: 1200, prealert_s: 0, ..Cfg::default() };
+        for (power, full, tick) in [(1u8, DUTY_FULL_MS * 2, 10u32), (1, DUTY_FULL_MS * 2, 13), (2, DUTY_FULL_MS, 7)] {
             let mut t = TxSeq::new();
             let mut p = rx_on(mhz(446));
             let r = Req { power, ..req(mhz(446)) };
@@ -586,6 +595,18 @@ mod tests {
             };
             assert_eq!(hot.0, Event::Hot, "power {power}, every {tick} ms");
             assert!(hot.1 >= full && hot.1 < full + tick, "power {power}, every {tick} ms: hot at {} ms, want {full}", hot.1);
+        }
+        // Low at odd ticks: exactly a quarter ms a ms keyed, whatever the tick.
+        for tick in [10u32, 13] {
+            let mut t = TxSeq::new();
+            let mut p = rx_on(mhz(446));
+            t.key(&Req { power: 0, ..req(mhz(446)) }, &mut p, 0, &mut Steps::default()).unwrap();
+            let mut now = 0;
+            while now + tick < 590_000 {
+                now += tick;
+                assert_eq!(t.tick(&cfg, true, &mut p, now, &mut Steps::default()), None);
+            }
+            assert_eq!(t.duty, now, "Low every {tick} ms");
         }
     }
 

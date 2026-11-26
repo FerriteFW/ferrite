@@ -128,7 +128,7 @@ impl Radio {
     }
 
     /// The run ended: a receiving chip's modem off and its slot retuned as normal (a sending one stops sending,
-    /// keyed until the release); SAME sets its modem up again where it wants it.
+    /// keyed until the release); SAME and the pager set their modems up again where they want them.
     fn fsk_stop(&mut self) {
         let Some(run) = self.fsk.take() else { return };
         if let Some(n) = run.chip.filter(|&n| self.has(n)) {
@@ -145,6 +145,7 @@ impl Radio {
             }
         }
         (self.same.chip, self.same.at, self.same.armed) = (None, None, false);
+        self.pager_after_fsk();
     }
 
     /// TERM-43: the chip the receive test listens with (its interrupt flags are the test's), if any.

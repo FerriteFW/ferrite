@@ -63,10 +63,10 @@ const ROWS: [(&str, Val<()>); 20] = [
     }),
     ("Extend TX", |c, b| on_off(b, c.app.set.extend_tx)),
     ("Inbox", |c, b| {
-        if c.app.inbox == 0 {
+        if c.app.badge() == 0 {
             b.set(b"Empty");
         } else {
-            let _ = uwrite!(b, "{} unread", c.app.inbox);
+            let _ = uwrite!(b, "{} unread", c.app.badge());
         }
         TEXT
     }),
@@ -153,7 +153,7 @@ const ROWS: [(&str, Val<()>); 20] = [
     ("Broadcast", |c, b| {
         if c.app.radio.fm_on {
             let f = c.app.fm_freq() as u32;
-            let _ = uwrite!(b, "FM {}.{}", f / 100, f % 100 / 10);
+            let _ = uwrite!(b, "WFM {}.{}", f / 100, f % 100 / 10);
             if let Some(s) = c.app.bcast_slot() {
                 let _ = uwrite!(b, " on {}", w::LETTERS[s as usize % 3] as char); // BCR-27
             }

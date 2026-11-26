@@ -1262,7 +1262,7 @@ fn set(app: &mut App, dev: &Device, t: &mut Toks) -> Result<Done, No> {
     }
     // Typed values (DEC-4's capcode, APRS-26's custom path): taken as written, "None" clears.
     match p {
-        [4, 2, 3] => {
+        [4, 2, 4] => {
             let v = if same(want, b"none") {
                 0
             } else if want.len() <= 7 && want.iter().all(u8::is_ascii_digit) {
@@ -1284,7 +1284,7 @@ fn set(app: &mut App, dev: &Device, t: &mut Toks) -> Result<Done, No> {
             app.set_aprs_comment(want);
         }
         // MENU-31: a frequency setting typed in MHz, with the entry box's checks
-        [5, 4] | [4, 2, 2] => {
+        [5, 4] | [4, 2, 3] => {
             let fs = if p == [5, 4] { crate::screens::entry::FreqSet::Aprs } else { crate::screens::entry::FreqSet::Pager };
             let f = ferrite_core::freq::parse(want).ok_or_else(|| no!(t, "{}: a frequency in MHz, e.g. 145.495", name))?;
             let now = if p == [5, 4] { app.aprs_freq() } else { app.set.pocsag_freq };
@@ -1307,7 +1307,7 @@ fn set(app: &mut App, dev: &Device, t: &mut Toks) -> Result<Done, No> {
         }
         _ => {}
     }
-    if matches!(p, [4, 2, 3] | [5, 9, 2] | [5, 5, 3] | [5, 4] | [4, 2, 2]) {
+    if matches!(p, [4, 2, 4] | [5, 9, 2] | [5, 5, 3] | [5, 4] | [4, 2, 3]) {
         let mut v = Buf::<24>::new();
         value(app, dev, p, &mut v);
         let mut m = Msg::new();
@@ -1626,6 +1626,8 @@ enum C {
     Job(u8),
     #[cfg(feature = "bench")]
     Bench(u8),
+    #[cfg(feature = "bench")]
+    Acars,
 }
 
 /// The commands by name (TERM-12): one table, looked up once; the arguments are each command's.
@@ -1680,6 +1682,8 @@ const CMDS: &[(&str, C)] = &[
     ("crash", C::Bench(10)),
     #[cfg(feature = "bench")]
     ("dac", C::Bench(11)),
+    #[cfg(feature = "bench")]
+    ("acars", C::Acars),
     ("load", C::Load),
     ("sat", C::Sat),
     ("clear", C::Clear),
@@ -1741,6 +1745,8 @@ fn line_run<S: ChannelStore>(app: &mut App, st: &S, dev: &Device, loading: bool,
         C::Job(j) => Ok(Done::Debug(Job::new([Kind::Gpio, Kind::Mic(false), Kind::Mic(true)][j as usize]))),
         #[cfg(feature = "bench")]
         C::Bench(b) => [txtest, bk, fsk, meter, synthfsk, pin, si, bt, rx, lcd, crash, dac][b as usize](t),
+        #[cfg(feature = "bench")]
+        C::Acars => acars(app, st, t),
         C::Load => Ok(Done::Load),
         C::Sat => sat(st, t, loading),
         C::Clear => clear(app, st, t),
@@ -1887,7 +1893,50 @@ use super::debug::{BK_REGS, MEM_MAX};
 /// TERM-38 (decision 151): the bench builds' commands (bring-up and tx-bench, the `bench` cargo feature). A receive
 /// or tx build compiles them out but knows their names, so it can say where they are; `gps` alone (the last fix)
 /// is in every build, its `query`, `nmea` and `standby` are the bench's.
-pub const BENCH_ONLY: [&str; 17] = ["dac", "pin", "mem", "mem32", "gpio", "bk", "si", "bt", "rx", "mic", "af", "txtest", "lcd", "fsk", "meter", "synthfsk", "crash"];
+pub const BENCH_ONLY: [&str; 18] = ["dac", "pin", "mem", "mem32", "gpio", "bk", "si", "bt", "rx", "mic", "af", "txtest", "lcd", "fsk", "meter", "synthfsk", "crash", "acars"];
+
+/// ACARS-8: `acars feed [N]` hands the first N sample frames (all without N) to the ACARS list as if just heard on
+/// the frequency picked; `acars clear` empties it; `acars` says how many there are. ACARS-11.1: `acars tune FREQ`
+/// has the ACARS screen listen there instead of its frequency (RAM only; the bench's bladeRF on 446.475, never on
+/// airband), `acars tune off` ends it.
+#[cfg(feature = "bench")]
+fn acars<S: ChannelStore>(app: &mut App, st: &S, t: &mut Toks) -> Result<Done, No> {
+    const USAGE: Txt = txt!("acars, acars feed [N] (the first N sample frames), acars clear, acars tune FREQ|off");
+    let Some(live) = st.data().acars() else { return Err(t.say_t(txt!("acars: no ACARS list here"))) };
+    match t.next()? {
+        None => {
+            let (frames, bad, dups) = live.counts();
+            Ok(Done::Said(msg!("ACARS: {} messages; {} frames, {} bad CRC, {} copies", live.len(), frames, bad, dups)))
+        }
+        Some(Tok::Word(w)) if same(w, b"feed") => {
+            let n = match t.next()? {
+                None => usize::MAX,
+                Some(Tok::Word(w)) => number(w).filter(|&n| n > 0).ok_or_else(|| t.say_t(USAGE))? as usize,
+                Some(_) => return Err(t.say_t(USAGE)),
+            };
+            let put = crate::acars::sample::feed(live, n, app.set.acars_freq, app.now / 1000);
+            Ok(Done::Said(msg!("ACARS: {} sample frames fed, {} messages", put, live.len())))
+        }
+        Some(Tok::Word(w)) if same(w, b"clear") => {
+            live.clear();
+            Ok(Done::Said(msg!("ACARS: cleared")))
+        }
+        Some(Tok::Word(w)) if same(w, b"tune") => {
+            let f = match t.next()? {
+                Some(Tok::Word(w)) if same(w, b"off") => 0,
+                Some(Tok::Word(w)) => freq(w, "frequency", t)?,
+                _ => return Err(t.say_t(USAGE)),
+            };
+            app.radio.acars_test = f;
+            if f == 0 {
+                Ok(Done::Said(msg!("ACARS: back on the screen's frequency")))
+            } else {
+                Ok(Done::Said(msg!("ACARS: the screen listens on {} kHz (bench)", f / 100)))
+            }
+        }
+        _ => Err(t.say_t(USAGE)),
+    }
+}
 
 /// TERM-38: what a user build says to a bench command.
 #[cfg(not(feature = "bench"))]
@@ -2150,10 +2199,12 @@ fn meter(t: &mut Toks) -> Result<Done, No> {
 /// TERM-43 (decision 305, a bench test): the BK4829's FSK modem. `fsk` shows the counts and the last frame, `fsk off`
 /// ends it, `fsk rx SPEED [nocrc]` receives on the active slot's chip, `fsk tx SPEED N [nocrc]` arms N frames (1 to
 /// 999) for the next PTT key-up. SPEED: `1200`, `2400` (any plain FSK rate 300 to 9600), `ffsk1800`, `ffsk2400`;
-/// `nocrc` turns the chip's CRC off. Anything else is refused here, before anything is sent.
+/// `nocrc` turns the chip's CRC off; the framing words ([`ferrite_core::fskbench::Opts`]: `sync=HEX`, `pre=N`,
+/// `ptype=N`, `inv`, `scr`, `base=fsk|ffsk`) follow in any order. Anything else is refused here, before anything is
+/// sent.
 fn fsk(t: &mut Toks) -> Result<Done, No> {
     use ferrite_core::fskbench::{Ask, Cfg, Speed, COUNT_MAX};
-    const USAGE: Txt = txt!("fsk [off], fsk rx|tx SPEED [N] [nocrc]: SPEED 300-9600, ffsk1800 or ffsk2400; tx N 1-999");
+    const USAGE: Txt = txt!("fsk [off], fsk rx|tx SPEED [N] [nocrc] [sync=HEX pre=N ptype=N inv scr base=fsk|ffsk]: SPEED 300-9600, ffsk1800, ffsk2400 or acars; tx N 1-999");
     fn word<'a>(t: &mut Toks<'a>) -> Result<Option<&'a [u8]>, No> {
         match t.next()? {
             None => Ok(None),
@@ -2168,12 +2219,14 @@ fn fsk(t: &mut Toks) -> Result<Done, No> {
             let tx = same(w, b"tx");
             let speed = word(t)?.and_then(Speed::parse).ok_or_else(|| t.say_t(USAGE))?;
             let n = if tx { Some(word(t)?.and_then(number).filter(|n| (1..=COUNT_MAX as u32).contains(n)).ok_or_else(|| t.say_t(USAGE))? as u16) } else { None };
-            let crc = match word(t)? {
-                None => true,
-                Some(w) if same(w, b"nocrc") => false,
-                Some(_) => return Err(t.say_t(USAGE)),
-            };
-            let cfg = Cfg { speed, crc };
+            let mut cfg = Cfg::new(speed, true);
+            while let Some(w) = word(t)? {
+                if same(w, b"nocrc") {
+                    cfg.crc = false;
+                } else if !cfg.opt.word(w) {
+                    return Err(t.say_t(USAGE));
+                }
+            }
             match n {
                 Some(n) => Ask::Tx(cfg, n),
                 None => Ask::Rx(cfg),
@@ -2293,10 +2346,12 @@ fn bk_save(t: &mut Toks) -> Result<Done, No> {
 #[cfg(feature = "bench")]
 /// TERM-40 (a bench test, the power bench): `lcd` shows the display's bench state; `lcd idle|partial|sleep on|off`,
 /// `lcd fps N` (1-20, 0 normal), `lcd bl N|normal`, `lcd keys N|normal` (percent) change one thing; `lcd reset`;
-/// `lcd bus` times a whole-screen fill.
+/// `lcd bus` times a whole-screen fill; `lcd hz N|normal` (2000-60000) and `lcd dither N|normal` (tenths of a
+/// percent, 0-50) set the screen light's PWM (DISP-23.1).
 fn lcd(t: &mut Toks) -> Result<Done, No> {
     use ferrite_core::msg::LcdSet;
-    const USAGE: Txt = txt!("lcd [idle|partial|sleep on|off] [fps 0-20] [bl|keys 0-100|normal] [paint old|new] [bus] [reset]");
+    const USAGE: Txt =
+        txt!("lcd [idle|partial|sleep on|off] [fps 0-20] [bl|keys 0-100|normal] [hz 2000-60000|normal] [dither 0-50|normal] [paint old|new] [bus] [reset]");
     fn word<'a>(t: &mut Toks<'a>) -> Result<Option<&'a [u8]>, No> {
         match t.next()? {
             None => Ok(None),
@@ -2338,6 +2393,15 @@ fn lcd(t: &mut Toks) -> Result<Done, No> {
             _ if same(what, b"fps") => LcdSet::Fps(pct(20).ok_or_else(|| t.say_t(USAGE))?.unwrap_or(0)),
             _ if same(what, b"bl") => LcdSet::Bl(pct(100).ok_or_else(|| t.say_t(USAGE))?),
             _ if same(what, b"keys") => LcdSet::Keys(pct(100).ok_or_else(|| t.say_t(USAGE))?),
+            _ if same(what, b"hz") => {
+                use ferrite_core::screenpwm::{HZ_MAX, HZ_MIN};
+                let hz = if same(arg, b"normal") { Some(None) } else { number(arg).filter(|n| (HZ_MIN..=HZ_MAX).contains(n)).map(|n| Some(n as u16)) };
+                LcdSet::Hz(hz.ok_or_else(|| t.say_t(USAGE))?)
+            }
+            _ if same(what, b"dither") => {
+                let max = ferrite_core::screenpwm::DITHER_MAX as u32;
+                LcdSet::Dither(pct(max).ok_or_else(|| t.say_t(USAGE))?.map(u16::from))
+            }
             _ => return Err(t.say_t(USAGE)),
         }
     };
@@ -2777,7 +2841,7 @@ static HELP: [Txt; 22] = [
 ];
 /// TERM-38: the bench commands' help in a bench build, or where they are in a user build.
 #[cfg(feature = "bench")]
-static HELP_BENCH: [Txt; 34] = [
+static HELP_BENCH: [Txt; 35] = [
     txt!(""),
     txt!("Bench builds only (bring-up, tx-bench; hex addresses, registers and values; Esc stops):"),
     txt!("  mem 20000000 64        bytes of MCU memory (flash, RAM)"),
@@ -2811,6 +2875,7 @@ static HELP_BENCH: [Txt; 34] = [
     txt!("  synthfsk 3000 4 2400 1290 10 40 70 100   bench test while keyed: 4FSK from tone 1's gain"),
     txt!("  fsk rx 2400 [nocrc]    bench test: the BK4829's FSK modem on the active slot; fsk, fsk off"),
     txt!("  fsk tx 2400 20         20 test frames at the next PTT key-up (Dry TX only; ffsk1800 ...)"),
+    txt!("  acars feed [N]         the ACARS list: N sample messages heard now; acars clear; acars"),
     txt!("  The radio's own logic may rewrite a register you set (a tune, Battery Save)."),
 ];
 #[cfg(not(feature = "bench"))]

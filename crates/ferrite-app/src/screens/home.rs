@@ -214,7 +214,7 @@ fn bcast_card(app: &mut App, lcd: &mut impl Panel, live: &LiveAll, s: u8, y: i32
 fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32, big: bool) {
     use crate::aprs::Holder;
     let p = s as usize;
-    let f = app.aprs_freq();
+    let f = app.c_freq(); // DEC-20: the pager frequency in Pager mode
     let Some(k) = app.aprs_card_as(data, big) else { return };
     app.drawn.meter[p] = None;
     if big {
@@ -227,8 +227,8 @@ fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32
         let mut cnt = Buf::<16>::new();
         // APRS-29.2: Tracker decodes nothing, so no counts
         let tracker = k.holder == Holder::Beacon;
-        if k.holder == Holder::Kiss {
-            cnt = k.right;
+        if matches!(k.holder, Holder::Kiss | Holder::Pager) {
+            cnt = k.right; // DEC-20.1: the pages
         } else if !tracker {
             let _ = uwrite!(cnt, "{} heard", n);
             let _ = uwrite!(hr, " \u{b7} {} /hr", h);
@@ -249,9 +249,14 @@ fn aprs_card(app: &mut App, lcd: &mut impl Panel, data: &dyn Data, s: u8, y: i32
         let msg = k.unread > 0 && !tracker;
         let mut mt = Buf::<32>::new();
         if msg {
-            let _ = uwrite!(mt, "{} new from {}", k.unread, crate::screens::lists::Txt(k.unread_from.as_bytes()));
+            if k.holder == Holder::Pager {
+                let _ = uwrite!(mt, "{} new page{}", k.unread, if k.unread == 1 { "" } else { "s" }); // DEC-22
+            } else {
+                let _ = uwrite!(mt, "{} new from {}", k.unread, crate::screens::lists::Txt(k.unread_from.as_bytes()));
+            }
         }
-        let kiss = k.holder == Holder::Kiss;
+        // DEC-20.1: the pager card is drawn as KISS's: its line, no stations or beacon fate
+        let kiss = matches!(k.holder, Holder::Kiss | Holder::Pager);
         // KISS its frames; Tracker its interval and position source (APRS-29.2: no stations, it decodes nothing)
         let first = if kiss || tracker { k.line.as_bytes() } else { app.nothing_heard(data).as_bytes() };
         if app.dirty(R_INFO + p, Mix::new().any(&k.rows[..2]).h(&k.rows_n.min(2)).h(&mt).h(&first).get()) {
@@ -406,6 +411,10 @@ impl View for Home {
                 // APRS-17.3 (decisions 181, 257): OK (MENU) or hold MENU on the APRS slot opens the APRS list on the
                 // row the hint bar names, one more OK runs it; a digit opens its row (OK 1: messages); 0 there is
                 // still the full menu (MENU-25), so MENU 0 paths work as ever.
+                // DEC-21: in Pager mode the pager list, on Pages
+                (Key::Menu, Short | Long) if app.pager_on() => {
+                    return app.open_screen(Screen::Options(super::opts::Options { of: super::opts::Of::PagerCard, row: 0, confirm: false }));
+                }
                 (Key::Menu, Short | Long) => {
                     let row = if app.aprs_holder() == Some(crate::aprs::Holder::Beacon) { super::opts::APRS_ROW_BEACON_NOW } else { super::opts::APRS_ROW_HEARD };
                     return app.open_screen(Screen::Options(super::opts::Options { of: super::opts::Of::AprsCard, row, confirm: false }));
@@ -416,9 +425,9 @@ impl View for Home {
                 // MENU-34: hold ABC on the APRS slot opens its quick page, whatever holds C
                 (Key::Slot, Long) => return app.open_screen(super::qgrid::Page::Aprs.screen()),
                 // APRS-17.8: hold V/M on the APRS slot sends a beacon (a hold, so a bump never transmits)
-                (Key::VfoMem, Long) => return super::opts::beacon_now(app, store),
-                // a tap says how (KISS holds C with no beacons: its refusal, below)
-                (Key::VfoMem, Short) if app.aprs_holder() != Some(crate::aprs::Holder::Kiss) => {
+                (Key::VfoMem, Long) if !app.pager_on() => return super::opts::beacon_now(app, store),
+                // a tap says how (KISS and Pager hold C with no beacons: their refusal, below)
+                (Key::VfoMem, Short) if !matches!(app.aprs_holder(), Some(crate::aprs::Holder::Kiss | crate::aprs::Holder::Pager)) => {
                     app.show_toast(b"Hold V/M", b"to send a beacon", false);
                     return;
                 }
@@ -449,6 +458,16 @@ impl View for Home {
             // BCR-25: ◀▶ seek on the broadcast slot's VFO
             (Key::Left | Key::Right, Short) if app.bcast_slot() == Some(app.active) && !app.slots[app.active as usize].on_channel() => {
                 app.fm_seek(e.key == Key::Right)
+            }
+            // BCR-25.1 (ferrite#154, #95): a hold that starts on the broadcast VFO steps one band, to the neighbour,
+            // and its further repeats do nothing; a hold elsewhere repeats through the bands as ever (KEY-4)
+            (Key::Left | Key::Right, Repeat) if !app.slots[app.active as usize].on_channel() => {
+                let m = app.keys.mark(e.key);
+                if m != HOLD_OFF_BCAST {
+                    let off = m == 0 && app.bcast_slot() == Some(app.active);
+                    group(app, if e.key == Key::Right { 1 } else { -1 }, store);
+                    app.keys.set_mark(e.key, if off { HOLD_OFF_BCAST } else { HOLD_STEPPED });
+                }
             }
             (Key::Left | Key::Right, Short | Repeat) => group(app, if e.key == Key::Right { 1 } else { -1 }, store),
             (Key::Slot, Short) => {
@@ -545,8 +564,18 @@ impl View for Home {
         if app.aprs_slot(app.active) {
             // APRS-17 (decision 181): OK leads to the heard list, or with beacons alone to Beacon now; # pauses
             // watch while a watched slot is receiving (WATCH-6), else hold MENU is the APRS page.
-            let ok = if app.aprs_holder() == Some(crate::aprs::Holder::Beacon) { ("OK", "Send") } else { ("OK", "Heard") };
-            let third = if app.watched_rx() { ("#", "Pause") } else { ("Hold MENU", "APRS") };
+            let ok = match app.aprs_holder() {
+                Some(crate::aprs::Holder::Beacon) => ("OK", "Send"),
+                Some(crate::aprs::Holder::Pager) => ("OK", "Pages"), // DEC-21
+                _ => ("OK", "Heard"),
+            };
+            let third = if app.watched_rx() {
+                ("#", "Pause")
+            } else if app.pager_on() {
+                ("Hold MENU", "Pager")
+            } else {
+                ("Hold MENU", "APRS")
+            };
             return Hints::new(&[("ABC", "Next"), ok, third]); // the key as it is marked
         }
         let a = app.active;
@@ -834,7 +863,7 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
     let mut clr = Buf::<16>::new();
     let mut clr_c = AMBER;
     let c = app.slots[s as usize].clar;
-    let tagged = matches!(state, "RX" | "TX" | "MON" | "FM");
+    let tagged = matches!(state, "RX" | "TX" | "MON" | "WFM");
     if let Some((t, ab)) = app.aprs_priority().filter(|_| aprs) {
         clr.set(t.as_bytes());
         clr_c = if ab { AMBER } else { SUB };
@@ -935,20 +964,21 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
         return;
     }
     let f = app.shown_freq(s, live);
+    let fl = app.label(s, f); // VFO-18.2
     // Channel mode puts the name first, the frequency small under it (HOME-4); a VFO, a scan or a channel
     // without a name shows the frequency large.
     let name = app.card_name(s, live, cx.store);
     if big {
-        if let Some(clear) = app.dirty_shape(R_FREQ + p, Mix::new().h(&f).h(&name).get(), name.is_empty()) {
+        if let Some(clear) = app.dirty_shape(R_FREQ + p, Mix::new().h(&fl).h(&name).get(), name.is_empty()) {
             redraw_box!(clear, lcd, (15, y + 28, 211, 49, SURFACE), {
                 if name.is_empty() {
-                    w::freq(lcd, 15, 226, y + 67, f, &DIG_46, &DIG_28, FREQ, SUB, SURFACE);
+                    w::freq(lcd, 15, 226, y + 67, fl, &DIG_46, &DIG_28, FREQ, SUB, SURFACE);
                 } else {
                     // 26 px when the whole name fits (13 characters), else 22 px (16 always fit).
                     let nb = name.as_bytes();
                     let (font, base) = if text4_width(nb, &NAME_26) <= 211 { (&NAME_26, y + 54) } else { (&NAME_22, y + 52) };
                     w::field(lcd, 15, 211, y + 29, y + 60, base, w::fit(nb, font, 211), &w::st(font, TEXT, SURFACE, Align::Left));
-                    w::freq(lcd, 15, 226, y + 75, f, &DIG_17, &DIG_17, SUB, SUB, SURFACE);
+                    w::freq(lcd, 15, 226, y + 75, fl, &DIG_17, &DIG_17, SUB, SUB, SURFACE);
                 }
             });
         }
@@ -998,16 +1028,16 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
         if lv.scanning {
             let _ = uwrite!(right, "{} hits", lv.hits);
         } else if !name.is_empty() {
-            right.set(w::freq3(f).as_bytes());
+            right.set(w::freq3(fl).as_bytes());
         }
         let (x, c) = if name.is_empty() { (130, TEXT) } else { (170, SUB) };
         let info = app.dirty(R_INFO + p, Mix::new().h(&right).get());
-        let freq = app.dirty_shape(R_FREQ + p, Mix::new().h(&f).h(&name).get(), name.is_empty());
+        let freq = app.dirty_shape(R_FREQ + p, Mix::new().h(&fl).h(&name).get(), name.is_empty());
         if let Some(clear) = freq {
             // A new layout redraws the row in bands with the right-hand text, which shares it.
             redraw_box!(clear, lcd, (15, y + 25, 211, 24, SURFACE), {
                 if name.is_empty() {
-                    w::freq(lcd, 15, 130, y + 45, f, &DIG_26, &DIG_17, TEXT, SUB, SURFACE);
+                    w::freq(lcd, 15, 130, y + 45, fl, &DIG_26, &DIG_17, TEXT, SUB, SURFACE);
                 } else {
                     // The 22 px name when it fits beside the frequency, else 15 px bold.
                     let nb = name.as_bytes();
@@ -1103,6 +1133,11 @@ pub(crate) fn step(app: &mut App, d: i32, big: bool, store: &impl ChannelStore) 
     }
 }
 
+/// BCR-25.1: an ◀▶ hold on a home VFO that has stepped a band (its mark on the key tracker)...
+const HOLD_STEPPED: u8 = 1;
+/// ...and one that started on the broadcast VFO and stepped off it: its further repeats do nothing.
+const HOLD_OFF_BCAST: u8 = 2;
+
 /// ◀▶ on home: next band in VFO mode (NAV-2), next zone with channels in channel mode (NAV-1, CHAN-11); Local,
 /// when on, after the last stored zone (CHAN-34).
 pub(crate) fn group(app: &mut App, d: i32, store: &impl ChannelStore) {
@@ -1187,7 +1222,7 @@ pub(crate) fn head_right_w(big: bool, state: &str, clr: &Buf<16>) -> i32 {
     }
     match state {
         "RX muted" => beside(32 + muted - 8), // HOME-15.3: the RX tag and "Muted" left of it
-        "RX" | "TX" | "MON" | "FM" => (text4_width(state.as_bytes(), &UI_12B) + 10).max(if cw > 0 { 32 + cw } else { 0 }),
+        "RX" | "TX" | "MON" | "WFM" => (text4_width(state.as_bytes(), &UI_12B) + 10).max(if cw > 0 { 32 + cw } else { 0 }),
         "idle" => cw,
         _ => beside(text4_width(state.as_bytes(), &UI_12)),
     }
@@ -1264,7 +1299,7 @@ mod tests {
         let head = "999 \u{b7} WWWWWWWWWWWWWWWW";
         let hw = |big: bool, state: &str, clr: &[u8]| (226 - 6 - super::head_right_w(big, state, &Buf::from(clr)) - 34).max(120);
         let need = text4_width(head.as_bytes(), &UI_12);
-        for st in ["idle", "RX", "MON", "FM"] {
+        for st in ["idle", "RX", "MON", "WFM"] {
             assert!(need <= hw(true, st, b""), "large card, {st}: {need} > {}", hw(true, st, b""));
         }
         // ("scanning" heads "SCAN · band": no zone name)

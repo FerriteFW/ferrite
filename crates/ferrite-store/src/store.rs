@@ -132,6 +132,8 @@ pub enum Job {
     PicRow { addr: u32, i: u8 },
     /// SSTV-4: a picture slot's 41 sectors erased, ready for the next picture.
     PicErase(u8),
+    /// LINK-73: a step of the SSB patch's write over the link, in its own region (the store's own job, no update).
+    Ssb(SsbWrite),
 }
 
 /// SSTV-4: received rows waiting to be written (a row comes every 75 ms at the most, Robot 36's pairs).
@@ -220,6 +222,9 @@ pub struct FlashStore<N: Nor, D: Data> {
     /// done: raw writes run only after it (one that failed is queued again before the next).
     raw: Cell<bool>,
     begun: Cell<bool>,
+    /// HF-20: the SSB patch held and verified (by [`Store::ssb_check`] at boot, or by the install that wrote it);
+    /// None from a link write's begin until its finish checks (LINK-73).
+    ssb: Cell<Option<ferrite_core::ssb::Patch>>,
     jobs: RefCell<[Option<Job>; QUEUE]>,
     /// SSTV-4: received rows for [`Job::PicRow`], and the next to fill.
     pic_rows: RefCell<[[u8; ferrite_core::sstv::ROW_LEN]; PIC_RING]>,
@@ -288,6 +293,7 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
             deferred: Cell::new(false),
             raw: Cell::new(false),
             begun: Cell::new(false),
+            ssb: Cell::new(None),
             jobs: RefCell::new([None; QUEUE]),
             pic_rows: RefCell::new([[0xFF; ferrite_core::sstv::ROW_LEN]; PIC_RING]),
             pic_next: Cell::new(0),
@@ -646,6 +652,23 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         }
     }
 
+    /// LINK-73: one step of the SSB patch's write, the boot install's own steps (`ssb.rs`): the region erased, bytes
+    /// programmed, the header written once they check. The patch counts as held again only after that.
+    async fn ssb_job(&self, w: SsbWrite) -> Result {
+        match w {
+            SsbWrite::Begin => {
+                self.ssb.set(None);
+                crate::ssb::erase(&self.f).await
+            }
+            SsbWrite::Program { off, len, bytes } => crate::ssb::program(&self.f, off as u32, &bytes[..len as usize]).await,
+            SsbWrite::Finish(p) => {
+                let r = crate::ssb::seal(&self.f, p, ferrite_core::ssb::SOURCE_LINK).await;
+                self.ssb.set(r.is_ok().then_some(p));
+                r
+            }
+        }
+    }
+
     /// Decision 339: before the first raw write of a power-on, in this order (a cut anywhere leaves the old header,
     /// or the mark: the chip waits for Console, UPD-16): (1) the migration mark, unless one is there, in the next
     /// erased place (none left: its sector erased first; the old header is still whole then); (2) this layout's
@@ -719,7 +742,9 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
 
     /// HF-20: the SSB patch in SPI flash, if its header parses and its bytes hash to the header's SHA-256.
     pub fn ssb_check(&self) -> Result<Option<ferrite_core::ssb::Patch>> {
-        crate::ssb::check(&self.f)
+        let r = crate::ssb::check(&self.f);
+        self.ssb.set(*r.as_ref().unwrap_or(&None));
+        r
     }
 
     /// HF-18: stores `patch` (with `p` from its bundle or link header) in SSB_PATCH, unless the same verified copy is
@@ -728,7 +753,9 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         if self.layout_found().is_some() {
             return Err(NorError); // UPD-16: another layout's data stays as it is (its SSB patch moves with Console)
         }
-        crate::ssb::install(&self.f, p, patch, source).await
+        let r = crate::ssb::install(&self.f, p, patch, source).await;
+        self.ssb.set(r.is_ok().then_some(p));
+        r
     }
 
     pub(crate) fn ok(&self) -> bool {
@@ -925,6 +952,7 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
                 let row = self.pic_rows.borrow()[i as usize % PIC_RING];
                 self.f.program(addr, &row).await.is_ok()
             }
+            Job::Ssb(w) => self.ssb_job(w).await.is_ok(),
             Job::PicErase(slot) => {
                 let mut ok = slot < ferrite_core::sstv::SLOTS;
                 let a = ferrite_core::sstv::slot_addr(slot);
@@ -997,6 +1025,9 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         // INBOX-3.1: the mail badge counts unread messages to us; the log keeps its own unread count.
         let mail = (0..self.messages()).filter(|&i| self.message(i).is_some_and(|m| m.inbound && m.state == MsgState::Unread)).count();
         app.set_inbox(mail as u16, (0..self.events.len()).filter(|&i| self.event(i).is_some_and(|e| e.unread)).count() as u16);
+        // DEC-22: unread pages count in the badge too
+        let pages = (0..self.events.len()).filter(|&i| self.event(i).is_some_and(|e| e.unread && e.src == ferrite_app::data::Src::Pocsag)).count();
+        app.set_pages_unread(pages as u16);
         self.mark_saved(app);
         found
     }
@@ -1723,6 +1754,14 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
                         self.events.mark(&self.f, seq, 10, 0).await?;
                     }
                 }
+                // DEC-22: the pages shown among the messages are read with them
+                for j in 0..self.events.len() {
+                    if self.event(j).is_some_and(|e| e.unread && e.src == Src::Pocsag) {
+                        if let Some(seq) = self.events.seq(j) {
+                            self.events.mark(&self.f, seq, 10, 0).await?;
+                        }
+                    }
+                }
                 Ok(())
             }
             Op::ClearMessages => {
@@ -2337,6 +2376,9 @@ impl<N: Nor, D: Data> Data for FlashStore<N, D> {
     fn event_seq(&self, i: u16) -> Option<u32> {
         self.events.seq(i)
     }
+    fn acars(&self) -> Option<&ferrite_app::acars::AcarsLive> {
+        self.extra.acars()
+    }
     fn stations(&self) -> u16 {
         self.extra.stations()
     }
@@ -2376,6 +2418,9 @@ impl<N: Nor, D: Data> Data for FlashStore<N, D> {
     }
     fn beacon(&self) -> Beacon {
         self.extra.beacon()
+    }
+    fn traffic(&self) -> Option<&ferrite_app::aprs_traffic::Traffic> {
+        self.extra.traffic()
     }
     fn beacons_sent(&self) -> u16 {
         self.extra.beacons_sent()
@@ -2533,6 +2578,22 @@ impl<N: Nor, D: Data> Data for FlashStore<N, D> {
 
     fn picture_write(&self, w: DataWrite) -> bool {
         self.mounted.get() != Mounted::Failed && !self.raw.get() && self.submit(Job::Pic(w))
+    }
+
+    fn ssb(&self) -> Option<ferrite_core::ssb::Patch> {
+        self.ssb.get()
+    }
+
+    /// LINK-73: not on a failed chip, nor while the chip's data waits for an update or a raw write runs (UPD-16,
+    /// LINK-61). The begin drops the held patch at once, so HF mode hides USB, LSB and CW before the erase starts.
+    fn ssb_write(&self, w: SsbWrite) -> bool {
+        if !self.ok() || self.raw.get() {
+            return false;
+        }
+        if w == SsbWrite::Begin {
+            self.ssb.set(None);
+        }
+        self.submit(Job::Ssb(w))
     }
 
     fn picture_row(&self, addr: u32, row: &[u8]) -> bool {

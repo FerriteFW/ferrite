@@ -5,13 +5,19 @@
 //!
 //! - `FERRITE_FUZZ_SCALE=N` (default 1) runs N times the cases, for a long CI run.
 //! - `FERRITE_FUZZ_CASE=SEED` runs one case alone (the seed a failure printed).
-//! - `FERRITE_FUZZ_NO_TESTDATA=1` leaves out the `../testdata` recordings, as CI runs.
+//! - `FERRITE_FUZZ_SEED=N` (default 0) mixes N into every target's seed: other cases than the default run's, for
+//!   long runs that each try new inputs (`FERRITE_FUZZ_SCALE=100 FERRITE_FUZZ_SEED=$RANDOM cargo nextest run fuzz`).
+//! - A case that never returns (a hang: an endless loop on some input) is caught by a watchdog after five times the
+//!   target's slow limit (at least 10 s): it prints and saves the input as a failure does, then aborts the test
+//!   process (a stuck thread can't be unwound).
+//! - `FERRITE_FUZZ_NO_TESTDATA=1` leaves out the test data's recordings ([`testdata_dir`]), as CI runs.
 //! - A failure prints the target, the case's seed and the input as hex, and writes the input to
 //!   `target/fuzz-found/TARGET/SEED.hex`. Copy that file into `fuzz/regress/TARGET/` to keep it: every file there
 //!   runs first, every time.
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// A small PRNG (SplitMix64): std only, the same numbers on every machine.
@@ -223,6 +229,8 @@ pub struct Fuzz {
 
 impl Fuzz {
     pub fn new(name: &str, seed: u64, cases: usize) -> Self {
+        let mix = std::env::var("FERRITE_FUZZ_SEED").ok().and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0);
+        let seed = if mix == 0 { seed } else { Rng::new(seed ^ mix.rotate_left(32)).u64() };
         Fuzz { name: name.into(), seed, cases: cases * scale(), slow: Duration::from_secs(2) }
     }
 
@@ -237,7 +245,9 @@ impl Fuzz {
     pub fn run(self, mut make: impl FnMut(&mut Rng) -> Vec<u8>, mut check: impl FnMut(&[u8])) {
         let started = Instant::now();
         let mut failed = Vec::new();
+        let dog = Watchdog::start(&self.name, (self.slow * 5).max(Duration::from_secs(10)));
         for (file, input) in regressions(&self.name) {
+            dog.case(0, &input);
             if let Err(why) = self.one(&input, &mut check) {
                 eprintln!("fuzz {}: regression {} fails again: {why}\n  input ({} bytes): {}", self.name, file, input.len(), hex(&input));
                 failed.push(file);
@@ -255,6 +265,7 @@ impl Fuzz {
             }
             let mut r = Rng::new(case);
             let input = make(&mut r);
+            dog.case(case, &input);
             if let Err(why) = self.one(&input, &mut check) {
                 let saved = save(&self.name, case, &input);
                 eprintln!(
@@ -272,6 +283,7 @@ impl Fuzz {
                 }
             }
         }
+        dog.stop();
         eprintln!("fuzz {}: {} cases in {} ms", self.name, self.cases, started.elapsed().as_millis());
         assert!(failed.is_empty(), "fuzz {}: {} failed: {failed:?} (inputs above)", self.name, failed.len());
     }
@@ -292,18 +304,97 @@ impl Fuzz {
     }
 }
 
+/// The case running now, for [`Watchdog`]: when it started, its seed and its input.
+type Running = Arc<Mutex<Option<(Instant, u64, Vec<u8>)>>>;
+
+/// Catches a case that never returns: a thread that looks at the running case every 50 ms and, once it has run
+/// longer than the limit, reports it (seed, input, saved file) and aborts the process.
+struct Watchdog {
+    now: Running,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Watchdog {
+    fn start(name: &str, limit: Duration) -> Self {
+        let now: Running = Arc::new(Mutex::new(None));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (n, s, name) = (now.clone(), stop.clone(), name.to_string());
+        std::thread::spawn(move || {
+            while !s.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(50));
+                let g = n.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some((t, case, input)) = g.as_ref().filter(|(t, _, _)| t.elapsed() > limit) {
+                    let saved = save(&name, *case, input);
+                    eprintln!(
+                        "fuzz {name}: case {case:#x} HUNG (still running after {} ms, limit {} ms)\n  FERRITE_FUZZ_CASE={case:#x} runs it alone\n  input ({} bytes): {}\n  saved: {}",
+                        t.elapsed().as_millis(),
+                        limit.as_millis(),
+                        input.len(),
+                        hex(input),
+                        saved.map_or_else(|| "not saved".into(), |p| p.display().to_string()),
+                    );
+                    std::process::abort();
+                }
+            }
+        });
+        Watchdog { now, stop }
+    }
+
+    fn case(&self, case: u64, input: &[u8]) {
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), case, input.to_vec()));
+    }
+
+    fn stop(&self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = None;
+    }
+}
+
 /// The workspace (`ferrite/`).
 pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// The decoders' recordings (`../testdata`, the private testdata repo), when it is there: the seeds that need it
-/// are skipped without it (CI; `FERRITE_FUZZ_NO_TESTDATA=1` runs as CI does).
+/// The test data checkout, by the one rule every test and tool follows (`tools/testdata.sh` is the shell copy):
+/// `TESTDATA` if set (relative to the workspace when not absolute), else `../testdata-private` (FerriteFW/
+/// testdata-private: everything, maintainers only) when it is there, else `../testdata` (FerriteFW/testdata, public;
+/// its `fetch/all.sh` adds the third-party sets). The two repos have the same folders.
+pub fn testdata_dir() -> PathBuf {
+    if let Some(p) = std::env::var_os("TESTDATA") {
+        return root().join(p);
+    }
+    let private = root().join("../testdata-private");
+    if private.is_dir() { private } else { root().join("../testdata") }
+}
+
+/// A file or folder of the public test data (in FerriteFW/testdata, or fetched by its `fetch/all.sh`), when present.
+/// When it isn't, one line on stderr names it and how to get it, and the caller skips.
+pub fn testdata_file(rel: &str) -> Option<PathBuf> {
+    present(rel, "clone FerriteFW/testdata beside ferrite and run its fetch/all.sh, or set TESTDATA")
+}
+
+/// A file or folder only the private test data has (FerriteFW/testdata-private, maintainers only), when present;
+/// else one line on stderr, and the caller skips.
+pub fn testdata_private_file(rel: &str) -> Option<PathBuf> {
+    present(rel, "private test data, maintainers only")
+}
+
+fn present(rel: &str, how: &str) -> Option<PathBuf> {
+    let p = testdata_dir().join(rel);
+    if p.exists() {
+        return Some(p);
+    }
+    eprintln!("skipped: {} not found ({how})", p.display());
+    None
+}
+
+/// The decoders' recordings ([`testdata_dir`]), when they are there: the fuzz seeds that need them are skipped
+/// without them (CI; `FERRITE_FUZZ_NO_TESTDATA=1` runs as CI does).
 pub fn testdata() -> Option<PathBuf> {
     if std::env::var_os("FERRITE_FUZZ_NO_TESTDATA").is_some() {
         return None;
     }
-    let p = root().join("../testdata");
+    let p = testdata_dir();
     p.is_dir().then_some(p)
 }
 

@@ -111,6 +111,11 @@ impl Assembler {
     /// One FIFO word.
     pub fn push(&mut self, w: u16) -> Step {
         let Some(o) = self.orient else {
+            // DEC-19: words after a burst refused for its orientation (no sync since, so no `start`): still refused,
+            // not a write past `first` (a panic in the Radio task, found by fuzz_same_recovers).
+            if self.n_first as usize >= self.first.len() {
+                return Step::Bad;
+            }
             self.first[self.n_first as usize] = w;
             self.n_first += 1;
             if self.n_first < 4 {
@@ -192,6 +197,27 @@ mod tests {
     use std::vec::Vec;
 
     const HDR: &[u8] = b"ZCZC-WXR-TOR-039173-039051-139069+0030-1591829-KCLE/NWS-";
+
+    /// DEC-19: a burst refused for its orientation stays refused for the words after it until the next sync
+    /// (`start`), and a good header still comes out after that: it used to panic on the fifth word.
+    #[test]
+    fn words_after_a_refused_burst() {
+        let mut a = Assembler::new();
+        a.start();
+        let mut last = Step::More;
+        for _ in 0..4 {
+            last = a.push(0x0101);
+        }
+        assert_eq!(last, Step::Bad);
+        for w in 0..20u16 {
+            assert_eq!(a.push(w), Step::Bad);
+        }
+        a.start();
+        let o = Orient::ALL[0];
+        let r = words(HDR, o).into_iter().map(|w| a.push(w)).find(|&s| s != Step::More);
+        assert_eq!(r, Some(Step::Done));
+        assert_eq!(a.text(), HDR);
+    }
 
     /// The data after `ZCZC` as the chip would hand it over in orientation `o`.
     fn words(text: &[u8], o: Orient) -> Vec<u16> {

@@ -64,6 +64,25 @@ fn single_dbm_meter() {
     t.hides("dBm");
 }
 
+/// SQL-12.3: watch + activity: a receiving card's state carries the level as dBm when 0 7 3 1 says so, else
+/// its S-reading (ferrite#216).
+#[test]
+fn activity_dbm_state() {
+    let mut t = layout(2);
+    let a = t.app.active as usize;
+    let f = t.app.slot(a as u8).freq();
+    t.live.slots[a] = SlotLive { freq: f, squelch_open: true, carrier: true, rssi: -93, ..Default::default() };
+    t.wait(200);
+    t.shows("RX S");
+    t.hides("dBm");
+    t.app.set.smeter_dbm = true;
+    t.wait(100);
+    t.shows("RX -93 dBm");
+    t.live.slots[a].rssi = -127;
+    t.wait(100);
+    t.shows("RX -127 dBm");
+}
+
 /// BCR-26.7: single + scope on the broadcast slot: dBuV with the SNR and STEREO under the frequency, the RDS
 /// text, the dBuV scale, and no strip; "No RDS" without text.
 #[test]
@@ -101,7 +120,7 @@ fn activity_cards() {
     t.live.slots[third as usize] = SlotLive::default();
     let a = t.app.active;
     fm_live(&mut t, a);
-    t.shows("FM");
+    t.shows("WFM");
     t.shows("Some text");
     t.shows("STEREO");
 }

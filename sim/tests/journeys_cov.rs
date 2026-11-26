@@ -247,7 +247,8 @@ fn radio_refusal_shows_the_refused_screen() {
     r.run("type 14652; press OK; wait 1s");
     let ptt = ferrite_core::keys::Key::Ptt(ferrite_core::keys::PTT_A);
     let mut refused = false;
-    for _ in 0..8 {
+    // TX-38's bucket is 240 s (High 4 min from cold, Mid 8): enough 100 s key-ups for either.
+    for _ in 0..16 {
         r.down(ptt);
         r.wait(100_000);
         r.up(ptt);

@@ -20,10 +20,12 @@
 //! 3. Blocks of up to [`BLOCK`] bytes, each a frame: [`HDR`] bytes of header (`F` `D` type 0, address u32,
 //!    length u16, little-endian), the data, then the CRC-32 (zlib's) of header and data, u32 LE. The host answers
 //!    ACK (next block), NAK (send it again) or CAN (stop); silence for [`ACK_MS`] also resends, [`TRIES`] sends at
-//!    most per frame.
+//!    most per frame. After a resent frame's ACK the radio waits [`DUP_ACK_MS`] and drops what came: a second ACK
+//!    for a second copy the host got.
 //! 4. An end frame: type `E`, the start address, length 16, then start u32, length u32, the CRC-32 of all the
 //!    data, the number of resends u32; acknowledged like a block.
-//! 5. The radio goes back to 115200 and prints `fdump end crc32 XXXXXXXX ...` (or `fdump stopped at ...`).
+//! 5. The radio goes back to 115200, waits [`RESULT_PAUSE_MS`] for the host to switch too, and prints
+//!    `fdump end crc32 XXXXXXXX ...` (or `fdump stopped at ...`).
 
 pub const BLOCK: usize = 4096;
 pub const HDR: usize = 10;
@@ -33,6 +35,9 @@ pub const CAN: u8 = 0x18;
 pub const TRIES: u32 = 10;
 pub const ACK_MS: u32 = 2000;
 pub const SYNC_MS: u32 = 3000;
+/// From the rate switch back to 115200 to the result line: the host's own switch (Web Serial closes and reopens
+/// the port, slow on Windows) must be done first, or the line is lost (FerriteFW/console#87).
+pub const RESULT_PAUSE_MS: u32 = 500;
 pub const TYPE_BLOCK: u8 = b'B';
 pub const TYPE_END: u8 = b'E';
 /// `fdumpz`'s frame: one [`ZCHUNK`] of the range, coded (BACKUP-9.6): a mode byte, then the data.
@@ -350,6 +355,20 @@ pub fn zcode_into(chunk: &[u8], out: &mut [u8], head: &mut [u16; 1 << DEFLATE_HA
     1 + chunk.len()
 }
 
+/// After a resent frame's ACK, how long a second ACK may still be on its way (FerriteFW/console#90).
+pub const DUP_ACK_MS: u32 = 100;
+
+/// A frame's ACK came on try `t`. After a resend the host may hold two copies (a NAK mid-frame, then another from
+/// the first copy's tail) and ACK each, the second as a duplicate: that one is dropped here, or it would count for
+/// the next frame before the host has it. Always true.
+fn acked(link: &mut impl Link, t: u32) -> bool {
+    if t > 0 {
+        link.pause(DUP_ACK_MS);
+        link.clear_rx();
+    }
+    true
+}
+
 /// Sends one frame until the host ACKs it: Some(true) ACK, Some(false) cancelled, None out of tries.
 fn send_frame(link: &mut impl Link, hdr: &[u8; HDR], data: &[u8], resends: &mut u32) -> Option<bool> {
     let crc = frame_crc(hdr, data);
@@ -362,7 +381,7 @@ fn send_frame(link: &mut impl Link, hdr: &[u8; HDR], data: &[u8], resends: &mut 
         link.write(data);
         link.write(&crc);
         match link.getc(ACK_MS) {
-            Some(ACK) => return Some(true),
+            Some(ACK) => return Some(acked(link, t)),
             Some(CAN) => return Some(false),
             _ => {}
         }
@@ -466,7 +485,7 @@ fn ack_or_resend(link: &mut impl Link, frame: &[u8], resends: &mut u32) -> Optio
             link.sent();
         }
         match link.getc(ACK_MS) {
-            Some(ACK) => return Some(true),
+            Some(ACK) => return Some(acked(link, t)),
             Some(CAN) => return Some(false),
             _ => {}
         }
@@ -1049,6 +1068,10 @@ mod tests {
         clears: u32,
         /// fdumpz: bytes still to come (an erased chunk carries no length of its own).
         zlen: usize,
+        /// Frames (by number) the host ACKs twice, as it does when it got two copies (FerriteFW/console#90): the
+        /// second ACK is `late`, arriving after the radio's next clear, while it waits or sends the next frame.
+        dup_ack: Vec<u32>,
+        late: Vec<u8>,
     }
 
     impl Host {
@@ -1066,6 +1089,8 @@ mod tests {
                 now: 0,
                 clears: 0,
                 zlen: 0,
+                dup_ack: Vec::new(),
+                late: Vec::new(),
             }
         }
 
@@ -1117,6 +1142,9 @@ mod tests {
                 t => panic!("frame type {t}"),
             }
             self.to_radio.push_back(ACK);
+            if self.dup_ack.contains(&k) {
+                self.late.push(ACK);
+            }
         }
     }
 
@@ -1127,6 +1155,7 @@ mod tests {
                 self.synced = true;
                 return;
             }
+            self.to_radio.extend(self.late.drain(..));
             self.from_radio.extend_from_slice(b);
             self.take_frame();
         }
@@ -1148,6 +1177,7 @@ mod tests {
         }
         fn pause(&mut self, ms: u32) {
             self.now += ms;
+            self.to_radio.extend(self.late.drain(..));
         }
     }
 
@@ -1271,6 +1301,35 @@ mod tests {
         assert_eq!(d.crc, crc32(0, &want));
         assert_eq!(d.resends, 2);
         assert_eq!(d.blocks, 5);
+    }
+
+    /// BACKUP-9.9: after a resend the host may ACK two copies of the frame; the second ACK is dropped, not taken
+    /// for the next frame (which here the host NAKs: taking the stale ACK would skip it). FerriteFW/console#90.
+    #[test]
+    fn fdumpz_drops_a_duplicate_ack() {
+        let len = 4 * ZCHUNK as u32;
+        let mut h = Host::new();
+        h.zlen = len as usize;
+        h.bad = std::vec![1, 3]; // chunk 1 NAKed once, then chunk 2 once
+        h.dup_ack = std::vec![2]; // chunk 1's resend ACKed twice
+        let mut buf = std::boxed::Box::new([0u8; ZCHUNK]);
+        let mut z = std::boxed::Box::new(ZWork::new());
+        let d = fdumpz_run(&mut h, &mut buf, &mut z, 0, len, |a, d| d.iter_mut().enumerate().for_each(|(i, x)| *x = chip(a + i as u32)), |_, _| true)
+            .unwrap();
+        assert_eq!(h.data, (0..len).map(chip).collect::<Vec<_>>());
+        assert_eq!((d.blocks, d.resends), (4, 2));
+    }
+
+    /// BACKUP-9.9: as [`fdumpz_drops_a_duplicate_ack`], for plain `fdump`.
+    #[test]
+    fn fdump_drops_a_duplicate_ack() {
+        let mut h = Host::new();
+        h.bad = std::vec![1, 3];
+        h.dup_ack = std::vec![2];
+        let len = 4 * BLOCK as u32;
+        let r = run(&mut h, 0, len).unwrap();
+        assert_eq!(h.data, (0..len).map(chip).collect::<Vec<_>>());
+        assert_eq!((r.blocks, r.resends), (4, 2));
     }
 
     /// BACKUP-9.5: a whole dump against a host like Console's: every byte, the end frame's CRC and count.

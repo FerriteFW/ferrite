@@ -1237,6 +1237,87 @@ fn light_retune_keeps_the_chip_on() {
     assert_eq!(log.take()[0], (reg::AF_OUT, 0x6042), "another slot: muted first");
 }
 
+/// One watch turn on a chip already receiving beside the broadcast, as the Radio task's `tune_finish` picks it
+/// (SQL-18.10, BCR-23.2): the light retune when only the frequency moves, otherwise the changed set-up's retune.
+fn hop_beside_bcast(bk: &mut Bk4829<Log>, was: &RxSetup, to: &RxSetup) {
+    if chip::light_ok(was, to) {
+        chip::retune_light(bk, to, None, true);
+    } else {
+        chip::retune_changed(bk, was, to, None);
+    }
+}
+
+/// Nothing a hop writes touches what the broadcast shares (ferrite#179): REG_30 never 0 (the AF DAC stays on),
+/// REG_37 and REG_48 untouched, REG_47 only muted, and receiving (0xBFF1) at the end.
+fn assert_quiet(w: &[(u8, u16)], what: &str) {
+    assert!(w.iter().all(|&(r, v)| !(r == reg::POWER && v == 0)), "{what}: REG_30 never 0: {w:x?}");
+    assert!(w.iter().all(|&(r, _)| r != reg::LDO && r != reg::AF_GAIN), "{what}: REG_37, REG_48 untouched: {w:x?}");
+    assert!(w.iter().all(|&(r, v)| r != reg::AF_OUT || v == 0x6042), "{what}: REG_47 only muted: {w:x?}");
+    assert_eq!(w.last(), Some(&(reg::POWER, 0xBFF1)), "{what}: receive on last");
+}
+
+/// BCR-23.1, BCR-23.2 (ferrite#179): broadcast FM on A, the watch on A+B+C, B and C on AM airband (118.000 and
+/// 121.500, both chip 0's): each hop between them writes the same registers an FM pair's hop does (the light
+/// retune has no AM path), and none on the shared audio path.
+#[test]
+fn hop_between_am_slots_beside_broadcast_is_quiet() {
+    let am = |f: Freq10| RxSetup { freq: f, am: true, ..RX };
+    let fm = |f: Freq10| RxSetup { freq: f, ..RX };
+    let regs = |b: RxSetup, c: RxSetup| {
+        let log = Log::default();
+        let mut bk = Bk4829::new(log.clone());
+        chip::tune_rest(&mut bk, &b); // B's turn first: the full set-up (the chip just woke)
+        log.take();
+        let mut was = b;
+        for to in [c, b, c, b] {
+            hop_beside_bcast(&mut bk, &was, &to);
+            was = to;
+        }
+        let w = log.take();
+        assert_quiet(&w, if b.am { "AM" } else { "FM" });
+        w.into_iter().map(|(r, _)| r).collect::<Vec<_>>()
+    };
+    assert!(chip::light_ok(&am(mhz(118)), &am(mhz(121) + 50_000)), "two AM slots set up alike: light");
+    assert_eq!(regs(am(mhz(118)), am(mhz(121) + 50_000)), regs(fm(mhz(145) + 49_500), fm(mhz(145) + 57_500)), "AM hops as FM does");
+}
+
+/// BCR-23.2 (ferrite#179): beside the broadcast a hop between slots set up otherwise (AM against NAM, a CTCSS, tail
+/// elimination, the APRS data set-up) keeps receive on, writing only what differs; the full order's REG_30 = 0 (the
+/// click) never comes.
+#[test]
+fn hop_between_slots_set_up_otherwise_beside_broadcast_is_quiet() {
+    let b = RxSetup { freq: mhz(118), am: true, ..RX };
+    let others = [
+        RxSetup { narrow: true, ..b },                                 // NAM (decision 447)
+        RxSetup { rx_tone: 1000, ..b },                                // a CTCSS
+        RxSetup { rx_tail: true, ..b },                                // tail elimination
+        RxSetup { freq: mhz(144) + 39_000, am: false, data: true, ..b }, // APRS C on 144.39
+    ];
+    for c in others {
+        assert!(!chip::light_ok(&b, &c), "{c:?}: not light");
+        let log = Log::default();
+        let mut bk = Bk4829::new(log.clone());
+        chip::tune_rest(&mut bk, &b);
+        log.take();
+        hop_beside_bcast(&mut bk, &b, &c);
+        let there = log.take();
+        hop_beside_bcast(&mut bk, &c, &b);
+        let back = log.take();
+        for w in [&there, &back] {
+            assert_quiet(w, &std::format!("{c:?}"));
+            assert_eq!(w[0], (reg::AF_OUT, 0x6042), "muted first");
+        }
+        let wrote = |w: &[(u8, u16)], r: u8| w.iter().any(|e| e.0 == r);
+        assert_eq!(wrote(&there, reg::RF_FILTER), c.narrow != b.narrow, "REG_43 only for a bandwidth change");
+        assert_eq!(wrote(&there, reg::AF_FILTERS), c.am != b.am, "the demodulator only for a mode change");
+        assert!(there.contains(&(reg::RF_FILTER, 0x4008)) == c.narrow && back.contains(&(reg::RF_FILTER, 0x3028)) == c.narrow);
+        if c.data {
+            assert!(there.contains(&(reg::AF_FILTERS, chip::DATA_RX_AF)), "APRS's data REG_2B");
+            assert!(back.contains(&(reg::AF_FILTERS, 0x0500)), "AM's REG_2B back");
+        }
+    }
+}
+
 #[cfg(feature = "bench")]
 /// TERM-34 (decision 139) `txtest suite` on the recording bus, for a key-up with no sub-tone, CTCSS and DCS: every
 /// step of the table in turn, then the hold, then the end. At each step the chip is on the mic (REG_30 0xC1FE) for
@@ -1372,7 +1453,7 @@ fn rx_af_override_after_fm_tune() {
 #[test]
 fn fsk_bench_rx_registers() {
     use ferrite_core::fskbench::{Cfg, Speed};
-    let c = Cfg { speed: Speed::parse(b"2400").unwrap(), crc: true };
+    let c = Cfg::new(Speed::parse(b"2400").unwrap(), true);
     let mut b = bk();
     chip::fsk_bench_rx(&mut b, &c);
     let bus = b.release();
@@ -1392,7 +1473,7 @@ fn fsk_bench_rx_registers() {
 #[test]
 fn fsk_bench_tx_registers() {
     use ferrite_core::fskbench::{payload, words, Cfg, Speed};
-    let c = Cfg { speed: Speed::parse(b"ffsk1800").unwrap(), crc: true };
+    let c = Cfg::new(Speed::parse(b"ffsk1800").unwrap(), true);
     let mut b = bk();
     chip::fsk_bench_tx_begin(&mut b, &c, false, 0);
     let bus = b.release();

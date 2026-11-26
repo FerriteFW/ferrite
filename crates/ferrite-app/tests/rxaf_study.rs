@@ -5,17 +5,18 @@
 //! measured on the black radio (REG_2B 0x0000 against 0x0100 in a raw, gain-free 16 kHz capture of the decoders'
 //! samples, LINK-13.9: +7.5 dB at 400 Hz, -6.4 dB at 2 kHz against 1 kHz) and as a textbook 6 dB/octave (one pole at
 //! 300 Hz). Taking de-emphasis away also boosts the noise up to the chip's fixed receive wall (about 3.1 kHz, whatever
-//! REG_2B says), so those variants end with that wall (fourth-order, 3.1 kHz). Ignored: it needs udigimodes' test
-//! audio (never redistributed). Run with
+//! REG_2B says), so those variants end with that wall (fourth-order, 3.1 kHz). Ignored: it needs the test data's
+//! recordings (the off-air ones private, never redistributed). Run with
 //! `cargo test --release -p ferrite-app --test rxaf_study -- --ignored --nocapture` (about 90 s; from a worktree, set
-//! `TESTDATA` to the testdata checkout's absolute path).
+//! `TESTDATA` to the test data checkout's absolute path).
 
 use ferrite_core::audio::ADC_HZ;
 use std::f64::consts::PI;
 
-/// udigimodes' test audio beside the checkout, or at `TESTDATA` (a worktree elsewhere).
-fn testdata(rel: &str) -> std::path::PathBuf {
-    std::env::var_os("TESTDATA").map_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata"), Into::into).join(rel)
+/// A recording of the test data (`ferrite_fuzzkit::testdata_dir`'s rule), when present, else a skip note: the
+/// off-air APRS recordings (`aprs/`) are private, the WA8LMF CD comes from the testdata repo's `fetch/all.sh`.
+fn testdata(rel: &str) -> Option<std::path::PathBuf> {
+    if rel.starts_with("aprs/") { ferrite_fuzzkit::testdata_private_file(rel) } else { ferrite_fuzzkit::testdata_file(rel) }
 }
 
 fn read_wav(path: &std::path::Path) -> Option<(Vec<i16>, u32)> {
@@ -199,7 +200,7 @@ fn rx_filter_study() {
     std::thread::scope(|sc| {
         let mut hs = Vec::new();
         for (ai, (_, rel)) in audio.iter().enumerate() {
-            let Some((s, rate)) = read_wav(&testdata(rel)) else { continue };
+            let Some((s, rate)) = testdata(rel).and_then(|p| read_wav(&p)) else { continue };
             let s: std::sync::Arc<Vec<f64>> = std::sync::Arc::new(s.iter().map(|&v| v as f64).collect());
             // rate_study.rs's level for the recording as it is (full scale at 1500 counts), kept for every variant.
             let rms = (s.iter().map(|x| x * x).sum::<f64>() / s.len() as f64).sqrt() * 1500.0 / 32768.0;

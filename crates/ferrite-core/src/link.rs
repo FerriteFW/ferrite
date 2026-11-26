@@ -34,6 +34,13 @@ pub mod build {
     /// low bits are the transmit kind above.
     pub const BENCH: u8 = 0x80;
 
+    /// Bit 6: not an official release (SELF-5.1, decision 466: [`crate::OFFICIAL`] unset). Set rather than an
+    /// "official" bit so a radio on an older release, which never sends it, still reads as official.
+    pub const UNOFFICIAL: u8 = 0x40;
+
+    /// The flag bits; what's left is the transmit kind.
+    const FLAGS: u8 = BENCH | UNOFFICIAL;
+
     /// The byte for a build with or without transmit, Dry TX on or not (TX-48: counts only with transmit), with
     /// or without the bench commands.
     pub const fn of(tx: bool, dry_on: bool, bench: bool) -> u8 {
@@ -45,10 +52,20 @@ pub mod build {
         kind | if bench { BENCH } else { 0 }
     }
 
+    /// The byte as sent: [`UNOFFICIAL`] added unless `official` (SELF-5.1; the radio passes [`crate::OFFICIAL`]).
+    pub const fn sent(b: u8, official: bool) -> u8 {
+        if official { b } else { b | UNOFFICIAL }
+    }
+
+    /// Whether a build byte is an official release's (SELF-5.1).
+    pub const fn official(b: u8) -> bool {
+        b & UNOFFICIAL == 0
+    }
+
     /// Whether the PA drive is held at 0 now: Dry TX on (TX-48), or an older radio's tx-dry build. What a bench
     /// tool needs before it keys.
     pub const fn dry(b: u8) -> bool {
-        matches!(b & !BENCH, TX_DRY | TX_DRY_ON)
+        matches!(b & !FLAGS, TX_DRY | TX_DRY_ON)
     }
 
     /// Whether a build byte has the bench commands.
@@ -56,9 +73,9 @@ pub mod build {
         b & BENCH != 0
     }
 
-    /// Its transmit kind's name, as the tools print it (the bench bit aside).
+    /// Its transmit kind's name, as the tools print it (the bench and unofficial bits aside).
     pub const fn name(b: u8) -> &'static str {
-        match b & !BENCH {
+        match b & !FLAGS {
             RECEIVE => "receive",
             TX => "tx",
             TX_DRY => "tx-dry",
@@ -207,6 +224,9 @@ pub mod msg {
     /// now (u32, 0 while the radio has no time), then its source (u8: 0 none, 1 GPS, 2 set by hand or the link).
     /// Only from
     pub const CLOCK: u8 = 0x63;
+    /// The SI4732's SSB patch into a radio already on Ferrite (HF-18, LINK-8, LINK-73; [`super::ssb`]): Console takes
+    /// it from the owner's stock .BTF and sends it in records; only the Storage task writes it, to its own region.
+    pub const SSB_WRITE: u8 = 0x64;
 }
 
 /// `DATA_READ` and `DATA_WRITE` (LINK-59 – LINK-62, decision 333): their ops and limits. Both refuse calibration
@@ -243,6 +263,53 @@ pub mod data {
     pub fn allowed(addr: u32, len: u32) -> bool {
         let end = addr as u64 + len as u64;
         len > 0 && end <= DATA.end as u64 && (end <= CALIBRATION.start as u64 || addr >= CALIBRATION.end)
+    }
+}
+
+/// `SSB_WRITE` (HF-18, LINK-73, decision 457): the SSB patch sent over the link, in records, to the store's SSB region
+/// (`layout::SSB_PATCH`); the same checks as the flasher's bundle at boot ([`crate::ssb`]).
+pub mod ssb {
+    /// Length (u32) and SHA-256 (32 bytes) of the patch to come. The answer's byte: 1 the same patch is stored and
+    /// verified (nothing written, nothing more to send), 0 the region is erased for it.
+    pub const BEGIN: u8 = 0;
+    /// Offset in the patch (u16, a multiple of 8), then 8 to [`PROGRAM_MAX`] bytes: whole 8-byte records, each led
+    /// by 0x15 or 0x16 (0x15 at offset 0), inside the length `BEGIN` gave.
+    pub const PROGRAM: u8 = 1;
+    /// Nothing: the store hashes what it holds and writes the header only if it matches `BEGIN`'s length and hash.
+    pub const FINISH: u8 = 2;
+    /// Nothing: `busy` while the store still has writes to make; else stored (u8: 0 none, 1 a verified patch), then
+    /// its SHA-256 (32 bytes) when 1.
+    pub const CHECK: u8 = 3;
+    /// The most patch bytes one `PROGRAM` carries (the store's queue holds a raw write's 64 bytes per job).
+    pub const PROGRAM_MAX: usize = 64;
+
+    /// `BEGIN`'s payload.
+    pub fn begin(len: u32, sha: &[u8; 32]) -> [u8; 37] {
+        let mut b = [0u8; 37];
+        b[0] = BEGIN;
+        b[1..5].copy_from_slice(&len.to_le_bytes());
+        b[5..].copy_from_slice(sha);
+        b
+    }
+
+    /// `PROGRAM`'s payload for `bytes` at `off` into `out` (at least 3 + `bytes.len()` long): its length.
+    pub fn program(off: u16, bytes: &[u8], out: &mut [u8]) -> usize {
+        out[0] = PROGRAM;
+        out[1..3].copy_from_slice(&off.to_le_bytes());
+        out[3..3 + bytes.len()].copy_from_slice(bytes);
+        3 + bytes.len()
+    }
+
+    /// A `PROGRAM`'s piece is whole records, each a patch download's (0x15 a block's first, 0x16 the rest), the
+    /// patch's first a 0x15, and it ends within `len`.
+    pub fn piece_ok(off: u32, bytes: &[u8], len: u32) -> bool {
+        let n = bytes.len();
+        off.is_multiple_of(8)
+            && n.is_multiple_of(8)
+            && (8..=PROGRAM_MAX).contains(&n)
+            && off + n as u32 <= len
+            && (off != 0 || bytes[0] == 0x15)
+            && bytes.chunks(8).all(|r| r[0] == 0x15 || r[0] == 0x16)
     }
 }
 
@@ -716,6 +783,12 @@ pub fn build(ty: u8, seq: u8, payload: &[u8], out: &mut [u8]) -> Option<usize> {
 /// programming (most likely the vendor's app sets the module to 115200 first: its FF31 handshake carries a rate byte).
 pub const BT_BAUD: u32 = 9_600;
 
+/// TERM-13.1 (issue #236): put into a port's received bytes where some were lost (its receive ring was full, or
+/// the UART overran), on the cable and Bluetooth: a terminal's `load` refuses the line it lands in, so a line with
+/// a hole in it is never applied. CAN, which a terminal sending text doesn't send; a link frame or a KISS frame
+/// that lost bytes was broken already, and its CRC (the link's) or the receiver refuses it.
+pub const LOST: u8 = 0x18;
+
 /// Bluetooth's fast rate (LINK-25.1, decision 285): the module's UART after the per-connection speed unlock (FF31,
 /// selector 02), which a host writes once the radio has agreed to `BAUD` 115200 on Bluetooth. The module keeps it
 /// across BLE connections and loses it when powered off (bench, Oct 24, 2026: `docs/research/ble-speed.md`).
@@ -923,6 +996,19 @@ mod tests {
         assert_eq!(names, ["receive", "tx", "tx-dry", "tx+dry", "unknown"]);
     }
 
+    /// SELF-5.1, LINK-35: bit 6 marks a build that isn't an official release; the kind, Dry TX and bench bit read
+    /// the same with it, and a byte without it (every older release's) reads as official.
+    #[test]
+    fn build_byte_unofficial() {
+        let b = build::sent(build::of(true, true, true), false);
+        assert_eq!(build::sent(build::TX, true), build::TX);
+        assert_eq!(b, build::TX_DRY_ON | build::BENCH | build::UNOFFICIAL);
+        assert!(!build::official(b) && build::official(build::TX) && build::official(build::TX_DRY_ON | build::BENCH));
+        assert_eq!((build::name(b), build::dry(b), build::bench(b)), ("tx+dry", true, true));
+        assert_eq!(build::name(build::TX | build::UNOFFICIAL), "tx");
+        assert!(!build::dry(build::TX | build::UNOFFICIAL));
+    }
+
     /// COBS into too short a buffer fails wherever it writes; a zero code, or one past the end, doesn't decode;
     /// frames too short or not COBS are refused with what could be read.
     #[test]
@@ -990,6 +1076,28 @@ mod tests {
         assert!(build(1, 0, &[0; MAX_PAYLOAD + 1], &mut wire).is_none());
         let n = build(1, 0, &[0; MAX_PAYLOAD], &mut wire).unwrap();
         assert!(n <= MAX_WIRE);
+    }
+
+    /// LINK-73: `SSB_WRITE`'s payloads as Appendix G lays them out; a piece is whole patch records inside the length.
+    #[test]
+    fn ssb_write_payloads() {
+        let b = ssb::begin(15_832, &[7; 32]);
+        assert_eq!((b[0], &b[1..5], b[5], b.len()), (ssb::BEGIN, &15_832u32.to_le_bytes()[..], 7, 37));
+        let rec = [0x16, 1, 2, 3, 4, 5, 6, 7];
+        let mut out = [0u8; 3 + ssb::PROGRAM_MAX];
+        assert_eq!(ssb::program(0x0140, &rec, &mut out), 11);
+        assert_eq!(&out[..11], &[ssb::PROGRAM, 0x40, 0x01, 0x16, 1, 2, 3, 4, 5, 6, 7]);
+        let mut first = rec;
+        first[0] = 0x15;
+        assert!(ssb::piece_ok(0, &first, 800));
+        assert!(!ssb::piece_ok(0, &rec, 800), "the patch starts with a 0x15");
+        assert!(ssb::piece_ok(8, &rec, 800));
+        assert!(!ssb::piece_ok(4, &rec, 800), "whole records");
+        assert!(!ssb::piece_ok(8, &rec[..4], 800));
+        assert!(!ssb::piece_ok(800, &rec, 800), "past the length");
+        assert!(!ssb::piece_ok(8, &[0x17; 8], 800), "not a download record");
+        assert!(!ssb::piece_ok(8, &[0x16; 72], 800), "at most 64 bytes");
+        assert!(ssb::piece_ok(8, &[0x16; 64], 800));
     }
 
     /// LINK-20.1: remote PTT's `KEY` payloads encode and decode, framed too; malformed ones don't decode.

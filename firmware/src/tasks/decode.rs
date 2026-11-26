@@ -5,22 +5,22 @@
 //!   `ALERTS`: the alert screen (WX-4) and an event log record (INBOX-6).
 //! - **DTMF:** tells the Radio task whether the BK4829's DTMF detector runs (0 4 3, DEC-6); the digits come back
 //!   in the live snapshot, for the slot's card.
-//! - **POCSAG:** asks the DSP task for the pager decoder while POCSAG is on and a slot sits on its frequency
+//! - **POCSAG:** asks the Radio task for the pager on slot C's chip modem in Pager mode (DEC-23)
 //!   (DEC-18: APRS's AFSK keeps the slot first); each page it decodes goes through the capcode filter into the
 //!   event log, the inbox and, with popups on, a toast (DEC-4, DEC-7).
 
 use super::dsp::PAGES;
-use crate::chan::{DSP, RADIO};
+use crate::chan::RADIO;
 use crate::store::Store;
 use ferrite_app::data::{Event, Src};
 use ferrite_app::App;
-use ferrite_core::msg::{DspCmd, LiveAll, RadioCmd, SameDecoded};
+use ferrite_core::msg::{LiveAll, RadioCmd, SameDecoded};
 use ferrite_ui::text::Buf;
 
 pub struct Decode {
     /// What the Radio task and the DSP task were last told (None: not yet).
     same: Option<bool>,
-    pager: Option<bool>,
+    pager: Option<u16>,
     dtmf: Option<bool>,
 }
 
@@ -39,8 +39,9 @@ impl Decode {
         if self.dtmf != Some(dtmf) && RADIO.try_send(RadioCmd::DtmfRx(dtmf)).is_ok() {
             self.dtmf = Some(dtmf);
         }
-        let pager = app.pager_wanted(live);
-        if self.pager != Some(pager) && DSP.try_send(DspCmd::Pager(pager)).is_ok() {
+        // DEC-23: the pager is the Radio task's now, on slot C's chip modem, at 0 4 2 5's speed
+        let pager = if app.pager_wanted(live) { app.pager_baud() } else { 0 };
+        if self.pager != Some(pager) && RADIO.try_send(RadioCmd::Pager(pager)).is_ok() {
             self.pager = Some(pager);
         }
         while let Ok(p) = PAGES.try_receive() {

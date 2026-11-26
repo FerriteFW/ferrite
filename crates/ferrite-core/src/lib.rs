@@ -10,12 +10,16 @@
 #[cfg(test)]
 extern crate std;
 
+pub mod acars;
+pub mod acarsrx;
 pub mod acc;
+pub mod airlines;
 pub mod audio;
 pub mod battery;
 pub mod chipid;
 pub mod clocktree;
 pub mod cmdq;
+pub mod screenpwm;
 pub mod sha256;
 pub mod ssb;
 pub mod stuck;
@@ -42,6 +46,7 @@ pub mod memmap;
 pub mod msg;
 pub mod name;
 pub mod part;
+pub mod pagerrx;
 pub mod path;
 pub mod rawaudio;
 pub mod rxmeter;
@@ -86,6 +91,12 @@ pub const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 
 /// The build (SELF-5): the git commit, short, "+" when built from uncommitted changes (build.rs).
 pub const BUILD: &str = env!("FERRITE_BUILD");
+
+/// SELF-5.1 (decision 466): built by FerriteFW's release workflow, the only build that sets `FERRITE_OFFICIAL=1`
+/// (build.rs). Everything else (a local build, a bench build, a fork's) says "Unofficial" on About, in `ui radio`
+/// and in the link's build byte ([`link::build::UNOFFICIAL`]). A marker, not a lock: the names policy
+/// (TRADEMARKS.md) is what keeps a modified build from passing as Ferrite.
+pub const OFFICIAL: bool = cfg!(ferrite_official);
 
 /// Set by the simulators' screenshot tests, so pictures don't change with every commit: [`build`] then reads
 /// "0000000".

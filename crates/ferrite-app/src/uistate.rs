@@ -341,6 +341,7 @@ fn keyed_remote_mode(app: &App, live: &LiveAll, l: &mut Line) {
         Mode::Hf => b"hf",
         Mode::Xb => b"xb",
         Mode::Sat => b"sat",
+        Mode::Acars => b"acars",
     });
 }
 
@@ -772,6 +773,7 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
         Screen::Hf(h) => hf_lines(app, cx, h, d),
         Screen::Sat(s) => sat_lines(app, &s, d),
         Screen::Sstv(s) => sstv_lines(app, cx, &s, d),
+        Screen::Acars(a) => acars_lines(app, cx, &a, d),
         Screen::Pin(p) => {
             // PIN-2, PIN-3: the heading, a star per digit typed (never the digits), the wait or attempts left
             if let Some(l) = d.ln() {
@@ -927,6 +929,26 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
                 }
             }
         }
+        // APRS-59.8: the Traffic page's rows on the page, as the screen says them, uncut:
+        // `traffic "VE7GPL-1 > TEST" "\"6\"" "4 min"`, with ` sel` on the selected one
+        Screen::AprsTraffic(st) => {
+            let data = cx.store.data();
+            let t = data.traffic();
+            st.cur.rows(t.map_or(0, |t| t.len()), screens::lists::ROWS2C, &|_| true, |_, i| {
+                if let (Some(r), Some(l)) = (t.and_then(|t| t.get(i)), d.ln()) {
+                    let (title, sub, age) = aprs::traffic_row(&r, data);
+                    l.push(b"traffic ");
+                    q(l, title.as_bytes());
+                    l.push(b" ");
+                    q(l, sub.as_bytes());
+                    l.push(b" ");
+                    q(l, age.as_bytes());
+                    if i == st.cur.sel {
+                        l.push(b" sel");
+                    }
+                }
+            });
+        }
         // APRS-53: the Sent page's rows on the page: `row 0 "4 min ago" "by VE3RSB-1"`, `grey` when not heard back
         Screen::AprsSent(st) => {
             let data = cx.store.data();
@@ -938,6 +960,38 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
             });
         }
         _ => {}
+    }
+}
+
+/// ACARS (chapter 27b, ACARS-9): `acars page=list n=10 sel=0 freq=131.550 strip=0 airlines=10 text=0 radio=1` (text:
+/// only messages with text listed, ACARS-4.2; radio: the decoder listening on the frequency, ACARS-11); on a
+/// message's page also its fields: ` flight="AC0115" reg="C-FIUA" label="H1" up=0 crc=1 blocks=2 data=0 line=0`
+/// (data: a data report, ACARS-4.3).
+fn acars_lines<S: ChannelStore>(app: &App, cx: &Cx<S>, s: &screens::acars::Acars, d: &mut Desc) {
+    let Some(l) = d.ln() else { return };
+    let live = cx.store.data().acars();
+    l.push(b"acars");
+    kq(l, "page", if s.detail { b"message" } else { b"list" });
+    kn(l, "n", live.map_or(0, |a| a.len()) as u32);
+    kn(l, "sel", s.cur.sel as u32);
+    let mut f = Buf::<16>::new();
+    screens::lists::mhz_text(crate::acars::FREQS[app.set.acars_freq as usize % crate::acars::FREQS.len()], &mut f);
+    kq(l, "freq", f.as_bytes());
+    kn(l, "strip", s.strip as u32);
+    if s.air != u16::MAX {
+        kn(l, "airlines", s.air as u32);
+    }
+    kn(l, "text", app.set.acars_text as u32);
+    kn(l, "radio", app.acars_decoding(cx.live) as u32);
+    if let Some((m, _)) = live.filter(|_| s.detail).and_then(|a| a.get(s.cur.sel, &mut [])) {
+        kq(l, "flight", m.flight());
+        kq(l, "reg", m.reg());
+        kq(l, "label", &ferrite_core::acars::label_text(m.label));
+        kn(l, "up", m.up() as u32);
+        kn(l, "crc", m.crc_ok() as u32);
+        kn(l, "blocks", m.blocks as u32);
+        kn(l, "data", m.is_data() as u32);
+        kn(l, "line", s.line as u32);
     }
 }
 
@@ -1336,7 +1390,7 @@ fn card<S: ChannelStore>(app: &App, cx: &Cx<S>, s: u8, d: &mut Desc) {
         // the stations heard; C's own VFO (AM, say) is put aside meanwhile, so its chips would mislead.
         let data = cx.store.data();
         let mut last = Buf::<80>::new();
-        match app.aprs_card(data).filter(|k| k.holder == crate::aprs::Holder::Mode) {
+        match app.aprs_card(data).filter(|k| matches!(k.holder, crate::aprs::Holder::Mode | crate::aprs::Holder::Pager)) {
             // LINK-19.4: APRS mode's bottom line as drawn (the last heard since power-on, APRS-17.2)
             Some(k) => last.push(k.line.as_bytes()),
             None => crate::aprs::last_text(data, &mut last),
@@ -1345,11 +1399,12 @@ fn card<S: ChannelStore>(app: &App, cx: &Cx<S>, s: u8, d: &mut Desc) {
         app.beacon_text(data, &mut beacon);
         // APRS-29.2: Tracker decodes nothing, so its card has no last heard and no counts (its rows are `line=`)
         let tracker = app.aprs_holder() == Some(crate::aprs::Holder::Beacon);
+        let pager = app.aprs_holder() == Some(crate::aprs::Holder::Pager); // DEC-20.2: `last` is the newest page
         if !tracker {
             kq(l, "last", last.as_bytes());
         }
         kq(l, "beacon", beacon.as_bytes());
-        if !tracker {
+        if !tracker && !pager {
             let (boot, hour, _) = app.heard_counts(data);
             kn(l, "heard", boot as u32); // APRS-17.2: the card's counts, since power-on and in the last hour
             kn(l, "hour", hour as u32);
@@ -1376,6 +1431,7 @@ fn card<S: ChannelStore>(app: &App, cx: &Cx<S>, s: u8, d: &mut Desc) {
                     kn(l, "frames", heard as u32);
                 }
                 crate::aprs::Holder::Beacon => kq(l, "line", k.line.as_bytes()),
+                crate::aprs::Holder::Pager => kn(l, "pages", app.pages_boot as u32), // DEC-20.2
                 // LINK-19.4: which count the small card shows now (APRS-17.2: "14 heard", 1 "3 /hr")
                 crate::aprs::Holder::Mode => kn(l, "turn", 0), // APRS-17.2.1: the small card no longer flips
             }
@@ -1441,6 +1497,7 @@ pub fn id(s: Screen) -> &'static str {
         Screen::Value(_) => "Value",
         Screen::Tones(_) => "Tones",
         Screen::Sstv(_) => "Sstv",
+        Screen::Acars(_) => "Acars",
         Screen::Text(_) => "Text",
         Screen::Save(_) => "Save",
         Screen::Confirm(_) => "Confirm",
@@ -1468,6 +1525,7 @@ pub fn id(s: Screen) -> &'static str {
         Screen::Options(_) => "Options",
         Screen::Aprs(_) => "Aprs",
         Screen::AprsSent(_) => "AprsSent",
+        Screen::AprsTraffic(_) => "AprsTraffic",
         Screen::Msgs(_) => "Msgs",
         Screen::Compose(_) => "Compose",
         Screen::QuickMsgs(_) => "QuickMsgs",
@@ -1551,6 +1609,9 @@ pub fn radio_line<S: ChannelStore>(app: &App, st: &S, dev: &Device, i: u16, l: &
         0 => {
             l.push(b"firmware version=");
             l.push(ferrite_core::VERSION.as_bytes());
+            l.push(b" build=");
+            l.push(ferrite_core::build().as_bytes());
+            kn(l, "official", ferrite_core::OFFICIAL as u32); // SELF-5.1
             kn(l, "tx", dev.tx_built as u32);
             kn(l, "bench", dev.bench as u32);
             kn(l, "dry", app.dry_tx() as u32);

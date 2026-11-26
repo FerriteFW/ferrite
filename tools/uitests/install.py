@@ -7,7 +7,7 @@ session, the simulator's too, and touch no radio.
 The rest compare the radio before and after a flash (needs=("flash",)): run
 
     tools/uitest.py --module install --flash before     # keeps the readings in --flash-state
-    ../.venv/bin/python tools/flash.py PORT target/ferrite-txdry.btf --backup ../backups/blackradio/flash.bin \
+    .venv/bin/python tools/flash.py PORT target/ferrite-txdry.btf --backup ../backups/blackradio/flash.bin \
         [--ssb-from STOCK.BTF]
     tools/uitest.py --module install --flash after      # compares
 
@@ -185,7 +185,7 @@ def flasher_checks_release_signatures(t):
 def readings(t):
     t.home()
     u = t.keys("MENU 0 9 8")
-    about = {r["name"]: r["value"] for r in u.rows}
+    about = dict(zip(u.names(), (r["value"] for r in u.rows)))  # "Version" whether official or not (SELF-5.1)
     t.home()
     u = t.keys("MENU 0 9 9 2 MENU")
     cal = {r["name"]: r["value"] for r in u.rows}

@@ -31,6 +31,8 @@ pub enum Of {
     Channels,
     /// Home's APRS card (APRS-17).
     AprsCard,
+    /// Home's pager card (DEC-21).
+    PagerCard,
     /// A station's page (APRS-41) and the Contacts screen (APRS-40).
     Station,
     Contacts,
@@ -151,7 +153,7 @@ const SCOPE: [Opt; 1] = [("Scope settings", Act::Open(Dest::Sub(3, 1)), txt!("Ba
 /// row (beacons alone hold C); a digit opens a row that opens a screen (MENU-25), so OK 1 reads the messages.
 pub(crate) const APRS_ROW_HEARD: u8 = 1;
 pub(crate) const APRS_ROW_BEACON_NOW: u8 = 3;
-const APRS: [Opt; 7] = [
+const APRS: [Opt; 8] = [
     ("Messages", Act::Open(Dest::AprsMessages), txt!("Inbox, sent and compose")),
     ("Heard", Act::Open(Dest::AprsHeard), txt!("Stations heard, newest first")),
     ("Sent", Act::Open(Dest::AprsSent), txt!("Your beacons and who repeated them")),
@@ -159,14 +161,24 @@ const APRS: [Opt; 7] = [
     ("Event log", Act::Open(Dest::EventLog), txt!("Everything decoded and logged")),
     ("Clear the heard list", Act::Confirm(Simple::ClearHeard), txt!("Stations return when heard")),
     ("APRS settings", Act::Open(Dest::Group(5)), txt!("Beacon, path, symbol, frequency")),
+    // APRS-59: at the end, so the rows before keep their numbers (MENU-6.1)
+    ("Traffic", Act::Open(Dest::AprsTraffic), txt!("Every packet heard lately, newest first")),
+];
+/// DEC-21: the pager list, from C's pager card (OK or hold MENU), opened on Pages.
+const PAGER: [Opt; 4] = [
+    ("Pages", Act::Open(Dest::Pages), txt!("Pages heard, newest first")),
+    ("Event log", Act::Open(Dest::EventLog), txt!("Everything decoded and logged")),
+    ("Capcode filter", Act::Open(Dest::Text(super::text::TextFor::Capcode)), txt!("Only this capcode; # in it clears")),
+    ("Pager settings", Act::Open(Dest::Sub(4, 2)), txt!("Decode, frequency, capcode")),
 ];
 const CHANNELS: [Opt; 1] = [("Show hidden channels", Act::ShowHidden, txt!("Hidden channels stay reachable by number"))];
-const WAYPOINTS: [Opt; 5] = [
+const WAYPOINTS: [Opt; 6] = [
     ("Mark here", Act::Do(Simple::MarkHere), txt!("A waypoint at this fix")),
     ("Add a grid square", Act::Grid, txt!("A waypoint at a square's centre: FN31pr")),
     ("Arrival alarm", Act::Arrival, txt!("Off, 50 m to 1 km from the one you go to")),
     ("Use as fixed position", Act::Sel(Sel::Fixed, false), txt!("This waypoint, used when there's no fix")),
     ("GPS position", Act::Open(Dest::GpsPosition), txt!("Fix, satellites, grid square")),
+    ("Delete", Act::Sel(Sel::Delete, true), txt!("This waypoint only; the rest move up")), // GPS-10.2
 ];
 const STATION: [Opt; 3] = [
     ("Message", Act::Sel(Sel::Message, false), txt!("Write this station a message")),
@@ -183,6 +195,7 @@ pub(crate) fn rows(of: Of) -> &'static [Opt] {
     match of {
         Of::Log => &LOG,
         Of::Heard | Of::AprsCard => &APRS,
+        Of::PagerCard => &PAGER,
         Of::Messages => &MESSAGES,
         Of::MsgSending => &MSG_SENDING,
         Of::MsgEnded => &MSG_ENDED,
@@ -208,6 +221,7 @@ pub(crate) fn title(of: Of) -> &'static [u8] {
         Of::Scope => b"Scope",
         Of::Channels => b"Channels",
         Of::AprsCard => b"APRS slot",
+        Of::PagerCard => b"Pager slot",
         Of::Station => b"APRS station",
         Of::Contacts => b"Contacts",
     }
@@ -276,9 +290,10 @@ impl View for Options {
                     if store.data().request(op) {
                         match op {
                             // the log's: the mail badge counts messages (INBOX-3.1); an emptied log has none new (INBOX-3.2)
-                            Op::ReadAll | Op::ClearLog => app.log_unread = 0,
+                            Op::ReadAll | Op::ClearLog => (app.log_unread, app.pages_unread) = (0, 0), // DEC-22: pages are log entries
                             // INBOX-3.2: each message read takes its log entry with it (INBOX-7.1), as one read does
-                            Op::MessagesReadAll => (app.log_unread, app.inbox) = (app.log_unread.saturating_sub(app.inbox), 0),
+                            // DEC-22: and the pages among them
+                            Op::MessagesReadAll => (app.log_unread, app.inbox, app.pages_unread) = (app.log_unread.saturating_sub(app.badge()), 0, 0),
                             Op::ClearMessages => app.inbox = 0, // APRS-46
                             _ => {}
                         }

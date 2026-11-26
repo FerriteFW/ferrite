@@ -97,6 +97,7 @@ impl Radio {
         #[cfg(feature = "tx")]
         self.dial_step(); // DTMF-1: the dialled sequence's next step
         if self.hf.is_some() {
+            self.unread(0); // SQL-21: HF mode reads no slot
             // Keyed from HF mode (HF-23): the keyed tick as from home (TX-30 backstop, TX-31 duty limit, TX-32
             // battery under load); the HF receiver's report waits for the unkey (TX audit M5).
             #[cfg(feature = "tx")]
@@ -117,12 +118,18 @@ impl Radio {
         }
         // Satellite mode owns both chips while its screen is open (SAT-1, SAT-14): no watch, scan or decoders.
         if self.sat.is_some() {
+            self.unread(0); // SQL-21: the downlink is no slot
             return self.sat_tick().await;
+        }
+        // ACARS-11: likewise ACARS, with the VHF chip while its screen is open.
+        if self.acars.is_some() {
+            return self.acars_tick().await;
         }
         // The crossband repeater owns both chips while it runs (XB-13: no watch, scan or Battery Save); local PTT
         // holds it (XB-14), and that transmission runs as any other.
         #[cfg(feature = "tx")]
-        if let Some(held) = self.xb.as_ref().map(|x| x.rep.held()) {
+        if let Some((held, sides)) = self.xb.as_ref().map(|x| (x.rep.held(), 1 << x.sides[0] | 1 << x.sides[1])) {
+            self.unread(sides); // SQL-21: the repeater's two sides alone are read
             // XB-13: Battery Save stepped as busy, so its receivers stay awake and its deadline stays ahead (decision
             // 163: left unstepped, it went past 10 s after the start and the Radio task woke every 1 ms).
             let a = self.save.tick(now_ms(), true);
@@ -149,13 +156,17 @@ impl Radio {
             }
         }
         let now = now_ms() as u32;
-        if self.scope.is_some() {
+        // SQL-21: the scope reads its strip's slot while it listens there, tone search its slot, the counter none.
+        if let Some(sc) = self.scope.as_ref() {
+            self.unread(sc.home.filter(|_| sc.listen != 0).map_or(0, |s| 1 << (s as usize % SLOTS)));
             return self.scope_tick(now);
         }
         if self.counter.is_some() {
+            self.unread(0);
             return self.counter_tick(now).await;
         }
-        if self.tsearch.is_some() {
+        if let Some((s, _)) = self.tsearch {
+            self.unread(1 << (s as usize % SLOTS));
             return self.tsearch_tick().await;
         }
         // Keyed: the chips and paths are the transmission's (TX-29); only the sequencer's timeout, duty limit
@@ -297,6 +308,7 @@ impl Radio {
         }
         // SAME on a weather channel's chip (DEC-19), then DTMF on the others (DEC-6).
         self.same_tick(now);
+        self.pager_tick(now); // DEC-23
         self.dtmf_tick(now, &sq);
         // 2. Scans step while their slot has a chip, on the answer from that chip. Before the watch turn, so the
         // turn gives a step to the other band that band's chip in this tick (decision 166): after it, as until Oct
@@ -423,11 +435,16 @@ impl Radio {
         let add = |x: u16, y: u16| x.saturating_add(y);
         self.live.aprs_sq = ferrite_core::aprssq::Counts { opens: add(a.opens, b.opens), short: add(a.short, b.short), spikes: add(a.spikes, b.spikes), settle: add(a.settle, b.settle) };
         let active_relay = Sel::rx(self.slots[self.active as usize].freq).relay();
+        // SQL-12.4: the slots read at all (the active one, the watched ones, any a chip is on): one listened to by
+        // no chip keeps no reading, so its meter is emptied rather than frozen at its last level.
+        let listened = self.listened_slots();
         for (i, sl) in self.live.slots.iter_mut().enumerate() {
-            let open = self.watcher.open(i as u8) || self.monitor & 1 << i != 0;
-            if !open {
-                sl.rssi = sl.rssi.min(-121);
+            if listened & 1 << i == 0 {
+                (sl.rssi, sl.rssi_raw) = (-121, -121);
             }
+            // The level as read, open or closed: a closed slot's meter shows the signal (or the band's noise) under
+            // the threshold, dimmed, as an operator expects from a radio's S-meter.
+            let open = self.watcher.open(i as u8) || self.monitor & 1 << i != 0;
             sl.squelch_open = open;
             sl.carrier = open && self.carrier & 1 << i != 0; // SQL-13.1
             sl.heard_tone = self.hints[i].heard;
@@ -456,6 +473,21 @@ impl Radio {
         self.apply(a).await;
         let a = self.save.tick(now_ms(), busy);
         self.apply(a).await;
+    }
+
+    /// SQL-21 (ferrite#132): an exclusive mode (HF, the satellite screen, crossband, the scope, the counter, tone
+    /// search) reads only the slots in `read`, and the receive tick's squelch work below never runs: every other slot
+    /// is shown as not read (closed, no carrier, an empty meter) and the APRS slot's squelch goes to the DSP task as
+    /// closed, which stops the AFSK capture and lets the core clock down (PWR-26.9). Frozen as the mode found them, C
+    /// mid-packet kept the capture at full clock for the whole mode and its carrier made every beacon "busy".
+    #[inline(never)]
+    fn unread(&mut self, read: u8) {
+        self.watcher.unread(read);
+        self.carrier &= read;
+        self.live.unread(read);
+        if self.aprs_open_sent && crate::chan::DSP.try_send(ferrite_core::msg::DspCmd::Squelch(false)).is_ok() {
+            self.aprs_open_sent = false;
+        }
     }
 
     /// The tone hint's step for the slot on the listening chip (TSRCH-12, TSRCH-15): eligible while the watch

@@ -19,7 +19,7 @@
 use super::gpio::{pin, Mode, Pin, GPIOA, GPIOC};
 use super::regs::*;
 use super::{clock, irq, modify, rd, wr};
-use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering::Relaxed};
+use core::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicU8, Ordering::Relaxed};
 use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex as M;
 use embassy_sync::signal::Signal;
 use ferrite_core::audio::{ADC_HZ, BLOCK_DAC, BLOCK_IN, DAC_HZ};
@@ -29,26 +29,28 @@ const CRM_AHB_DMA1: u32 = 1 << 0;
 const CRM_AHB_DMA2: u32 = 1 << 1;
 
 const DMA1: u32 = 0x4002_0000;
-const DMA2: u32 = 0x4002_0400;
+pub(super) const DMA2: u32 = 0x4002_0400;
 const DMA_STS: u32 = 0x00;
 const DMA_CLR: u32 = 0x04;
 /// Channel n's registers (1-based): control, count, peripheral and memory address.
-const fn ch(dma: u32, n: u32) -> u32 {
+pub(super) const fn ch(dma: u32, n: u32) -> u32 {
     dma + 0x08 + 20 * (n - 1)
 }
-const CH_CTRL: u32 = 0x00;
-const CH_DTCNT: u32 = 0x04;
-const CH_PADDR: u32 = 0x08;
-const CH_MADDR: u32 = 0x0C;
-const DMA_EN: u32 = 1 << 0;
+pub(super) const CH_CTRL: u32 = 0x00;
+pub(super) const CH_DTCNT: u32 = 0x04;
+pub(super) const CH_PADDR: u32 = 0x08;
+pub(super) const CH_MADDR: u32 = 0x0C;
+pub(super) const DMA_EN: u32 = 1 << 0;
 const DMA_FDTIEN: u32 = 1 << 1; // transfer complete
 const DMA_HDTIEN: u32 = 1 << 2; // half transfer
-const DMA_DTD_M2P: u32 = 1 << 4; // memory to peripheral
-const DMA_LM: u32 = 1 << 5; // circular
-const DMA_MINCM: u32 = 1 << 7;
+pub(super) const DMA_DTD_M2P: u32 = 1 << 4; // memory to peripheral
+pub(super) const DMA_LM: u32 = 1 << 5; // circular
+pub(super) const DMA_MINCM: u32 = 1 << 7;
 const DMA_PWIDTH_16: u32 = 1 << 8;
 const DMA_MWIDTH_16: u32 = 1 << 10;
 const DMA_CHPL_HIGH: u32 = 2 << 12;
+pub(super) const DMA_PWIDTH_32: u32 = 2 << 8;
+pub(super) const DMA_MWIDTH_32: u32 = 2 << 10;
 /// A channel's flags in DMA_STS / DMA_CLR: global, complete, half, error.
 const fn flags(n: u32) -> u32 {
     0xF << (4 * (n - 1))
@@ -115,7 +117,7 @@ fn reload(hz: u32) -> u32 {
 pub fn capture_start() {
     CAPTURING.store(true, Relaxed);
     pin(GPIOA, 2).config(Mode::Analog);
-    modify(CRM_AHBEN, 0, CRM_AHB_DMA1);
+    critical_section::with(|_| modify(CRM_AHBEN, 0, CRM_AHB_DMA1)); // beside DMA2's users (`dma2_use`)
     modify(CRM_APB1EN, 0, CRM_APB1_TMR4);
     let c = ch(DMA1, 1);
     wr(c + CH_CTRL, 0);
@@ -153,7 +155,7 @@ pub fn capture_stop() {
     modify(ADC_CTRL2, ADC_CTRL2_OCTESEL_MASK | ADC_CTRL2_DMAEN, super::regs::ADC_CTRL2_OCTESEL_SW);
     // PWR-23: the capture's timer and DMA unclocked until the next start (DMA1 serves only the capture).
     modify(CRM_APB1EN, CRM_APB1_TMR4, 0);
-    modify(CRM_AHBEN, CRM_AHB_DMA1, 0);
+    critical_section::with(|_| modify(CRM_AHBEN, CRM_AHB_DMA1, 0));
 }
 
 /// DMA1 channel 1: a capture half is full.
@@ -167,11 +169,32 @@ pub fn adc_isr() {
     ADC_HALF.signal(if sts & half_flag(1) != 0 { 0 } else { 1 });
 }
 
+/// DMA2's users: the playback (channel 3) and the screen light's dither (`super::backlight`, channel 1,
+/// DISP-23.1). DMA2 is clocked while either runs and unclocked when neither does (PWR-23).
+pub(super) const DMA2_PLAY: u8 = 1;
+pub(super) const DMA2_BACKLIGHT: u8 = 2;
+static DMA2_USERS: AtomicU8 = AtomicU8::new(0);
+
+/// `user` starts or stops using DMA2: its clock on with the first, off after the last (interrupts held off, so a
+/// task and a speed switch can't race on the clock bit).
+pub(super) fn dma2_use(user: u8, on: bool) {
+    critical_section::with(|_| {
+        let u = DMA2_USERS.load(Relaxed);
+        let u = if on { u | user } else { u & !user };
+        DMA2_USERS.store(u, Relaxed);
+        if u != 0 {
+            modify(CRM_AHBEN, 0, CRM_AHB_DMA2);
+        } else {
+            modify(CRM_AHBEN, CRM_AHB_DMA2, 0);
+        }
+    });
+}
+
 /// Playback on: PA4 analog, DAC1 on TMR6's update at the DAC rate, DMA2 channel 3 circular from [`DAC_BUF`]
 /// (the caller has filled both halves), PC12 high.
 pub fn play_start() {
     pin(GPIOA, 4).config(Mode::Analog);
-    modify(CRM_AHBEN, 0, CRM_AHB_DMA2);
+    dma2_use(DMA2_PLAY, true);
     modify(CRM_APB1EN, 0, CRM_APB1_TMR6 | CRM_APB1_DAC);
     modify(CRM_APB1RST, CRM_APB1_DAC, 0);
     let c = ch(DMA2, 3);
@@ -201,9 +224,10 @@ pub fn play_stop() {
     irq::disable(IRQ_DAC_DMA);
     modify(ch(DMA2, 3) + CH_CTRL, DMA_EN, 0);
     // PWR-23: DAC channel 1 off (it was left on at mid-scale); channel 2, the PA drive (`hal::pa`), untouched.
-    // DMA2 serves only the playback; TMR6 was stopped above (a beep starts it, clock included, again).
+    // DMA2 off unless the screen light's dither still uses it; TMR6 was stopped above (a beep starts it, clock
+    // included, again).
     modify(DAC_CTRL, DAC_CTRL_D1DMAEN | DAC_CTRL_TEN1 | DAC_CTRL_EN1, 0);
-    modify(CRM_AHBEN, CRM_AHB_DMA2, 0);
+    dma2_use(DMA2_PLAY, false);
     modify(CRM_APB1EN, CRM_APB1_TMR6, 0);
 }
 

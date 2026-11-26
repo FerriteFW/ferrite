@@ -464,7 +464,7 @@ pub const TRACKER_BEACON: u8 = 5;
 
 /// What held C at the last tick, [`Holder::bits`] (KISS-9, APRS-29: KISS or beacons turning on or off move it, from
 /// any path that sets them).
-const HELD: u8 = 0x30;
+const HELD: u8 = 0x70;
 
 /// What holds slot C as the APRS slot (APRS-19, KISS-9, APRS-29), in this precedence when more than one does:
 /// APRS mode, then KISS, then beacons. Only the first two give C receive priority on its chip (APRS-21.1,
@@ -474,6 +474,8 @@ pub enum Holder {
     Mode,
     Kiss,
     Beacon,
+    /// Pager mode (DEC-20, APRS-29.3): C listens for POCSAG pages on 0 4 2's frequency.
+    Pager,
 }
 
 impl Holder {
@@ -483,6 +485,7 @@ impl Holder {
             Holder::Mode => "APRS mode",
             Holder::Kiss => "KISS",
             Holder::Beacon => "Tracker",
+            Holder::Pager => "Pager",
         }
     }
 
@@ -492,6 +495,7 @@ impl Holder {
             Holder::Mode => "mode",
             Holder::Kiss => "kiss",
             Holder::Beacon => "beacon", // Tracker (APRS-29.2); the word Console's Live View reads, kept
+            Holder::Pager => "pager", // DEC-20.2
         }
     }
 
@@ -501,6 +505,7 @@ impl Holder {
             Some(Holder::Mode) => 1,
             Some(Holder::Kiss) => 2,
             Some(Holder::Beacon) => 3,
+            Some(Holder::Pager) => 4,
         }) << 4
     }
 }
@@ -541,6 +546,8 @@ impl App {
             Some(Holder::Kiss) // KISS-10: first, APRS mode and beacons wait while it is on
         } else if self.set.aprs_mode {
             Some(Holder::Mode)
+        } else if self.set.pocsag_on {
+            Some(Holder::Pager) // DEC-20: 0 5 3's Pager
         } else if self.set.tracker && self.beacons_on() {
             Some(Holder::Beacon) // APRS-29.2: Tracker
         } else {
@@ -581,7 +588,12 @@ impl App {
     /// C has receive priority on its chip (APRS-21.1, decision 181): APRS mode or KISS hold it. Beacons alone
     /// don't: C is then an ordinary watched slot.
     pub fn aprs_prio(&self) -> bool {
-        self.aprs_on() || self.kiss_on()
+        self.aprs_on() || self.kiss_on() || self.pager_on()
+    }
+
+    /// Pager mode holds C (DEC-20): 0 5 3 on Pager, not in Low Power Mode (PWR-24).
+    pub fn pager_on(&self) -> bool {
+        self.aprs_holder() == Some(Holder::Pager)
     }
 
     /// Slot `s` is the APRS slot now.
@@ -592,13 +604,13 @@ impl App {
     /// APRS-21.2: slot `s` (A or B) receives on the APRS frequency while C is the APRS slot, so it defers to C: no
     /// turns of its own (the Radio task's watch), its card "APRS on C" until C receives.
     pub fn defers_to_c(&self, s: u8) -> bool {
-        self.aprs_c() && s < APRS_SLOT && self.tuned_freq(s) == self.aprs_freq()
+        self.aprs_c() && s < APRS_SLOT && self.tuned_freq(s) == self.c_freq()
     }
 
     /// APRS-21.3: slot `s` (A or B) transmits on the APRS frequency while C is the APRS slot: voice there needs a
     /// person's PTT twice; VOX and remote PTT never key it.
     pub fn aprs_voice_gate(&self, s: u8) -> bool {
-        self.aprs_c() && s < APRS_SLOT && crate::screens::transmit::tx_freq(self, s) == self.aprs_freq()
+        self.aprs_c() && !self.pager_on() && s < APRS_SLOT && crate::screens::transmit::tx_freq(self, s) == self.aprs_freq()
     }
 
     /// Why the APRS slot can't change (APRS-19, KISS-9, APRS-29): what holds it, nothing more (decision 181).
@@ -606,6 +618,7 @@ impl App {
         match self.aprs_holder() {
             Some(Holder::Kiss) => "Slot C held by KISS",
             Some(Holder::Beacon) => "Slot C held by Tracker",
+            Some(Holder::Pager) => "Slot C held by Pager",
             _ => "Slot C held by APRS mode",
         }
     }
@@ -664,9 +677,14 @@ impl App {
         }
     }
 
-    /// What the slot is tuned to: its own frequency, or the APRS frequency on the APRS slot.
+    /// What C is held on: 0 4 2's frequency in Pager mode (DEC-20), else the APRS frequency.
+    pub fn c_freq(&self) -> Freq10 {
+        if self.pager_on() { self.set.pocsag_freq } else { self.aprs_freq() }
+    }
+
+    /// What the slot is tuned to: its own frequency, or C's held one on the APRS slot.
     pub fn tuned_freq(&self, s: u8) -> Freq10 {
-        if self.aprs_slot(s) { self.aprs_freq() } else { self.slot(s).freq() }
+        if self.aprs_slot(s) { self.c_freq() } else { self.slot(s).freq() }
     }
 
     /// The slot's settings as the radio has them: on the APRS slot FM, no tones, simplex, busy lockout by
@@ -715,6 +733,11 @@ impl App {
     /// starts every 10 min (a tracker beacons); KISS uses 0 5 8's port. C follows, with a toast saying which.
     pub(crate) fn set_aprs_select(&mut self, v: u8) {
         let v = v % crate::settings::APRS_MODES.len() as u8;
+        let was = self.set.aprs_select();
+        if v != 4 {
+            self.pager_was = None;
+        }
+        self.set.pocsag_on = v == 4; // DEC-20: Pager, the same switch as 0 4 2 2
         // Leaving Tracker: the beacon mode it set itself goes back to what it was (off or manual).
         if v != 1 {
             if let Some(was) = self.tracker_was.take() {
@@ -739,7 +762,39 @@ impl App {
                 self.show_toast(b"Tracker on", b.as_bytes(), false);
             }
             3 => self.show_toast(b"KISS on", crate::settings::KISS_VIA[(port as usize).saturating_sub(1) % 2].as_bytes(), false),
+            0 if was == 4 => self.show_toast(b"Pager off", b"slot C restored", false),
+            4 => {
+                // DEC-20: what Pager took C from
+                let mut b = Buf::<28>::new();
+                let _ = uwrite!(b, "C on {}", Txt(crate::slot::mhz3(self.set.pocsag_freq).as_bytes()));
+                if was != 0 && was != 4 {
+                    let _ = uwrite!(b, ", {} off", crate::settings::APRS_WAS[was as usize]);
+                }
+                self.show_toast(b"Pager on", b.as_bytes(), false);
+            }
             _ => {}
+        }
+    }
+
+    /// 0 4 2 2, Decode (DEC-20): Pager on, remembering the APRS mode it replaces; off puts that back.
+    pub(crate) fn set_pager(&mut self, on: bool) {
+        if on == self.set.pocsag_on {
+            return;
+        }
+        if on {
+            let was = self.set.aprs_select();
+            self.set_aprs_select(4);
+            self.pager_was = Some(was);
+        } else {
+            let back = self.pager_was.take().unwrap_or(0);
+            self.set_aprs_select(back);
+        }
+    }
+
+    /// 0 4 2's frequency changed: C retunes when it is the pager slot (DEC-20).
+    pub(crate) fn pager_retune(&mut self) {
+        if self.pager_on() {
+            self.send_slot(APRS_SLOT);
         }
     }
 

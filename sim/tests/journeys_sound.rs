@@ -31,10 +31,12 @@ fn alert_sounds_until_ok() {
     assert_eq!(r.sim.radio().beeps, at, "OK silenced it");
 }
 
-/// About shows the version and the build (SELF-5; the tests' build reads 0000000).
+/// About shows the version and the build (SELF-5; the tests' build reads 0000000); SELF-5.1: the row is labelled
+/// "Unofficial build" on anything but an official release's image (the tests are never one unless FERRITE_OFFICIAL=1).
 #[test]
 fn about_shows_version_and_build() {
     let mut r = Radio::new();
     r.run("menu 0 9 8; wait 300ms; expect screen \"About\"");
     r.expect_text(ferrite_core::VERSION).expect_text("0000000");
+    r.expect_text(if ferrite_core::OFFICIAL { "Version" } else { "Unofficial build" });
 }

@@ -1563,11 +1563,11 @@ fn transmit_tones_reach_the_radio() {
     assert_eq!(t.app.slot_tones(1), (1, 2), "a VFO follows the radio's");
 }
 
-/// DEC-4: 0 4 2 3 types the capcode (digits only, 21 bits at most); empty keeps every capcode.
+/// DEC-4: 0 4 2 4 types the capcode (digits only, 21 bits at most); empty keeps every capcode.
 #[test]
-fn capcode_typed_at_0_4_2_3() {
+fn capcode_typed_at_0_4_2_4() {
     let mut t = T::new();
-    menu0(&mut t, &[4, 2, 3]);
+    menu0(&mut t, &[4, 2, 4]);
     assert!(matches!(t.app.screen(), Screen::Text(_)));
     for d in [1, 2, 3, 4, 5, 6, 7] {
         t.tap(Key::Digit(d));
@@ -1575,14 +1575,14 @@ fn capcode_typed_at_0_4_2_3() {
     t.tap(Key::Menu);
     assert_eq!(t.app.set.pocsag_cap, 1_234_567);
     t.app.screen = Screen::Home;
-    menu0(&mut t, &[4, 2, 3]);
+    menu0(&mut t, &[4, 2, 4]);
     for _ in 0..7 {
         t.tap(Key::Exit); // delete the digits
     }
     t.tap(Key::Menu);
     assert_eq!(t.app.set.pocsag_cap, 0, "empty: every capcode");
     t.app.screen = Screen::Home;
-    menu0(&mut t, &[4, 2, 3]);
+    menu0(&mut t, &[4, 2, 4]);
     for d in [9, 9, 9, 9, 9, 9, 9] {
         t.tap(Key::Digit(d));
     }
@@ -1685,6 +1685,7 @@ fn stops(m: Mode, c: &RadioCmd) -> bool {
         Mode::Hf => matches!(c, RadioCmd::Hf { on: false, .. }),
         Mode::Xb => matches!(c, RadioCmd::Crossband(None)),
         Mode::Sat => matches!(c, RadioCmd::SatRx(0)),
+        Mode::Acars => matches!(c, RadioCmd::AcarsRx(0)),
         Mode::Off => false,
     }
 }
@@ -1710,14 +1711,15 @@ fn start(t: &mut T, m: Mode) {
             t.tap(Key::Hash);
         }
         Mode::Sat => t.open(Dest::Satellites),
+        Mode::Acars => t.open(Dest::Acars),
         Mode::Off => {}
     }
     assert_eq!(t.app.radio.mode, m, "{m:?} runs");
 }
 
-const MODES: [Mode; 8] = [Mode::Scope, Mode::Strip, Mode::Tone, Mode::Counter, Mode::Fm, Mode::Hf, Mode::Xb, Mode::Sat];
+const MODES: [Mode; 9] = [Mode::Scope, Mode::Strip, Mode::Tone, Mode::Counter, Mode::Fm, Mode::Hf, Mode::Xb, Mode::Sat, Mode::Acars];
 /// The modes a screen runs (decision 352: FM broadcast is a slot in the band, which plays until it is tuned out).
-const SCREEN_MODES: [Mode; 7] = [Mode::Scope, Mode::Strip, Mode::Tone, Mode::Counter, Mode::Hf, Mode::Xb, Mode::Sat];
+const SCREEN_MODES: [Mode; 8] = [Mode::Scope, Mode::Strip, Mode::Tone, Mode::Counter, Mode::Hf, Mode::Xb, Mode::Sat, Mode::Acars];
 
 /// HOME-2, SCOPE-4 and each mode's own rules: an exclusive mode stops with its screen, however the screen is left
 /// (BACK, hold BACK, the screen's timeout, PTT; the strip by leaving its layout), and only then: the Radio task
@@ -1982,7 +1984,7 @@ fn random_use_keeps_modes_in_step() {
         Key::Menu, Key::Exit, Key::Up, Key::Down, Key::Left, Key::Right, Key::Slot, Key::VfoMem, Key::Digit(0),
         Key::Digit(1), Key::Digit(3), Key::Digit(7), Key::Star, Key::Hash, Key::Side(1), Key::Side(2),
     ];
-    const DESTS: [Dest; 8] = [Dest::BandScope, Dest::ToneSearch, Dest::Counter, Dest::HfMode, Dest::Crossband, Dest::Scan, Dest::Squelch, Dest::Satellites];
+    const DESTS: [Dest; 9] = [Dest::BandScope, Dest::ToneSearch, Dest::Counter, Dest::HfMode, Dest::Crossband, Dest::Scan, Dest::Squelch, Dest::Satellites, Dest::Acars];
     #[derive(Clone, Copy, PartialEq, Debug)]
     enum Kind {
         Sweep,
@@ -1992,6 +1994,7 @@ fn random_use_keeps_modes_in_step() {
         Hf,
         Xb,
         Sat,
+        Acars,
     }
     // the exclusive part (the broadcast is tracked apart: it may play beside the strip)
     fn kind(m: Mode) -> Option<Kind> {
@@ -2003,6 +2006,7 @@ fn random_use_keeps_modes_in_step() {
             Mode::Hf => Some(Kind::Hf),
             Mode::Xb => Some(Kind::Xb),
             Mode::Sat => Some(Kind::Sat),
+            Mode::Acars => Some(Kind::Acars),
         }
     }
     // the Radio task's view: what a command starts (Some) or stops (None)
@@ -2015,6 +2019,7 @@ fn random_use_keeps_modes_in_step() {
             RadioCmd::Hf { on, .. } => (Kind::Hf, *on),
             RadioCmd::Crossband(x) => (Kind::Xb, x.is_some()),
             RadioCmd::SatRx(f) => (Kind::Sat, *f != 0),
+            RadioCmd::AcarsRx(f) => (Kind::Acars, *f != 0),
             _ => return None,
         })
     }
@@ -2128,7 +2133,7 @@ fn random_use_keeps_modes_in_step() {
                 assert_eq!(m, Mode::Strip, "seed {seed} step {step} ({what}): only home's strip sweeps beside a broadcast");
                 assert!(!t.app.in_bcast_band(t.app.active), "seed {seed} step {step} ({what}): not with the broadcast slot active (HOME-14)");
             }
-            let mode_screen = |s: &Screen| matches!(s, Screen::Scope(_) | Screen::ToneSearch(_) | Screen::Counter(_) | Screen::Hf(_) | Screen::Crossband(_) | Screen::Sat(_));
+            let mode_screen = |s: &Screen| matches!(s, Screen::Scope(_) | Screen::ToneSearch(_) | Screen::Counter(_) | Screen::Hf(_) | Screen::Crossband(_) | Screen::Sat(_) | Screen::Acars(_));
             if t.app.screen() == Screen::Home && t.app.set.layout == 0 && !t.app.back.iter().flatten().any(mode_screen) {
                 let want = if t.app.bcast_slot().is_some() && t.app.radio.keyed.is_none() { Mode::Fm } else { Mode::Off };
                 assert_eq!(m, want, "seed {seed} step {step} ({what}): home is normal receive, or the broadcast slot's");
@@ -2330,7 +2335,7 @@ fn bar_callsign_without_a_clock() {
 
 /// MENU-31: OK (or its digit) on a frequency setting opens the frequency entry box; the digits as on home, OK or a
 /// whole frequency keeps it and BACK returns to the list; a frequency outside the setting's range is refused with the
-/// digits left to fix. 0 5 4 (APRS) and 0 4 2 2 (pager); a range preset's edges the same way.
+/// digits left to fix. 0 5 4 (APRS) and 0 4 2 3 (pager); a range preset's edges the same way.
 #[test]
 fn frequency_settings_open_the_entry_box() {
     use crate::screens::entry::{EntryFor, FreqSet};
@@ -2365,7 +2370,7 @@ fn frequency_settings_open_the_entry_box() {
     assert_eq!(t.app.aprs_freq(), mhz(145) + 49_500, "144.391 is off the grid");
     // the pager
     t.hold(Key::Exit);
-    menu0(&mut t, &[4, 2, 2]);
+    menu0(&mut t, &[4, 2, 3]);
     assert!(matches!(t.app.screen(), Screen::Entry(e) if e.to == EntryFor::Setting(FreqSet::Pager)));
     for d in [4, 3, 9, 9, 8, 7, 5] {
         t.tap(Key::Digit(d));
@@ -2376,7 +2381,7 @@ fn frequency_settings_open_the_entry_box() {
     assert_eq!(t.app.set.pocsag_freq, mhz(439) + 98_750);
     // BACK on an empty box leaves without a change
     t.hold(Key::Exit);
-    menu0(&mut t, &[4, 2, 2]);
+    menu0(&mut t, &[4, 2, 3]);
     t.tap(Key::Exit);
     assert!(matches!(t.app.screen(), Screen::Group(_)));
     assert_eq!(t.app.set.pocsag_freq, mhz(439) + 98_750);

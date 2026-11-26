@@ -114,7 +114,11 @@ pub const CABLE_PORTS: [&str; 3] = ["Auto", "Link", "Terminal"]; // KISS on the 
 pub const KISS_PORTS: [&str; 3] = ["Off", "Cable", "Bluetooth"];
 /// 0 5 3's values (APRS-29.2): what slot C does for APRS. Off, Tracker (beacons only), On (APRS mode), KISS (a TNC
 /// for an app, on 0 5 8's port).
-pub const APRS_MODES: [&str; 4] = ["Off", "Tracker", "On", "KISS"];
+/// 0 4 2 5 (DEC-23): the speeds the chip's modem receives.
+pub const PAGER_SPEEDS: [&str; 2] = ["1200", "2400"];
+pub const APRS_MODES: [&str; 5] = ["Off", "Tracker", "On", "KISS", "Pager"];
+/// DEC-20: 0 5 3's values as Pager's toast names what it turned off.
+pub const APRS_WAS: [&str; 5] = ["", "Tracker", "APRS", "KISS", ""];
 /// 0 5 8's values (KISS-6.1): the KISS port, by `kiss_port`'s numbers (1 cable, 2 Bluetooth).
 pub const KISS_VIA: [&str; 2] = ["Cable", "Bluetooth"];
 /// 0 5 9 7 (WATCH-17.3, decision 295): who wins a chip shared with the APRS slot. 0, the default, APRS first.
@@ -173,6 +177,8 @@ pub struct Settings {
     pub pocsag_on: bool,
     pub pocsag_freq: Freq10,
     pub pocsag_cap: u32,
+    /// 0 4 2 5 (DEC-23): the pager speed, an index into [`PAGER_SPEEDS`] (1200, DAPNET's, or 2400).
+    pub pocsag_fast: u8,
     /// 0 4 4 (DEC-7): a toast for each decoder hit (pages and the other decoders); off, they only go to the
     /// event log and the inbox count.
     pub popups: bool,
@@ -332,6 +338,12 @@ pub struct Settings {
     /// VOX-15.1 (decision 436): the record was written by 0.9.6 or later. False after loading an older one, whose
     /// Mic gain at the old default (5) then goes to the new one (8): those radios were the quiet ones.
     pub mic_v2: bool,
+    /// ACARS-3 (on trial): the ACARS frequency, an index into [`crate::acars::FREQS`] (◀▶ on the ACARS screen).
+    /// Stored at the record's end: an older record reads the default, 131.550.
+    pub acars_freq: u8,
+    /// ACARS-4.2 (on trial): the ACARS list shows only messages with text (* on the list). A bit of its own after
+    /// scan_tx's: an older record reads all shown.
+    pub acars_text: bool,
     /// 0.9.4's 0 9 5 (`sq_chip`, true = the chip), kept in its stored place so the fields after it stay put; read
     /// and ignored.
     pub sq_chip_old: bool,
@@ -352,6 +364,10 @@ pub struct Settings {
     pub tracker: bool,
     /// 0 5 8 (KISS-6.1): the KISS port 0 5 3's KISS uses, 1 cable or 2 Bluetooth ([`KISS_VIA`]); kept while KISS is off.
     pub kiss_via: u8,
+    /// BOOT-19 (decision 469): the tool open at the last power off, 1 + its index in [`crate::TOOLS`], 0 none
+    /// (home). Set only as the radio turns off, so it costs no write of its own. Stored at the record's end: an
+    /// older record reads 0, home.
+    pub resume_tool: u8,
 }
 
 /// 0 7 9's choices, seconds (0 never; MENU-28) and names. 30 s by default.
@@ -476,6 +492,8 @@ impl Settings {
             3
         } else if self.aprs_mode {
             2
+        } else if self.pocsag_on {
+            4 // DEC-20
         } else if self.tracker {
             1
         } else {
@@ -510,6 +528,7 @@ impl Settings {
         pocsag_on: false,
         pocsag_freq: 43_998_750,
         pocsag_cap: 0,
+        pocsag_fast: 0,
         popups: true,
         key_beep: true,
         beep_vol: 2,
@@ -587,6 +606,8 @@ impl Settings {
         mcu_fixed: false,
         sq_soft: false,
         mic_v2: true,
+        acars_freq: 0,
+        acars_text: false,
         sq_chip_old: false,
         aprs_mute: true,
         dtmf_rx: true,
@@ -596,6 +617,7 @@ impl Settings {
         decode_log: false,
         tracker: false,
         kiss_via: 2,
+        resume_tool: 0,
     };
 
     /// Values a stored or linked record may hold out of range, brought back in (load_settings, the link's
@@ -626,6 +648,9 @@ impl Settings {
         // fuzzing the settings record)
         if self.scan_prio >= SCAN_PRIOS {
             self.scan_prio = Self::DEFAULT.scan_prio;
+        }
+        if self.acars_freq as usize >= crate::acars::FREQS.len() {
+            self.acars_freq = Self::DEFAULT.acars_freq;
         }
         if self.fm_agc > AGC_MAX {
             self.fm_agc = Self::DEFAULT.fm_agc;

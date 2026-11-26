@@ -14,6 +14,8 @@ use ferrite_ui::text::Buf;
 
 pub struct RadioData {
     pub aprs: AprsLive,
+    /// ACARS (chapter 27b): the messages heard since power-on.
+    pub acars: crate::acars::AcarsLive,
     cfg: Cell<AprsCfg>,
     callsign: Cell<Buf<10>>,
     /// The GPS as the screens read it: the UI task feeds it the GPS task's watches.
@@ -34,6 +36,7 @@ impl RadioData {
     pub const fn new() -> Self {
         RadioData {
             aprs: AprsLive::new(),
+            acars: crate::acars::AcarsLive::new(),
             cfg: Cell::new(AprsCfg::DEFAULT),
             callsign: Cell::new(Buf::new()),
             gps: GpsData::new(),
@@ -87,6 +90,10 @@ impl Data for RadioData {
         self.ver.get().wrapping_add(self.gps.version())
     }
 
+    fn acars(&self) -> Option<&crate::acars::AcarsLive> {
+        Some(&self.acars)
+    }
+
     fn stations(&self) -> u16 {
         self.aprs.stations()
     }
@@ -113,6 +120,10 @@ impl Data for RadioData {
 
     fn beacon(&self) -> Beacon {
         self.aprs.beacon(&self.cfg.get())
+    }
+
+    fn traffic(&self) -> Option<&crate::aprs_traffic::Traffic> {
+        Some(self.aprs.traffic())
     }
 
     fn beacons_sent(&self) -> u16 {

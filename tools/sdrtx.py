@@ -194,7 +194,7 @@ def pyplot():
 
         return plt
     except ImportError:
-        print("  (no PNG: matplotlib isn't installed; ../.venv/bin/pip install matplotlib)")
+        print("  (no PNG: matplotlib isn't installed; .venv/bin/pip install matplotlib)")
         return None
 
 

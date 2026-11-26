@@ -80,7 +80,7 @@ fn japan_band() {
     assert_eq!(t.app.bcast_slot(), None, "80 MHz outside Japan");
 }
 
-/// BCR-22: a second slot tuned in takes the broadcast; the first shows "FM on B" until it is tuned out; when the
+/// BCR-22: a second slot tuned in takes the broadcast; the first shows "WFM on B" until it is tuned out; when the
 /// broadcast slot leaves, a slot still in the band takes it back.
 #[test]
 fn handover_between_slots() {
@@ -90,7 +90,7 @@ fn handover_between_slots() {
     assert_eq!(t.app.bcast_slot(), Some(1));
     assert!(c.contains(&RadioCmd::BcastSlot(Some(1))) && c.contains(&RadioCmd::Broadcast(BroadcastCmd::Fm(9_910))), "{c:?}");
     assert!(!c.contains(&RadioCmd::Broadcast(BroadcastCmd::Off)), "one receiver, retuned: {c:?}");
-    assert_eq!(t.app.state(0, &t.live).0, "FM on B");
+    assert_eq!(t.app.state(0, &t.live).0, "WFM on B");
     tune(&mut t, 0, mhz(101)); // A moves within the band: B keeps it
     assert_eq!(t.app.bcast_slot(), Some(1));
     let c = tune(&mut t, 1, TWO_M);
@@ -105,7 +105,7 @@ fn card_states() {
     let mut t = ready();
     tune(&mut t, 0, FM1005);
     live_fm(&mut t, 10_050, true);
-    assert_eq!(t.app.state(0, &t.live).0, "FM");
+    assert_eq!(t.app.state(0, &t.live).0, "WFM");
     live_fm(&mut t, 10_050, false);
     assert_eq!(t.app.state(0, &t.live).0, "muted");
     tune(&mut t, 1, mhz(50) + 12_500);
@@ -318,7 +318,7 @@ fn strip_sweeps_beside_the_broadcast() {
     // the slot heard while the strip sweeps (the strip's report has the mode): B says FM, then muted
     t.live.mode = ModeLive::Scope { centre: TWO_M, bars: [0; ferrite_core::msg::SCOPE_BARS], n: 56, sweeps: 1, listen: 0, open: false };
     t.live.bcast_heard = true;
-    assert_eq!(t.app.state(1, &t.live).0, "FM");
+    assert_eq!(t.app.state(1, &t.live).0, "WFM");
     t.live.bcast_heard = false;
     assert_eq!(t.app.state(1, &t.live).0, "muted");
     // the broadcast slot active: HOME-14, the strip off, the broadcast on
@@ -433,4 +433,28 @@ fn wfm_is_a_broadcast_slot_on_64_to_108() {
     assert_eq!(t.app.fm_range(), (6_400, 10_800), "its range is the SI4732's");
     assert_eq!(crate::screens::transmit::refusal(&t.app, 0), Some(ferrite_core::txplan::Refusal::WfmRxOnly), "TX-20.6: WFM says it is broadcast");
     assert_eq!(crate::screens::transmit::short(ferrite_core::txplan::Refusal::WfmRxOnly), "WFM is broadcast: RX only");
+}
+
+/// BCR-25.1, KEY-4 (ferrite#154, #95): an ◀▶ hold that starts on the broadcast VFO steps one band, to the
+/// neighbour, and the rest of that hold's repeats do nothing; a hold from any other band repeats through the bands
+/// as before, and a short ◀▶ on broadcast still seeks (BCR-25).
+#[test]
+fn hold_leaves_broadcast_one_band() {
+    use crate::slot::{band_of, BAND_AIR};
+    let mut t = ready();
+    tune(&mut t, 0, FM1005);
+    assert_eq!(t.app.bcast_slot(), Some(0));
+    t.press(Key::Right, 1500); // about 12 repeats
+    assert_eq!(band_of(t.freq()), Some(BAND_AIR), "one band up from broadcast (6 m's neighbour): {}", t.freq());
+    // the next hold is a fresh one: it repeats through the bands as ever
+    t.press(Key::Right, 650); // three repeats
+    assert_eq!(band_of(t.freq()), Some(BAND_AIR + 3), "three bands on: {}", t.freq());
+    // ◀ back onto broadcast's band memory, then a hold the other way: one band down
+    tune(&mut t, 0, FM1005);
+    t.press(Key::Left, 1500);
+    assert_eq!(band_of(t.freq()), Some(0), "one band down (HF): {}", t.freq());
+    tune(&mut t, 0, FM1005);
+    t.cmds();
+    t.tap(Key::Right);
+    assert!(t.cmds().contains(&RadioCmd::Broadcast(BroadcastCmd::Seek { up: true })), "a tap still seeks");
 }

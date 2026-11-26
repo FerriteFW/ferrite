@@ -1,17 +1,19 @@
-//! Measurement on real recordings, against multimon-ng. Needs the testdata repo (`../testdata/pocsag`).
+//! Measurement on real recordings, against multimon-ng. Needs the test data's `pocsag/` (found by
+//! `ferrite_fuzzkit::testdata_dir`'s rule; the Signal Identification Wiki recordings come from the testdata repo's
+//! `fetch/all.sh`); a recording that is missing is skipped.
 //!
 //! `cargo test --release -p upocsag --test report -- --ignored --nocapture`
 
 use std::collections::HashMap;
-use std::path::Path;
+use ferrite_fuzzkit::testdata_file;
+use std::path::{Path, PathBuf};
 use upocsag::{Message, Receiver};
 
-const DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../../../testdata/pocsag");
 const FILES: [&str; 7] =
     ["commons_512", "sigid_512", "sigid_1200", "sigid_2400", "sigid_1200_variant", "sigid_148", "sigid_sound"];
 
 fn read_wav(path: &Path) -> (Vec<i16>, u32) {
-    let d = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e} (clone the testdata repo beside ferrite)", path.display()));
+    let d = std::fs::read(path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     let mut i = 12;
     let (mut rate, mut data) = (0, Vec::new());
     while i + 8 <= d.len() {
@@ -49,8 +51,8 @@ fn line(m: &Message) -> String {
     }
 }
 
-fn ours(name: &str, rate: u32) -> Vec<String> {
-    let (s, r) = read_wav(&Path::new(DIR).join(format!("{name}.{rate}.wav")));
+fn ours(dir: &Path, name: &str, rate: u32) -> Vec<String> {
+    let (s, r) = read_wav(&dir.join(format!("{name}.{rate}.wav")));
     assert_eq!(r, rate);
     let mut rx: Receiver = Receiver::new(rate);
     let mut out = Vec::new();
@@ -76,10 +78,19 @@ fn recordings() {
     println!("{:<20} {:>9} {:>14} {:>14}", "recording", "multimon", "upocsag 22050", "upocsag 9600");
     let mut lines = Vec::new();
     for name in FILES {
+        // the recording at both rates and multimon-ng's decodes, or a skip note
+        let Some(dir) = ["22050.wav", "9600.wav", "multimon.txt", "multimon_inv.txt"]
+            .iter()
+            .map(|k| testdata_file(&format!("pocsag/{name}.{k}")))
+            .collect::<Option<Vec<PathBuf>>>()
+            .map(|p| p[0].parent().unwrap().to_path_buf())
+        else {
+            continue;
+        };
         // multimon-ng as recorded and inverted: the polarity that decodes more.
         let refs: Vec<String> = ["multimon", "multimon_inv"]
             .map(|k| {
-                let t = std::fs::read_to_string(Path::new(DIR).join(format!("{name}.{k}.txt"))).unwrap();
+                let t = std::fs::read_to_string(dir.join(format!("{name}.{k}.txt"))).unwrap();
                 t.lines().map(String::from).collect::<Vec<_>>()
             })
             .into_iter()
@@ -88,7 +99,7 @@ fn recordings() {
         let mut row = format!("{name:<20} {:>9}", refs.len());
         lines.push(format!("RESULT pocsag.{name}.multimon {}", refs.len()));
         for rate in [22050, 9600] {
-            let got = ours(name, rate);
+            let got = ours(&dir, name, rate);
             let same = common(&got, &refs);
             row += &format!(" {:>14}", format!("{} ({})", got.len(), same));
             lines.push(format!("RESULT pocsag.{name}.{rate} {}", got.len()));

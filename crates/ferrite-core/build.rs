@@ -1,5 +1,9 @@
 //! The build ID (SELF-5): the git commit the firmware was built from, short, with "+" when the tree had
 //! changes not committed. Read from the local repository only; "unknown" outside one.
+//!
+//! Official or not (SELF-5.1, decision 466): `FERRITE_OFFICIAL=1` in the environment, which only the release
+//! workflow sets (`.forgejo/workflows/release.yml`), makes the `ferrite_official` cfg; every other build is an
+//! unofficial one and says so.
 
 use std::process::Command;
 
@@ -9,6 +13,18 @@ fn git(args: &[&str]) -> Option<String> {
 }
 
 fn main() {
+    println!("cargo::rustc-check-cfg=cfg(ferrite_official)");
+    if std::env::var("FERRITE_OFFICIAL").is_ok_and(|v| v == "1") {
+        println!("cargo:rustc-cfg=ferrite_official");
+    }
+    println!("cargo:rerun-if-env-changed=FERRITE_OFFICIAL");
+    // FERRITE_COMMIT: set by tools/remote.sh, whose copy has no .git of its own (the commit already carries "+" if dirty)
+    println!("cargo:rerun-if-env-changed=FERRITE_COMMIT");
+    if let Ok(c) = std::env::var("FERRITE_COMMIT") {
+        println!("cargo:rustc-env=FERRITE_BUILD={c}");
+        println!("cargo:rerun-if-changed=build.rs");
+        return;
+    }
     let sha = git(&["rev-parse", "--short=7", "HEAD"]).unwrap_or_else(|| "unknown".into());
     // --no-optional-locks: git status otherwise refreshes the index, which (watched below) rebuilt everything
     // after ferrite-core on every build

@@ -4,9 +4,18 @@ Issues help Ferrite most: bug reports, ideas, design suggestions and proposed fi
 
 ## Issues: highly appreciated
 
-- **Bugs:** what you did, what happened, what you expected. Add the version from About (MENU 0 9 8) and, for Console, your system.
+- **Bugs:** what you did, what happened, what you expected. Add the version line from About (MENU 0 9 8), and whether it says "Unofficial build"; for Console, your system. A bug seen only on an unofficial build is closed unless it also happens on an official release.
 - **Ideas and design:** the problem first, then how you'd like it to work. Sketches and screenshots are welcome.
 - **Fixes:** describe the fix in an issue, with code if you have it. We'll build it in.
+
+## Send your changes back
+
+Changed something on your own radio? Please send it to us rather than keep it as a local patch.
+
+- **How:** an issue with the patch (or the idea), or a pull request. Changes kept apart fall behind each release and are hard to bring back later.
+- **Talk it over first** on the [Discord](https://discord.gg/fYygBVD2Kx) or in an issue, for anything bigger than a fix.
+- **What we do:** review it, build it in and ship it to everyone in the next release. You're credited: in [CLA-SIGNED.md](CLA-SIGNED.md) for a pull request, and in the manual beside the rule your change made.
+- **Your own build** is fine to run, but it shows "Unofficial build" and can't use the Ferrite name if you share it ([TRADEMARKS.md](TRADEMARKS.md)).
 
 ## Pull requests
 

@@ -32,9 +32,98 @@ pub struct Msgs {
 
 const ALL: fn(u16) -> bool = |_| true;
 
-/// The stored message at list row `sel`: the messages to everyone come first (APRS-6.4), then the stored ones.
+/// What a list row is: a message to everyone (APRS-6.4, first), then the stored messages and the pages from the
+/// event log (DEC-22), newest first.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum At {
+    Notice(u16),
+    Msg(u16),
+    /// The event log's index.
+    Page(u16),
+}
+
+/// DEC-22: walks the messages and the log's pages together by age, from where it was when the row asked for is
+/// further on (the list's rows ask in order), else from the start.
+struct Walk<'a> {
+    d: &'a dyn crate::data::Data,
+    /// The rows after the notices walked so far, the next message and the next event to look at.
+    pos: u16,
+    k: u16,
+    j: u16,
+}
+
+impl<'a> Walk<'a> {
+    fn new(d: &'a dyn crate::data::Data) -> Self {
+        Walk { d, pos: 0, k: 0, j: 0 }
+    }
+
+    /// The next page at or after `j`, with its age.
+    fn page(&mut self) -> Option<(u16, u32)> {
+        while self.j < self.d.events() {
+            if let Some(e) = self.d.event(self.j).filter(|e| e.src == crate::data::Src::Pocsag) {
+                return Some((self.j, e.ago_s));
+            }
+            self.j += 1;
+        }
+        None
+    }
+
+    fn at(&mut self, sel: u16) -> Option<At> {
+        let g = self.d.notices();
+        let Some(r) = sel.checked_sub(g) else { return Some(At::Notice(sel)) };
+        if r < self.pos {
+            (self.pos, self.k, self.j) = (0, 0, 0);
+        }
+        loop {
+            let m = (self.k < self.d.messages()).then(|| self.d.message(self.k).map_or(crate::data::AGO_UNKNOWN, |m| m.ago_s));
+            let p = self.page();
+            let here = match (m, p) {
+                (Some(ma), Some((j, pa))) if pa < ma => At::Page(j),
+                (Some(_), _) => At::Msg(self.k),
+                (None, Some((j, _))) => At::Page(j),
+                (None, None) => return None,
+            };
+            if self.pos == r {
+                return Some(here);
+            }
+            match here {
+                At::Page(_) => self.j += 1,
+                _ => self.k += 1,
+            }
+            self.pos += 1;
+        }
+    }
+}
+
+/// The pages in the event log (DEC-22) and how many are unread.
+fn pages(d: &dyn crate::data::Data) -> (u16, u16) {
+    let (mut n, mut new) = (0, 0);
+    for e in (0..d.events()).filter_map(|i| d.event(i)).filter(|e| e.src == crate::data::Src::Pocsag) {
+        n += 1;
+        new += e.unread as u16;
+    }
+    (n, new)
+}
+
+/// The list's length: the notices, the messages and the pages.
+fn rows_of(d: &dyn crate::data::Data) -> u16 {
+    d.notices() + d.messages() + pages(d).0
+}
+
+/// The stored message at list row `sel`, if it is one.
 fn msg_index(sel: u16, d: &dyn crate::data::Data) -> Option<u16> {
-    sel.checked_sub(d.notices())
+    match Walk::new(d).at(sel) {
+        Some(At::Msg(k)) => Some(k),
+        _ => None,
+    }
+}
+
+/// The page at list row `sel` (its event index), if it is one (DEC-22).
+fn page_at(sel: u16, d: &dyn crate::data::Data) -> Option<u16> {
+    match Walk::new(d).at(sel) {
+        Some(At::Page(j)) => Some(j),
+        _ => None,
+    }
 }
 
 /// The message to everyone at list row `sel`, when it is one (APRS-6.4).
@@ -144,7 +233,7 @@ pub(crate) fn delete(app: &mut App, store: &impl ChannelStore) {
     if m.inbound && m.state == MsgState::Unread {
         app.inbox = app.inbox.saturating_sub(1); // INBOX-3.1: one unread fewer
     }
-    let n = data.notices() + data.messages();
+    let n = rows_of(data);
     let mut cur = s.cur;
     cur.sel = cur.sel.min(n.saturating_sub(1));
     cur.top = cur.top.min(cur.sel);
@@ -183,6 +272,17 @@ impl View for Msgs {
                 };
                 app.open_screen(of.screen());
             }
+            // DEC-22: a page opens as the event log's detail, read there (INBOX-7) and in the badge
+            (Key::Menu, Short) if !self.open && page_at(self.cur.sel, d).is_some() => {
+                let Some(j) = page_at(self.cur.sel, d) else { return };
+                d.request(Op::Read(j));
+                if let Some(e) = d.event(j) {
+                    app.event_read(&e);
+                }
+                let mut log = super::log::Log::pages();
+                (log.cur, log.detail) = (Cursor { sel: j, top: j }, true);
+                app.open_screen(Screen::Log(log));
+            }
             (Key::Menu, Short) if !self.open && note.is_some() => {
                 d.notice_read(self.cur.sel); // APRS-6.4: not in the envelope's count, so nothing to take off
                 app.screen = Screen::Msgs(Msgs { open: true, ..self });
@@ -211,7 +311,7 @@ impl View for Msgs {
 
     fn knob(self, app: &mut App, d: i32, store: &impl ChannelStore) {
         let data = store.data();
-        let cur = self.cur.step(d, data.notices() + data.messages(), ROWS2, &ALL);
+        let cur = self.cur.step(d, rows_of(data), ROWS2, &ALL);
         if self.open && cur.sel != self.cur.sel && notice_at(cur.sel, data).is_some() {
             data.notice_read(cur.sel);
         } else if let Some(k) = msg_index(cur.sel, data).filter(|_| self.open && cur.sel != self.cur.sel) {
@@ -272,9 +372,12 @@ impl View for Msgs {
             return;
         }
         let g = data.notices();
-        let n = g + data.messages();
+        let (pn, pnew) = pages(data);
+        let n = g + data.messages() + pn;
         let new = (0..data.messages()).filter(|&i| data.message(i).is_some_and(|m| m.state == MsgState::Unread)).count()
-            + (0..g).filter(|&i| data.notice(i).is_some_and(|m| m.unread)).count();
+            + (0..g).filter(|&i| data.notice(i).is_some_and(|m| m.unread)).count()
+            + pnew as usize;
+        let mut walk = Walk::new(data);
         let mut l = Buf::<24>::new();
         let _ = uwrite!(l, "{} {}", n, if n == 1 { "message" } else { "messages" });
         if new > 0 {
@@ -289,7 +392,22 @@ impl View for Msgs {
                 let r2 = Row2 { tag: m.to.as_bytes(), title: m.from.as_bytes(), big: true, right: time.as_bytes(), sub: m.text.as_bytes(), dot: m.unread, selected: i == self.cur.sel, ..Row2::default() };
                 return app.row2(lcd, r, &r2);
             }
-            if let Some(m) = msg_index(i, data).and_then(|k| data.message(k)) {
+            let at = walk.at(i);
+            if let Some(e) = match at {
+                Some(At::Page(j)) => data.event(j),
+                _ => None,
+            } {
+                // DEC-22: a page among the messages: "Page", its capcode for a sender, how long ago, its text
+                let (mut time, mut cap) = (Buf::<12>::new(), Buf::<10>::new());
+                clock_text(cx.dev.clock_min, e.ago_s, &mut time);
+                let _ = uwrite!(cap, "{}", e.id);
+                let r2 = Row2 { tag: b"Page", title: cap.as_bytes(), big: true, right: time.as_bytes(), sub: e.text.as_bytes(), dot: e.unread, selected: i == self.cur.sel, ..Row2::default() };
+                return app.row2(lcd, r, &r2);
+            }
+            if let Some(m) = match at {
+                Some(At::Msg(k)) => data.message(k),
+                _ => None,
+            } {
                 let (mut time, mut st) = (Buf::<12>::new(), Buf::<16>::new());
                 let c = row(&m, &mut time, &mut st);
                 // APRS-43: a saved contact's name leads the line

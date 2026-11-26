@@ -122,5 +122,15 @@ fn main() {
         l.push(0xC0);
     }
     out.put("aprs_live", "several", &l);
+    // ACARS: each sample frame alone, then all of them in a row (SOH between)
+    let mut all = Vec::new();
+    for (k, (_, f, _)) in ferrite_app::acars::sample::FRAMES.iter().enumerate() {
+        let mut b = [0u8; 256];
+        let n = ferrite_core::acars::encode(f, &mut b);
+        out.put("acars", &format!("sample-{k:02}"), &b[..n]);
+        all.push(ferrite_core::acars::SOH);
+        all.extend_from_slice(&b[..n]);
+    }
+    out.put("acars", "samples", &all);
     println!("{} frames", frames.len());
 }

@@ -215,7 +215,8 @@ pub fn chips_sel(lcd: &mut impl Panel, x: i32, y: i32, w: i32, items: &[&[u8]], 
 
 /// "146.520" in `big` and "00" in `small` on one baseline, painting only the digits' rows (the big font's line
 /// box would reach into its neighbours) and clearing to x_end. The small digits (10 Hz) only where they end by
-/// x_end: 1000 MHz and up on home's big card leaves them out. Returns where the text ends.
+/// x_end: 1000 MHz and up on home's big card leaves them out. An 8.33 kHz channel name ([`freq::NAMED`], VFO-18.2)
+/// has none. Returns where the text ends.
 pub fn freq(
     lcd: &mut impl Panel,
     x: i32,
@@ -229,7 +230,7 @@ pub fn freq(
     bg: u16,
 ) -> i32 {
     let mut b = [0u8; 16];
-    let n = freq::format(f, &mut b);
+    let n = freq::format(f & !freq::NAMED, &mut b);
     let split = n.saturating_sub(3);
     let h = digit_h(big);
     let (y0, y1) = (baseline - h, baseline + 1);
@@ -238,7 +239,7 @@ pub fn freq(
     lcd.fill(x + w, y0, 4, y1 - y0, bg);
     let hs = digit_h(small);
     let tail = &b[split + 1..n];
-    let tail = if sx + text4_width(tail, small) <= x_end { tail } else { &[] };
+    let tail = if f & freq::NAMED == 0 && sx + text4_width(tail, small) <= x_end { tail } else { &[] };
     lcd.fill(sx, y0, text4_width(tail, small), h - hs, bg);
     let ws = lcd.text4_rows(sx, baseline, tail, small, fg_small, bg, baseline - hs, y1);
     lcd.fill(sx + ws, y0, x_end - sx - ws, y1 - y0, bg);
@@ -260,9 +261,10 @@ pub fn freq_centred(
     bg: u16,
 ) -> i32 {
     let mut b = [0u8; 16];
-    let n = freq::format(f, &mut b);
+    let n = freq::format(f & !freq::NAMED, &mut b);
     let split = n.saturating_sub(3);
-    let w = text4_width(&b[..split], big) + 4 + text4_width(&b[split + 1..n], small);
+    let tail = if f & freq::NAMED == 0 { &b[split + 1..n] } else { &[] };
+    let w = text4_width(&b[..split], big) + 4 + text4_width(tail, small);
     let sx = (x + (x_end - x - w) / 2).max(x);
     let (y0, y1) = (baseline - digit_h(big), baseline + 1);
     lcd.fill(x, y0, sx - x, y1 - y0, bg);
@@ -274,10 +276,10 @@ pub fn digit_h(f: &Font4) -> i32 {
     f.glyph('0' as u32).map_or(f.ascent as i32, |g| -(g.y as i32))
 }
 
-/// "146.520" (three decimals), for compact lines.
+/// "146.520" (three decimals), for compact lines; an 8.33 kHz channel name ([`freq::NAMED`]) as it is.
 pub fn freq3(f: Freq10) -> Buf<12> {
     let mut b = [0u8; 16];
-    let n = freq::format(f, &mut b);
+    let n = freq::format(f & !freq::NAMED, &mut b);
     Buf::from(&b[..n.saturating_sub(3)])
 }
 

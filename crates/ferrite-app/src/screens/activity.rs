@@ -24,6 +24,8 @@ pub enum Mode {
     Xb,
     /// Satellite mode (SAT-1): both chips, the downlink tuned.
     Sat,
+    /// ACARS (ACARS-11): the VHF chip on the chosen frequency, for the decoder.
+    Acars,
 }
 
 /// One remembered hit: what (a frequency, or a tone word), when it was last heard and when that stop began
@@ -132,6 +134,9 @@ pub struct RadioUi {
     /// MODE-3: when the lease on the running mode was last renewed, and the Radio task's count of modes it
     /// stopped itself as last seen.
     pub lease_at: u32,
+    /// ACARS-11: the frequency last sent to the Radio task (0: none), and ACARS-11.1's bench override (0: none).
+    pub acars_sent: Freq10,
+    pub acars_test: Freq10,
     pub lease_drops: u8,
     /// BCR-22: the slot playing broadcast FM, and the slots in the broadcast band as last seen (one coming in
     /// takes the broadcast).
@@ -172,6 +177,8 @@ impl RadioUi {
             seen_freq: None,
             freq_at: 0,
             lease_at: 0,
+            acars_sent: 0,
+            acars_test: 0,
             lease_drops: 0,
             zones: 0,
             act: [0; SLOTS],
@@ -265,6 +272,50 @@ impl App {
         self.radio.ssb_patch = dev.selftest.ssb_patch;
     }
 
+    /// MODE-1: the nearest mode screen's mode, up or under the screen up, keyed or not (PWR-24.4: none of
+    /// Low Power Mode's).
+    fn screen_mode(&self) -> Option<Mode> {
+        let under = self.back.iter().rev().flatten().copied();
+        for s in core::iter::once(self.screen).chain(under) {
+            return Some(match s {
+                // PWR-24.4: no scope, counter, tone search, broadcast, HF mode or crossband in Low Power Mode
+                Screen::Scope(_) | Screen::Counter(_) | Screen::ToneSearch(_) if self.low_power() => continue,
+                Screen::Scope(_) => Mode::Scope,
+                Screen::ToneSearch(_) => Mode::Tone,
+                Screen::Counter(_) => Mode::Counter,
+                Screen::Hf(_) | Screen::Crossband(_) | Screen::Sat(_) if self.low_power() => continue, // PWR-24.4 (ferrite#133)
+                Screen::Hf(_) => Mode::Hf,
+                Screen::Sat(_) => Mode::Sat,
+                // ACARS-11: receive only; not in Low Power Mode (PWR-24.4: the capture runs throughout)
+                Screen::Acars(_) if self.low_power() => continue,
+                Screen::Acars(_) => Mode::Acars,
+                Screen::Crossband(_) if self.radio.xb_on => Mode::Xb,
+                _ => continue,
+            });
+        }
+        None
+    }
+
+    /// TX-51 (HF-6, SCOPE-13, SAT-14; ferrite#131): automatic transmissions (APRS frames, KISS) wait while HF
+    /// mode, the band scope, the counter, tone search or the satellite screen runs, also through a person's
+    /// key-up (which stops the mode meanwhile). Home's scope strip doesn't hold them (it stops for the key-up).
+    pub fn auto_tx_paused(&self) -> bool {
+        self.auto_tx_pause().is_some()
+    }
+
+    /// [`App::auto_tx_paused`]'s mode, named for a toast (TX-51.3: "KISS not sent: HF mode").
+    pub fn auto_tx_pause(&self) -> Option<&'static str> {
+        let name = |m| match m {
+            Mode::Hf => Some("HF mode"),
+            Mode::Scope => Some("band scope"),
+            Mode::Counter => Some("counter"),
+            Mode::Tone => Some("tone search"),
+            Mode::Sat => Some("satellites"),
+            _ => None,
+        };
+        name(self.radio.mode).or_else(|| self.screen_mode().and_then(name)).or_else(|| self.sat_open().then_some("satellites"))
+    }
+
     /// MODE-1: the exclusive mode the radio should be in now, from the screen, what BACK returns to and the
     /// settings: the nearest mode screen up or under the screen up (a scope's typed centre, HF mode's recent list or
     /// save keep their mode), else home's scope strip (single + scope layout) once the active frequency has
@@ -275,20 +326,7 @@ impl App {
     /// key-up (BCR-16, SCOPE-12). Screens never start or stop a mode themselves: [`App::reconcile_mode`] does.
     pub(crate) fn wanted_mode(&self) -> Mode {
         let keyed = self.radio.keyed.is_some() || self.radio.data_keyed; // TX-24.1: a data key-up too
-        let under = self.back.iter().rev().flatten().copied();
-        for s in core::iter::once(self.screen).chain(under) {
-            let m = match s {
-                // PWR-24.4: no scope, counter, tone search, broadcast, HF mode or crossband in Low Power Mode
-                Screen::Scope(_) | Screen::Counter(_) | Screen::ToneSearch(_) if self.low_power() => continue,
-                Screen::Scope(_) => Mode::Scope,
-                Screen::ToneSearch(_) => Mode::Tone,
-                Screen::Counter(_) => Mode::Counter,
-                Screen::Hf(_) | Screen::Crossband(_) | Screen::Sat(_) if self.low_power() => continue, // PWR-24.4 (ferrite#133)
-                Screen::Hf(_) => Mode::Hf,
-                Screen::Sat(_) => Mode::Sat,
-                Screen::Crossband(_) if self.radio.xb_on => Mode::Xb,
-                _ => continue,
-            };
+        if let Some(m) = self.screen_mode() {
             return if keyed && !matches!(m, Mode::Hf | Mode::Xb | Mode::Sat) { Mode::Off } else { m };
         }
         if keyed || self.low_power() {
@@ -345,6 +383,15 @@ impl App {
             }
             self.radio.lease_at = self.now;
         }
+        // ACARS-3, ACARS-11: ◀▶ picked another frequency: retuned (it renews the lease too)
+        if self.radio.mode == Mode::Acars {
+            let f = self.acars_freq();
+            if f != self.radio.acars_sent {
+                self.radio.acars_sent = f;
+                self.out.push(RadioCmd::AcarsRx(f));
+                self.radio.lease_at = self.now;
+            }
+        }
         if fm && !self.radio.fm_on {
             let f = self.fm_freq();
             (self.radio.fm_on, self.radio.fm_sent, self.radio.fm_seek_at) = (true, f, None);
@@ -382,6 +429,11 @@ impl App {
             Mode::Fm => {} // the broadcast's start is the reconciler's (MODE-5)
             Mode::Hf => super::hf::send(self),
             Mode::Sat => self.sat_start(),
+            Mode::Acars => {
+                let f = self.acars_freq();
+                self.radio.acars_sent = f;
+                self.out.push(RadioCmd::AcarsRx(f));
+            }
             Mode::Xb => {
                 super::xb::send_start(self);
                 self.radio.xb_log = Some(super::xb::XbLog { on: true, by: self.radio.xb_by, why: 0 }); // XB-20.6
@@ -408,6 +460,10 @@ impl App {
             Mode::Fm => {} // the broadcast's stop is the reconciler's (MODE-5)
             Mode::Hf => self.out.push(RadioCmd::Hf { freq: self.set.hf.freq, mode: self.set.hf.mode, on: false }),
             Mode::Sat => self.out.push(RadioCmd::SatRx(0)),
+            Mode::Acars => {
+                self.radio.acars_sent = 0;
+                self.out.push(RadioCmd::AcarsRx(0));
+            }
             Mode::Xb => {
                 self.out.push(RadioCmd::Crossband(None));
                 if self.radio.xb_by & super::xb::LISTEN != 0 {

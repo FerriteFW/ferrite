@@ -131,7 +131,7 @@ EXTEND_TX = "0 8 8 4"
 KEY_ANSWER_S = 0.6  # TX-43: a tx-dry build answers KEY on at once; a tx build holds it while keyed
 
 DEFAULTS = {
-    "port": "/dev/cu.usbserial-114220",
+    "port": None,  # --port, else ferrite_link.resolve_port: FERRITE_PORT, radios.toml's default, the only cable
     "slot": "A",
     # MHz; the only frequencies the bench keys on (user approved Oct 13 2026); first and last: the VHF and UHF picks
     "test_freqs": [145.495, 446.475],
@@ -3594,7 +3594,7 @@ if __name__ == "__main__":
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--config", help="JSON overriding any of DEFAULTS")
-    ap.add_argument("--port", help="the cable (default from the config), tcp:HOST:PORT for the simulator, or ble:NAME_OR_ADDRESS for Bluetooth")
+    ap.add_argument("--port", help="the cable or a radio's name (default: the config, FERRITE_PORT, radios.toml's default, the only cable), tcp:HOST:PORT for the simulator, or ble:NAME_OR_ADDRESS for Bluetooth")
     ap.add_argument("--slot", help="the slot to use (A)")
     ap.add_argument("--runs", help="comma list of run names (default: all in the config)")
     ap.add_argument("--results", help="results root")
@@ -3655,6 +3655,10 @@ def main():
     for k in ("port", "slot", "results"):
         if getattr(a, k):
             cfg[k] = getattr(a, k)
+    try:
+        cfg["port"] = fl.resolve_port(cfg["port"])  # a radio's name, or nothing: FERRITE_PORT, the default, the cable
+    except fl.PortError:
+        cfg["port"] = ""  # only what opens the radio needs one: Port("") says why there
     if a.sweep_mhz:
         if a.sweep_mhz not in cfg["test_freqs"]:
             sys.exit(f"--sweep-mhz {a.sweep_mhz}: not an approved test frequency ({', '.join(map(str, cfg['test_freqs']))})")

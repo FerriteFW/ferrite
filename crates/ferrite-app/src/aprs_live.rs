@@ -9,6 +9,7 @@
 //!
 //! Frames are the AX.25 bytes without the FCS, as `uafsk`'s demodulator gives them and its modulator takes them.
 
+use crate::aprs_traffic::{Kind, Traffic};
 use crate::aprs::{REPLY_HOLD_S, beacon_due, retry_wait_of, AprsCfg, LastBeacon, HEARD_MAX, INFO_MAX};
 use crate::data::{Beacon, Fix, MsgState, Pos, Station, Sym, AGO_UNKNOWN};
 use core::cell::Cell;
@@ -436,6 +437,8 @@ pub struct AprsLive {
     readings: Cell<Readings>,
     /// APRS-6.4: messages to everyone (CQ, QST, ALL) heard lately, newest first.
     notices: [Cell<Option<NoticeRec>>; NOTICES],
+    /// APRS-59: the packets heard lately, every kind (a byte ring, [`crate::aprs_traffic::TRAFFIC_BYTES`]).
+    traffic: Traffic,
 }
 
 /// APRS-6.4: how many messages to everyone are kept, and for how long they show.
@@ -505,6 +508,7 @@ impl AprsLive {
             sending: Cell::new(Sending::Nothing),
             readings: Cell::new((0, None, 0)),
             notices: [const { Cell::new(None) }; NOTICES],
+            traffic: Traffic::new(),
         }
     }
 
@@ -672,6 +676,37 @@ impl AprsLive {
     pub fn clear_heard(&self) {
         self.heard.iter().for_each(|h| h.set(None));
         self.det.iter().for_each(|d| d.set(None));
+        self.traffic.clear(); // APRS-59.5
+    }
+
+    /// APRS-59: the packets heard lately (the Traffic page, the station screen's Message line).
+    pub fn traffic(&self) -> &Traffic {
+        &self.traffic
+    }
+
+    /// APRS-59.1: a packet heard, into Traffic by its kind: a message's addressee and text (an ack's or reject's
+    /// number; a directed query, `?` first, is a query), an object's or item's name, a third-party packet's own
+    /// sender.
+    #[inline(never)]
+    fn traffic_in(&self, p: &Result<Packet, parse::Error>, via: bool, call: &Buf<10>) {
+        let (kind, to, text): (Kind, &[u8], &[u8]) = match *p {
+            Ok(Packet::Position { weather: Some(_), .. } | Packet::Weather { .. }) => (Kind::Weather, b"", b""),
+            Ok(Packet::Position { .. }) => (Kind::Position, b"", b""),
+            Ok(Packet::Message(m)) => match m.kind {
+                MessageKind::Message if m.text.first() == Some(&b'?') => (Kind::Query, m.addressee, m.text),
+                MessageKind::Message => (Kind::Message, m.addressee, m.text),
+                MessageKind::Ack => (Kind::Ack, m.addressee, m.id.unwrap_or(b"")),
+                MessageKind::Rej => (Kind::Rej, m.addressee, m.id.unwrap_or(b"")),
+            },
+            Ok(Packet::Object { name, .. }) => (Kind::Object, b"", name.trim_ascii_end()),
+            Ok(Packet::Item { name, .. }) => (Kind::Item, b"", name.trim_ascii_end()),
+            Ok(Packet::Status { .. }) => (Kind::Status, b"", b""),
+            Ok(Packet::Telemetry(_)) => (Kind::Telemetry, b"", b""),
+            Ok(Packet::Other { kind: b'?', .. }) => (Kind::Query, b"", b""),
+            Ok(Packet::ThirdParty(t)) => (Kind::ThirdParty, t.src, b""),
+            Ok(Packet::Capabilities(_) | Packet::Other { .. }) | Err(_) => (Kind::Other, b"", b""),
+        };
+        self.traffic.push(kind, via, call.as_bytes(), to, text);
     }
 
     /// The reset (BOOT-14): the heard list, our messages being tried, everything waiting to go and the beacon
@@ -800,6 +835,7 @@ impl AprsLive {
     /// `cfg` has the digipeater's settings (0 5 7, off by default: APRS-12, APRS-26).
     pub fn receive(&self, frame: &[u8], now_s: u32, me: &[u8], cfg: &AprsCfg) -> Rx {
         self.now_s.set(now_s);
+        self.traffic.set_now(now_s);
         let mut rx = Rx::default();
         let Some(f) = Frame::parse(frame) else { return rx };
         if f.info.len() > INFO_MAX {
@@ -852,7 +888,9 @@ impl AprsLive {
         let mut dest = [0u8; 6];
         let dc = f.dest.call();
         dest[..dc.len()].copy_from_slice(dc);
-        match parse::parse(&dest[..dc.len()], f.info) {
+        let parsed = parse::parse(&dest[..dc.len()], f.info);
+        self.traffic_in(&parsed, !via.is_empty(), &call); // APRS-59
+        match parsed {
             Ok(p @ (Packet::Position { pos, comment, .. } | Packet::Object { pos, comment, .. } | Packet::Item { pos, comment, .. })) => {
                 d.device = match p {
                     Packet::Position { mic_e: Some(m), .. } => m.device,
@@ -1168,12 +1206,21 @@ impl AprsLive {
 
     // ---- transmit ----
 
+    /// TX-51.2: a second while automatic transmissions are paused (HF mode, the scope, the counter, tone search,
+    /// the satellite screen): acks owed and a waiting digipeat are dropped, stale by the time the mode ends;
+    /// beacons and our messages wait (no [`AprsLive::tick`] meanwhile).
+    pub fn paused(&self) {
+        self.acks.iter().for_each(|a| a.set(None));
+        self.digi.set(None);
+    }
+
     /// A second of the APRS task. `send`: what may go (APRS mode: all, APRS-15; beacons alone: beacons, APRS-29;
     /// else nothing, APRS-22); `relay_ok`: slot C can transmit with the band relay
     /// where the active slot holds it (APRS-20); `me` our callsign (APRS-8); `fix` the GPS's (beacons, APRS-24).
     /// A frame to send is written to `out`; the caller keys slot C, plays it, unkeys.
     pub fn tick(&self, now_s: u32, send: Sending, relay_ok: bool, me: &[u8], fix: Option<Fix>, cfg: &AprsCfg, out: &mut [u8; FRAME_MAX]) -> Tick {
         self.now_s.set(now_s);
+        self.traffic.set_now(now_s);
         self.sending.set(send);
         let mut t = Tick::default();
         // 0 5 7 1 turned off while a digipeat waits its turn: it doesn't go (APRS-10.1).
@@ -1982,6 +2029,19 @@ mod tests {
         assert!(m(b"VE3KPW", b"VE3KPW-0") && m(b"VE3KPW-0", b"VE3KPW") && m(b"ve3kpw", b"VE3KPW"));
     }
 
+    /// TX-51.1, TX-51.2: while automatic transmissions are paused (HF mode, the scope, the counter, tone search,
+    /// the satellite screen) an ack owed is dropped, stale by the mode's end, and Beacon now waits for it.
+    #[test]
+    fn paused_drops_acks_and_keeps_the_beacon() {
+        let a = AprsLive::new();
+        let (f, n) = frame(b"VE3KPW-9", b"APRS", &[], b":VE3XYZ   :On my way{12");
+        assert!(a.receive(&f[..n], 100, b"VE3XYZ", &AprsCfg::DEFAULT).inbound.is_some());
+        a.beacon_now();
+        a.paused();
+        let mut out = [0u8; FRAME_MAX];
+        assert_eq!(a.tick(160, Sending::All, true, b"VE3XYZ", Some(fix()), &AprsCfg::DEFAULT, &mut out).what, "Beacon", "no ack first");
+    }
+
     #[test]
     fn message_to_us_is_acked_once() {
         let a = AprsLive::new();
@@ -2062,6 +2122,60 @@ mod tests {
         assert!(a.receive(&f[..n], 205, me, &cfg).state.is_none());
         let (f, n) = frame(b"VE7GPL-9", b"APRS", &[], &ack);
         assert!(a.receive(&f[..n], 206, me, &cfg).state.is_some());
+    }
+
+    /// APRS-59.1: every packet heard goes into Traffic by its kind, through the receive path: a message (its
+    /// addressee and text), an ack and a reject (their numbers), a directed query, a position (a weather station's
+    /// is weather), status, an object (its name), telemetry, a general query, third party (its sender), anything
+    /// else; heard through a digipeater marked. Our own heard back isn't. APRS-28: the newest message from a
+    /// station, to anyone, is its Message line's. APRS-59.5: clearing the heard list empties it.
+    #[test]
+    fn traffic_takes_every_kind() {
+        use crate::aprs_traffic::Kind as K;
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let me = b"VA7IF-7";
+        let hear = |src: &[u8], path: &[&[u8]], info: &[u8], t: u32| {
+            let (f, n) = frame(src, b"APRS", path, info);
+            a.receive(&f[..n], t, me, &cfg);
+        };
+        hear(b"VE7GPL-1", &[], b":TEST     :6{2", 100);
+        hear(b"VE7GPL-1", &[b"VE7RHS*"], b":VE7XYZ   :ack5", 104);
+        hear(b"VE7GPL-1", &[], b":VE7XYZ   :rej6", 108);
+        hear(b"VE7GPL-1", &[], b":VA7IF-7  :?APRSP", 112);
+        hear(b"VE7GPL-2", &[], b"!4903.50N/07201.75W-Home", 116);
+        hear(b"VE7GPL-3", &[], b"!4903.50N/07201.75W_090/005g010t050", 120);
+        hear(b"VE7GPL-4", &[], b">status", 124);
+        hear(b"VE7GPL-5", &[], b";LEADER   *092345z4903.50N/07201.75W>", 128);
+        hear(b"VE7GPL-6", &[], b"T#005,199,000,255,073,123,01101001", 132);
+        hear(b"VE7GPL-7", &[], b"?APRS?", 136);
+        hear(b"VE7IGT-10", &[], b"}KA9ZZZ-9>APRS,TCPIP,VE7IGT-10*::VA7IF-7  :hi", 140);
+        hear(b"VE7GPL-8", &[], b"<IGATE,MSG_CNT=1", 144);
+        hear(b"VA7IF-7", &[b"VE7RHS*"], b">ours, heard back", 148);
+        let t = a.traffic();
+        let got: std::vec::Vec<_> = (0..t.len()).map(|i| t.get(i).unwrap()).collect();
+        let kinds: std::vec::Vec<_> = got.iter().rev().map(|r| (r.kind, r.src.as_bytes().to_vec(), r.to.as_bytes().to_vec(), r.text.as_bytes().to_vec())).collect();
+        let v = |s: &[u8]| s.to_vec();
+        assert_eq!(kinds, [
+            (K::Message, v(b"VE7GPL-1"), v(b"TEST"), v(b"6")),
+            (K::Ack, v(b"VE7GPL-1"), v(b"VE7XYZ"), v(b"5")),
+            (K::Rej, v(b"VE7GPL-1"), v(b"VE7XYZ"), v(b"6")),
+            (K::Query, v(b"VE7GPL-1"), v(b"VA7IF-7"), v(b"?APRSP")),
+            (K::Position, v(b"VE7GPL-2"), v(b""), v(b"")),
+            (K::Weather, v(b"VE7GPL-3"), v(b""), v(b"")),
+            (K::Status, v(b"VE7GPL-4"), v(b""), v(b"")),
+            (K::Object, v(b"VE7GPL-5"), v(b""), v(b"LEADER")),
+            (K::Telemetry, v(b"VE7GPL-6"), v(b""), v(b"")),
+            (K::Query, v(b"VE7GPL-7"), v(b""), v(b"")),
+            (K::ThirdParty, v(b"VE7IGT-10"), v(b"KA9ZZZ-9"), v(b"")),
+            (K::Other, v(b"VE7GPL-8"), v(b""), v(b"")),
+        ]);
+        assert!(got[got.len() - 2].via && !got[got.len() - 1].via, "the ack came through a digipeater");
+        assert_eq!(got[got.len() - 1].ago_s, 48);
+        let m = t.last_message(b"VE7GPL-1").unwrap();
+        assert_eq!((m.to.as_bytes(), m.text.as_bytes()), (&b"TEST"[..], &b"6"[..]), "the newest message, not the ack or the query");
+        a.clear_heard();
+        assert!(t.is_empty(), "APRS-59.5: cleared with the heard list");
     }
 
     /// APRS-6.4: a message to everyone (CQ, QST, ALL; any case) is kept above the inbox: once for its
@@ -3037,7 +3151,9 @@ mod tests {
     fn size() {
         let n = core::mem::size_of::<AprsLive>();
         std::println!("AprsLive: {n} B, heard entry {} B, out {} B", core::mem::size_of::<Option<Heard>>(), core::mem::size_of::<Option<Out>>());
-        assert!(n <= 8_500, "{n}"); // 50 stations (decision 246)
+        std::println!("Traffic: {} B (APRS-59)", core::mem::size_of::<Traffic>());
+        // 50 stations (decision 246) and Traffic's ring (decision 463: 6,824 B before it, 7,872 B on the host with it)
+        assert!(n <= 8_000, "{n}");
     }
 
     /// APRS-35: a general query's footprint: decimal degrees and miles; anything malformed is none; the distance

@@ -313,7 +313,7 @@ pub(crate) fn reset_all(app: &mut App, store: &impl ChannelStore) {
     for s in 0..SLOTS as u8 {
         app.send_slot(s);
     }
-    (app.inbox, app.log_unread, app.alert) = (0, 0, 0);
+    (app.inbox, app.log_unread, app.alert, app.pages_unread) = (0, 0, 0, 0);
     app.reset_aprs();
     app.first_boot();
     app.show_toast(b"Reset done", b"", false);

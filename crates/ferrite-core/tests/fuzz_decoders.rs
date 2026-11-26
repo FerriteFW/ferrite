@@ -1,9 +1,9 @@
 //! The other decoders the radio runs on what it hears, fuzzed in the normal tests (ferrite-fuzzkit): POCSAG
 //! (codewords, and audio through the decoder slot), DSC (bits through the framer, symbols through the message
 //! reader, audio), SSTV (audio), SAME headers (the BK4829's FIFO words through the assembler, then the parser) and
-//! the DTMF digit tracker. Seeds come from the decoders' own encoders and, when present, the testdata recordings
-//! (`../testdata/pocsag`, `../testdata/dsc`). Invariant: no panic, nothing slower than the limit, results inside
-//! their buffers.
+//! the DTMF digit tracker. Seeds come from the decoders' own encoders and, when present, the test data's
+//! recordings (`pocsag/`, `dsc/`, found by `testdata_dir`'s rule). Invariant: no panic, nothing slower than the
+//! limit, results inside their buffers.
 
 use ferrite_core::decoders::{Decoder, Found, RATE_HZ};
 use ferrite_core::dtmfrx::{Track, MAX as DTMF_MAX};
@@ -43,24 +43,6 @@ fn recordings(dir: &str, max: usize) -> Vec<Vec<u8>> {
             samples_to_bytes(&s[start..(start + max).min(s.len())])
         })
         .collect()
-}
-
-/// POCSAG codewords as FSK audio at 24 kHz: two levels, as the discriminator gives them.
-fn pocsag_audio(baud: u32, words: &[u32]) -> Vec<i16> {
-    let mut bits: Vec<bool> = (0..upocsag::encode::PREAMBLE_BITS).map(|i| i.is_multiple_of(2)).collect();
-    for w in words {
-        bits.extend((0..32).rev().map(|k| w >> k & 1 != 0));
-    }
-    let spb = RATE_HZ as f64 / baud as f64;
-    let mut out = vec![0i16; 1200];
-    let mut y = 0.0;
-    for k in 0..(bits.len() as f64 * spb) as usize {
-        let target = if bits[(k as f64 / spb) as usize] { -8000.0 } else { 8000.0 };
-        y += (target - y) * 0.3;
-        out.push(y as i16);
-    }
-    out.extend([0i16; 1200]);
-    out
 }
 
 fn pocsag_words(address: u32, text: &[u8], alpha: bool) -> Vec<u32> {
@@ -142,10 +124,6 @@ fn through(mut d: Decoder, audio: &[u8]) {
     for block in s.chunks(96) {
         d.push(block, |f| match f {
             Found::Frame(f) => assert!(f.len() <= uafsk::hdlc::MAX_FRAME),
-            Found::Page(m) => {
-                let p = ferrite_core::decoders::Page::from(m);
-                let _ = (p.text(), m.numeric().count(), m.alpha().count());
-            }
             Found::Call(c) => {
                 assert!(c.symbols.len() <= udsc::framer::MAX_SYMBOLS);
                 let _ = udsc::message::Message::parse(c.symbols);
@@ -188,15 +166,6 @@ fn fuzz_pocsag_words() {
 }
 
 #[test]
-fn fuzz_pocsag_audio() {
-    let mut corpus = recordings("pocsag", 48_000);
-    for baud in [512, 1200, 2400] {
-        corpus.push(samples_to_bytes(&pocsag_audio(baud, &pocsag_words(1_234_567, b"Fuzz 73", true))));
-    }
-    Fuzz::new("pocsag_audio", 0x9C5B, 400).slow_ms(5_000).run(|r| mutated(r, &corpus, 200_000), |a| through(Decoder::pocsag(), a));
-}
-
-#[test]
 fn fuzz_dsc_framer() {
     let corpus: Vec<Vec<u8>> = dsc_calls().iter().map(|c| dsc_bits(c)).collect();
     Fuzz::new("dsc_framer", 0xD5C1, 20_000).run(
@@ -236,7 +205,7 @@ fn fuzz_dsc_message() {
 fn fuzz_dsc_audio() {
     let corpus = recordings("dsc", 48_000);
     if corpus.is_empty() {
-        eprintln!("fuzz_dsc_audio: no ../testdata/dsc recordings, random audio only");
+        eprintln!("fuzz_dsc_audio: no dsc recordings in the test data, random audio only");
     }
     Fuzz::new("dsc_audio", 0xD5C3, 300).slow_ms(5_000).run(|r| mutated(r, &corpus, 120_000), |a| through(Decoder::dsc(), a));
 }
@@ -354,6 +323,231 @@ fn fuzz_dtmf_track() {
                     assert!(b"0123456789ABCD*#".contains(&t.heard.char(i)), "{}", t.heard.char(i));
                 }
             }
+        },
+    );
+}
+
+// ---- Liveness and bounds (ferrite#73: a freeze after traffic): each decoder that has eaten garbage is back to idle,
+// within a stated bound, for the next good signal; nothing it holds grows past its buffer.
+
+/// DEC-4, DEC-23: the pager receiver (the BK4829 modem's FIFO words into pages) gives a good page after any
+/// mix of syncs, words and ends: the modem's next sync starts afresh, whatever the last transmission left (half a
+/// codeword, a batch cut short, a frame run past its end).
+#[test]
+fn fuzz_pager_recovers() {
+    use ferrite_core::pagerrx::PagerRx;
+    let page = pocsag_words(1_234_567, b"FERRITE 73", true);
+    let first = page.iter().position(|&w| w == upocsag::SYNC).expect("a sync codeword");
+    let words: Vec<u16> = page[first + 1..].iter().flat_map(|&cw| [((cw >> 16) as u16).swap_bytes(), (cw as u16).swap_bytes()]).collect();
+    let corpus: Vec<Vec<u8>> = vec![words.iter().flat_map(|w| w.to_le_bytes()).collect()];
+    Fuzz::new("pager_recovers", 0x9C5B, 20_000).run(
+        |r| mutated(r, &corpus, 1200),
+        |d| {
+            let Some((&baud, rest)) = d.split_first() else { return };
+            let mut rx = PagerRx::new(ferrite_core::pagerrx::BAUDS[baud as usize & 1]);
+            // the garbage: each 3 bytes an event (a word, now and then a sync or an end)
+            for e in rest.as_chunks::<3>().0 {
+                match e[0] & 0x1F {
+                    0 => rx.sync(|_| {}),
+                    1 => rx.end(|_| {}),
+                    _ => rx.word(u16::from_le_bytes([e[1], e[2]]), |p| assert!(p.len as usize <= p.text.len())),
+                }
+            }
+            let mut got = Vec::new();
+            rx.sync(|_| {});
+            for &w in &words {
+                rx.word(w, |p| got.push(p));
+            }
+            rx.end(|p| got.push(p));
+            assert!(
+                got.iter().any(|p| p.capcode == 1_234_567 && &p.text[..p.len as usize] == b"FERRITE 73"),
+                "a good page lost after garbage ({} pages)",
+                got.len()
+            );
+        },
+    );
+}
+
+/// DEC-5: the DSC framer finds a good call after any bits, within a bound: a false lock (or a call cut short)
+/// holds it at most 2 x (MAX_SYMBOLS + 8) words (960 bits, 8 s at 1200 baud), so the call comes after that many
+/// bits of dot pattern. The call's symbols come out as they do with no garbage before.
+#[test]
+fn fuzz_dsc_recovers() {
+    let corpus: Vec<Vec<u8>> = dsc_calls().iter().map(|c| dsc_bits(c)).collect();
+    let calls = dsc_calls();
+    Fuzz::new("dsc_recovers", 0xD5C4, 3_000).run(
+        |r| {
+            let mut v = vec![r.byte()];
+            v.extend(mutated(r, &corpus, 4096));
+            v
+        },
+        |d| {
+            let Some((&pick, g)) = d.split_first() else { return };
+            let call = &calls[pick as usize % calls.len()];
+            let bits = dsc_bits(call);
+            let clean: Vec<Vec<u8>> = {
+                let mut f = udsc::framer::Framer::new();
+                bits.iter().filter_map(|&b| f.push(b != 0).map(|c| c.symbols.to_vec())).collect()
+            };
+            let mut f = udsc::framer::Framer::new();
+            for &b in g {
+                if let Some(c) = f.push(b & 1 != 0) {
+                    assert!(c.symbols.len() <= udsc::framer::MAX_SYMBOLS);
+                }
+            }
+            let mut got = Vec::new();
+            let dots = (0..2 * (udsc::framer::MAX_SYMBOLS + 8) * 10).map(|i| i % 2 == 0);
+            for b in dots.chain(bits.iter().map(|&b| b != 0)) {
+                if let Some(c) = f.push(b) {
+                    got.push(c.symbols.to_vec());
+                }
+            }
+            for c in &clean {
+                assert!(got.contains(c), "a good DSC call lost after garbage");
+            }
+        },
+    );
+}
+
+/// DEC-19: the SAME assembler, fed FIFO words with no sync between (a missed sync interrupt, words after a bad
+/// burst), ends each burst within its buffer (Done or Bad before 4 + MAX_LEN bytes) and never panics; after the
+/// next sync a good header comes out whole.
+#[test]
+fn fuzz_same_recovers() {
+    let mut corpus: Vec<Vec<u8>> = Vec::new();
+    for o in Orient::ALL {
+        corpus.push(same_words(SAME, o));
+    }
+    Fuzz::new("same_recovers", 0x5A3F, 30_000).run(
+        |r| {
+            let mut v = vec![r.byte()];
+            v.extend(mutated(r, &corpus, 1200));
+            v
+        },
+        |d| {
+            let Some((&o, g)) = d.split_first() else { return };
+            let mut a = Assembler::new();
+            let mut since = 0usize;
+            for w in g.as_chunks::<2>().0 {
+                // no start(): the words keep coming as the radio's FIFO could hand them
+                since += 1;
+                match a.push(u16::from_le_bytes([w[0], w[1]])) {
+                    Step::More => assert!(since <= ferrite_core::same_rx::MAX_LEN / 2 + 8, "a burst that never ends"),
+                    Step::Done | Step::Bad => since = 0,
+                }
+                assert!(a.text().len() <= 4 + ferrite_core::same_rx::MAX_LEN);
+            }
+            let o = Orient::ALL[o as usize % 4];
+            a.start();
+            let mut done = false;
+            for w in same_words(SAME, o).as_chunks::<2>().0 {
+                if a.push(u16::from_le_bytes([w[0], w[1]])) == Step::Done {
+                    done = true;
+                    break;
+                }
+            }
+            assert!(done && a.text() == SAME, "a good header lost after garbage");
+        },
+    );
+}
+
+/// DEC-6, DEC-6.2: the DTMF digits clear HOLD_MS after the last digit once the carrier is gone, whatever the
+/// clock did before (jumps either way, the 49.7-day wrap of the millisecond count, zero): the string can't stick.
+#[test]
+fn fuzz_dtmf_clears() {
+    Fuzz::new("dtmf_clears", 0xD7F1, 20_000).run(
+        |r| {
+            let n = r.len(100);
+            r.bytes(n * 5)
+        },
+        |d| {
+            let mut t = Track::NEW;
+            let mut now = 0u32;
+            let mut last = None;
+            for e in d.as_chunks::<5>().0 {
+                let v = u32::from_le_bytes([e[1], e[2], e[3], e[4]]);
+                now = match e[0] >> 6 {
+                    0 => now.wrapping_add(v % 2000),
+                    1 => now.wrapping_sub(v % 100_000),
+                    2 => v,
+                    _ => now,
+                };
+                if e[0] & 0x20 != 0 {
+                    t.digit(e[0] & 0x0F, now);
+                    last = Some(now);
+                } else {
+                    let _ = t.tick(now, e[0] & 0x10 != 0);
+                }
+            }
+            let Some(at) = last else { return };
+            let _ = t.tick(at.wrapping_add(ferrite_core::dtmfrx::HOLD_MS), false);
+            assert!(t.heard.is_empty(), "the digits stuck after the carrier went");
+        },
+    );
+}
+
+/// TSRCH-3: tone search finds a tone from two agreeing reads with the carrier, whatever it read before (noise,
+/// carrier flapping, other tones): no state keeps a new tone out.
+#[test]
+fn fuzz_tone_search_recovers() {
+    use ferrite_core::tonesearch::Search;
+    Fuzz::new("tone_search_recovers", 0x7053, 20_000).run(
+        |r| {
+            let n = r.len(64);
+            r.bytes(n * 3)
+        },
+        |d| {
+            let mut s = Search::new();
+            let mut tone = 0u16;
+            for e in d.as_chunks::<3>().0 {
+                let w = u16::from_le_bytes([e[1], e[2]]);
+                let word = (e[0] & 1 != 0).then_some(w);
+                let _ = s.step(e[0] & 2 != 0, word);
+                let _ = s.average(e[0] & 4 != 0, word);
+                tone = w | 1; // never 0
+            }
+            s.step(true, Some(tone));
+            s.step(true, Some(tone));
+            assert_eq!(s.found, tone, "tone search stuck on an old reading");
+        },
+    );
+}
+
+/// GPS-2, GPS-18: the firmware's NMEA reader (ferrite_core::gps, the GPS task's; drivers/nmea is the older
+/// crate) on any bytes: sentences cut short, overlong, no `$`, bad checksums, odd fields, binary. Its tables stay in
+/// bounds, and the next good GGA and RMC still give the fix: no state outlives a `$`.
+#[test]
+fn fuzz_gps_recovers() {
+    use ferrite_core::gps::Nmea;
+    const LINES: [&str; 6] = [
+        "GNGGA,183412.00,4900.60000,N,12305.40000,W,1,09,0.9,12.3,M,-17.0,M,,",
+        "GNRMC,183413.50,A,4900.60000,N,12305.40000,W,23.4,271.5,290926,,,A",
+        "GPGSV,3,1,12,01,40,083,46,02,17,308,41,12,07,344,39,14,22,228,45",
+        "BDGSV,1,1,04,01,45,120,33,03,50,200,,06,10,330,18,08,60,010,40",
+        "GNGSA,A,3,01,02,12,14,,,,,,,,,1.5,0.9,1.2,1",
+        "GPRMC,183414.00,V,,,,,,,290926,,,N",
+    ];
+    let line = |body: &str| {
+        let sum = body.bytes().fold(0u8, |a, b| a ^ b);
+        format!("${body}*{sum:02X}\r\n").into_bytes()
+    };
+    let corpus: Vec<Vec<u8>> = vec![LINES.iter().flat_map(|l| line(l)).collect()];
+    let good: Vec<u8> = [LINES[0], LINES[1]].iter().flat_map(|l| line(l)).collect();
+    Fuzz::new("gps_recovers", 0x6950, 20_000).run(
+        |r| mutated(r, &corpus, 2000),
+        |d| {
+            let mut n = Nmea::new();
+            for &c in d {
+                n.feed(c);
+                assert!(n.nsat as usize <= n.sat.len());
+            }
+            let _ = (n.fix(1000), n.sky());
+            let before = n.sentences;
+            for &c in &good {
+                n.feed(c);
+            }
+            assert_eq!(n.sentences.wrapping_sub(before), 2, "a good sentence lost after garbage");
+            assert!(n.has_fix() && n.lat_e7 == 490_100_000 && n.lon_e7 == -1_230_900_000, "no fix from good sentences after garbage");
         },
     );
 }

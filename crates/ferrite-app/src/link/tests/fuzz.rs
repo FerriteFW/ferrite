@@ -12,12 +12,12 @@ use ferrite_fuzzkit::{mutate, Fuzz, Rng};
 use std::sync::OnceLock;
 use std::vec::Vec;
 
-const TYPES: [u8; 38] = [
+const TYPES: [u8; 39] = [
     msg::HELLO, msg::INFO, msg::AUTH, msg::READ, msg::WRITE, msg::DELETE, msg::BEGIN, msg::END, msg::USED, msg::READ_MANY,
     msg::WRITE_MANY, msg::STREAM, msg::STREAM_MORE, msg::LOG_READ, msg::SLOT, msg::BAUD, msg::REBOOT, msg::CMD, msg::MORE,
     msg::KEY, msg::UI, msg::STATE, msg::TUNE, msg::BEACON, msg::PHONE_POS, msg::SUBSCRIBE, msg::EVENT, msg::HEARD,
     msg::MSGS, msg::MSG_SEND, msg::MSG_STOP, msg::MSG_DELETE, msg::AUDIO, msg::STOCK_RESTORE, msg::DATA_READ,
-    msg::DATA_WRITE, msg::CLOCK, 0x7F,
+    msg::DATA_WRITE, msg::CLOCK, msg::SSB_WRITE, 0x7F,
 ];
 
 /// Words a `CMD` (LINK-34) may carry.
@@ -246,6 +246,31 @@ fn request(r: &mut Rng) -> (u8, Vec<u8>) {
                 p.extend(r.bytes(n));
             }
             p
+        }
+        msg::SSB_WRITE => {
+            // LINK-73: the SSB patch's steps in any order (a BEGIN never finished, a PROGRAM before any, pieces out of
+            // its length): the known hash or another, a valid length or not
+            use ferrite_core::link::ssb;
+            match r.below(5) {
+                0 => std::vec![ssb::CHECK],
+                1 => {
+                    let len = if r.one_in(2) { r.below(0x5000) as u32 & !7 } else { r.edge(4) };
+                    let sha = if r.one_in(3) { [r.byte(); 32] } else { ferrite_core::ssb::KNOWN_SHA256 };
+                    ssb::begin(len, &sha).to_vec()
+                }
+                2 => {
+                    let mut out = [0u8; 3 + ssb::PROGRAM_MAX];
+                    let n = r.below(ssb::PROGRAM_MAX + 1);
+                    let b = r.bytes(n);
+                    let k = ssb::program(r.edge(2) as u16 & !7, &b, &mut out);
+                    out[..k].to_vec()
+                }
+                3 => std::vec![ssb::FINISH],
+                _ => {
+                    let n = r.len(80);
+                    r.bytes(n)
+                }
+            }
         }
         msg::SLOT | msg::TUNE => {
             let mut p = std::vec![r.below(4) as u8, if ty == msg::TUNE { r.below(20) as u8 } else { r.byte() }];

@@ -149,6 +149,8 @@ impl Radio {
             }
             // Satellite mode's downlink (SAT-8): wide FM, the default squelch.
             sat::SAT_TUNED => SlotRx { freq: f, ..SlotRx::DEFAULT },
+            // ACARS-11: narrow AM (ACARS's 25 kHz channels; the bench decoded through NAM).
+            acars::ACARS_TUNED => SlotRx { freq: f, am: true, narrow: true, ..SlotRx::DEFAULT },
             // HF mode on chip 1 (18-64 MHz): AM is the mode's own (Param::Mode 2); FM otherwise.
             _ => SlotRx { freq: f, am: self.hf.is_some_and(|h| h.mode == 2), ..SlotRx::DEFAULT },
         };
@@ -163,10 +165,12 @@ impl Radio {
         let sq = (self.sq_regs[n as usize] != Some(regs)).then_some(regs);
         self.sq_regs[n as usize] = Some(regs);
         // SQL-18.10: only the frequency moved on a chip still receiving: no REG_30 off (the click)
-        let light = self.light[n as usize].take().filter(|_| self.rx_set[n as usize].is_some_and(|p| radio_chip::RxSetup { freq: setup.freq, ..p } == setup));
-        match light {
-            Some(same_slot) => radio_chip::retune_light(&mut self.chip(n), &setup, sq, !same_slot),
-            None => radio_chip::tune_rest_sq(&mut self.chip(n), &setup, sq),
+        let light = self.light[n as usize].take();
+        match (light, self.rx_set[n as usize]) {
+            (Some(same_slot), Some(p)) if radio_chip::light_ok(&p, &setup) => radio_chip::retune_light(&mut self.chip(n), &setup, sq, !same_slot),
+            // BCR-23.2 (ferrite#179): beside a broadcast a turn to a slot set up otherwise keeps receive on too
+            (Some(_), Some(p)) if self.beside_bcast(n) => radio_chip::retune_changed(&mut self.chip(n), &p, &setup, sq),
+            _ => radio_chip::tune_rest_sq(&mut self.chip(n), &setup, sq),
         }
         self.rx_set[n as usize] = Some(setup);
         if self.data_rx[n as usize] != Some(data) {
@@ -268,6 +272,11 @@ impl Radio {
             Action::Wake => {}
         }
         self.live.rx_asleep = self.save.asleep();
+    }
+
+    /// SQL-12.4: the slots whose level is read: the active one, the watched ones, and any a chip is tuned to now.
+    pub(super) fn listened_slots(&self) -> u8 {
+        ferrite_core::watch::listened(self.watch_set, self.active, &self.tuned.map(|t| t.map(|(s, _)| s)))
     }
 
     /// The kept slots that are listened to (decision 111): their chip stays awake beside the hop's, and through

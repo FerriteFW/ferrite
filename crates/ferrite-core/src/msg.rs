@@ -147,6 +147,8 @@ pub enum RadioCmd {
     /// SAME weather alerts on or off (0 4 5 1 and the region, WX-3): the BK4829's SAME receiver runs on the chip of
     /// any slot tuned to a weather channel (DEC-19).
     Same(bool),
+    /// POCSAG on slot C through its chip's own FSK modem at this speed, 1200 or 2400 (0: off; DEC-20, DEC-23).
+    Pager(u16),
     /// DEC-6: the BK4829's DTMF detector on (0 4 3).
     DtmfRx(bool),
     /// HF mode: enter on a frequency and mode (as [`Param::Mode`]), retune, or leave (HF-3, HF-4). Entering
@@ -198,6 +200,10 @@ pub enum RadioCmd {
     /// Satellite mode: the uplink's CTCSS tone in 0.1 Hz (the arming tone while it plays, SAT-10), half duplex
     /// (the downlink muted while keyed, SAT-11), and the uplink's power for the next key-up (TX-9 levels, SAT-22).
     SatTone { tone: u16, hd: bool, power: u8 },
+    /// ACARS (ACARS-11): the VHF chip receives this frequency in AM for the decoder while the ACARS screen is open,
+    /// the other chip asleep; watch, scans and the other decoders paused. Again with another frequency retunes; 0
+    /// leaves, and everything resumes.
+    AcarsRx(Freq10),
 }
 
 /// [`RadioCmd::SatRx`]: satellite mode on with nothing tuned (no pass open yet).
@@ -290,9 +296,6 @@ pub struct SameDecoded {
 pub enum DspCmd {
     /// What the APRS task wants in the decoder slot (AFSK or off).
     Decoder(DecoderKind),
-    /// The pager decoder wanted (POCSAG on and a slot on its frequency) or not. The slot runs one decoder:
-    /// APRS's AFSK first, the pager decoder when APRS doesn't want it (DEC-18).
-    Pager(bool),
     /// LINK-13.4: receive audio wanted for the PC (the cable's session listens): the capture runs for it too, and
     /// the DSP task sends its blocks. The `AUDIO` request's mode: 0 off, 1 the 12 kHz µ-law stream, 2 or 3 the bench's
     /// raw stream (LINK-13.9, [`crate::rawaudio`]).
@@ -308,6 +311,9 @@ pub enum DspCmd {
     Sstv(bool),
     /// SSTV-2.5: start a mode by hand (its VIS code), or stop the picture being received (0).
     SstvForce(u8),
+    /// ACARS-11: the ACARS screen is open and the Radio task tuned for it: the decoder slot is the ACARS
+    /// receiver's, the capture runs (the other decoders wait).
+    Acars(bool),
 }
 
 /// PWR-26.9: how long the AFSK capture runs on after the APRS slot's squelch closes (the frame's last flags).
@@ -320,7 +326,6 @@ pub const AFTER_TX_MS: u32 = 5000;
 pub enum DecoderKind {
     Off,
     Afsk,
-    Pocsag,
     Dsc,
 }
 
@@ -384,15 +389,16 @@ pub const SLOTS: usize = 3;
 pub struct SlotLive {
     /// What the receiver is on (while scanning, the current step).
     pub freq: Freq10,
-    /// dBm.
+    /// dBm, as read, whether the squelch is open or not (a closed slot's meter shows it dimmed).
     pub rssi: i16,
     /// A carrier above the squelch (the BK4829's RSSI and noise squelch), whatever tone it carries.
     pub squelch_open: bool,
     /// SQL-13.1: a carrier, as the squelch decided it: not level 0's always-open nor monitor. Busy lockout, the green
     /// LED, receive activity and DTMF go by this; the audio by `squelch_open`.
     pub carrier: bool,
-    /// SQL-12.1: the RSSI as read (dBm), not held down while closed as `rssi` is for the S-meters: the squelch
-    /// screen's floor and meter show the signal under the threshold.
+    /// SQL-12.1: the RSSI as read (dBm): the squelch screen's floor and meter show the signal under the threshold.
+    /// The same as `rssi` now that `rssi` isn't held down while closed; a slot deferring to the APRS slot (APRS-21.2)
+    /// shows the APRS slot's in `rssi` and keeps its own here.
     pub rssi_raw: i16,
     pub scanning: bool,
     /// The scan is stopped on a hit (held there until it resumes), not just passing a busy step.
@@ -609,6 +615,10 @@ pub enum LcdSet {
     Keys(Option<u8>),
     /// Time one whole-screen fill (153,600 bytes) on the panel bus, then redraw; the answer carries it.
     Bus,
+    /// The screen light's PWM frequency in Hz (2000 to 60000), or DISP-23.1's (None).
+    Hz(Option<u16>),
+    /// The screen light's dither depth in tenths of a percent (0 to 50), or DISP-23.1's (None).
+    Dither(Option<u16>),
 }
 
 /// TERM-40: the display's bench state.
@@ -623,6 +633,11 @@ pub struct LcdBench {
     pub keys: Option<u8>,
     /// The last `lcd bus` (none yet: `None`): the whole-screen fill's microseconds and the MCU clock in MHz.
     pub bus: Option<(u32, u16)>,
+    /// The screen light's PWM frequency and dither over DISP-23.1's ([`crate::screenpwm`]), or theirs (None).
+    pub hz: Option<u16>,
+    pub dither: Option<u16>,
+    /// The dither runs now (the UI task fills it in: not while the light is dark or full on).
+    pub dithering: bool,
 }
 
 #[cfg(feature = "bench")]
@@ -639,6 +654,8 @@ impl LcdBench {
             LcdSet::Bl(p) => self.bl = p.map(|p| p.min(100)),
             LcdSet::Keys(p) => self.keys = p.map(|p| p.min(100)),
             LcdSet::Bus => {} // the UI task fills in `bus`
+            LcdSet::Hz(h) => self.hz = h.map(|h| h.clamp(crate::screenpwm::HZ_MIN as u16, crate::screenpwm::HZ_MAX as u16)),
+            LcdSet::Dither(d) => self.dither = d.map(|d| d.min(crate::screenpwm::DITHER_MAX)),
         }
         self
     }
@@ -880,6 +897,9 @@ pub enum ModeLive {
     Xb(XbLive),
     /// Satellite mode: the downlink's level (dBm) and squelch.
     Sat { rssi: i16, open: bool },
+    /// ACARS (ACARS-11): the frequency the VHF chip listens on (0: none can: no VHF chip, or keyed), its level (dBm)
+    /// and squelch.
+    Acars { freq: Freq10, rssi: i16, open: bool },
 }
 
 /// The SI4732's receive settings from the UI (BCR-32, HF-35; decision 292), packed to keep [`RadioCmd`] small.
@@ -978,6 +998,17 @@ impl LiveAll {
             s.rssi = o.rssi;
         }
         a == *old
+    }
+
+    /// SQL-21: the slots an exclusive mode doesn't read (those not in `read`) show as not read: squelch closed, no
+    /// carrier (so no busy for TX-21 or the APRS slot's check), an empty meter (SQL-12.4), rather than frozen at what
+    /// the receive tick last saw before the mode started.
+    pub fn unread(&mut self, read: u8) {
+        for (i, s) in self.slots.iter_mut().enumerate() {
+            if read & 1 << i == 0 {
+                (s.squelch_open, s.carrier, s.rssi, s.rssi_raw) = (false, false, -121, -121);
+            }
+        }
     }
 
     /// The (slot, position) a channel scan asks for, if any ([`LiveAll::want`]).
@@ -1212,6 +1243,25 @@ pub struct GpsSky {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// SQL-21: an exclusive mode reading only A leaves B and C closed, carrier-free and with empty meters, whatever
+    /// they showed before (C mid-packet: open, a carrier); A's own reading stays.
+    #[test]
+    fn unread_slots_show_as_not_read() {
+        let mut l = LiveAll::default();
+        for s in &mut l.slots {
+            (s.squelch_open, s.carrier, s.rssi, s.rssi_raw, s.freq) = (true, true, -80, -80, 14_439_000);
+        }
+        l.unread(0b001);
+        assert!(l.slots[0].squelch_open && l.slots[0].carrier && l.slots[0].rssi == -80, "the mode's slot kept");
+        for s in &l.slots[1..] {
+            assert!(!s.squelch_open && !s.carrier, "no squelch, no busy");
+            assert_eq!((s.rssi, s.rssi_raw), (-121, -121), "an empty meter (SQL-12.4)");
+            assert_eq!(s.freq, 14_439_000, "only the reading goes");
+        }
+        l.unread(0);
+        assert!(!l.slots[0].squelch_open, "HF or the satellite screen: none read");
+    }
 
     #[test]
     fn small() {

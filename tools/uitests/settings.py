@@ -21,7 +21,7 @@ def unbuilt_group(t, path):
 # (PWR-24; lowpower.py tests it).
 ACTS = {"0 7 7 2"}
 # Settings typed or picked on a page of their own (OK opens them): the knob doesn't step them in the group.
-TYPED = {"0 4 2 2", "0 5 9 1", "0 5 9 2", "0 5 4", "0 5 7 2", "0 4 2 3", "0 5 5 3"}
+TYPED = {"0 4 2 3", "0 5 9 1", "0 5 9 2", "0 5 4", "0 5 7 2", "0 4 2 4", "0 5 5 3"}
 
 
 @test("MENU-31", "TERM-12", pages=("Entry", "Group"))

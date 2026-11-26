@@ -120,11 +120,11 @@ pub struct Station {
     pub alt_m: Option<i32>,
     pub times: u16,
     pub comment: Buf<40>,
-    /// The last message it sent us and the clock minute it came.
+    /// APRS-28: the newest message it was heard sending, to anyone, still in Traffic (APRS-59), and the clock
+    /// minute it came; empty until the station screen fills it ([`crate::screens::aprs::last_message`]).
     pub msg: Buf<32>,
     pub msg_min: Option<u16>,
-    /// APRS-28.1 (ferrite#184): who that message was addressed to (our callsign with or without the SSID, or CQ,
-    /// QST, ALL); empty when not known (a message stored before 0.9.7).
+    /// APRS-28.1 (ferrite#184): who that message was addressed to.
     pub msg_to: Buf<10>,
     /// APRS-44: its last frame came as FX.25, with this many bytes corrected.
     pub fx25: Option<u8>,
@@ -496,10 +496,27 @@ pub enum DataWrite {
     Stamp,
 }
 
+/// LINK-73 (`SSB_WRITE`, HF-18): one step of the SSB patch's write over the link, for the store's owner. The link
+/// has checked the shape, the length and the hash; the store writes only its SSB region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SsbWrite {
+    /// The region erased; the patch stored until now is gone (HF mode hides USB, LSB and CW meanwhile).
+    Begin,
+    /// `len` bytes of `bytes` at `off` in the patch.
+    Program { off: u16, len: u8, bytes: [u8; ferrite_core::link::ssb::PROGRAM_MAX] },
+    /// The header written, only if what the region holds is this patch (length, records, SHA-256).
+    Finish(ferrite_core::ssb::Patch),
+}
+
 pub trait Data {
     /// Changes whenever anything here changes: lists redraw only when it or their own position moved.
     fn version(&self) -> u32 {
         0
+    }
+
+    /// ACARS (chapter 27b): the messages heard, in RAM (None: not kept here).
+    fn acars(&self) -> Option<&crate::acars::AcarsLive> {
+        None
     }
 
     /// The event log, newest first.
@@ -545,6 +562,10 @@ pub trait Data {
     /// The beacon's state, for the APRS card (APRS-17, APRS-20).
     fn beacon(&self) -> Beacon {
         Beacon::default()
+    }
+    /// APRS-59: the packets heard lately, every kind, in RAM (None: not kept here).
+    fn traffic(&self) -> Option<&crate::aprs_traffic::Traffic> {
+        None
     }
     /// APRS-53: our beacons since power-on (the last [`crate::aprs_live::SENT_MAX`], RAM only), newest first.
     fn beacons_sent(&self) -> u16 {
@@ -704,6 +725,18 @@ pub trait Data {
     /// LINK-60: a raw write queued for the store's owner (false: no room, or no flash here). The link has checked
     /// the range and the shape.
     fn data_write(&self, _w: DataWrite) -> bool {
+        false
+    }
+
+    /// HF-20: the SSB patch the store holds, verified (at boot, or by the write that stored it); None while a link
+    /// write is under way, or with no flash here.
+    fn ssb(&self) -> Option<ferrite_core::ssb::Patch> {
+        None
+    }
+
+    /// LINK-73: an `SSB_WRITE` step queued for the store's owner (false: no room, no flash here, or the chip's data
+    /// waits for an update, UPD-16).
+    fn ssb_write(&self, _w: SsbWrite) -> bool {
         false
     }
 

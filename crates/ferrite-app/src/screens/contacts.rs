@@ -285,6 +285,16 @@ pub(crate) fn sel(app: &mut App, s: Sel, store: &impl ChannelStore) {
             None => app.show_toast(b"Waypoint", b"none selected", false),
         },
         (Sel::Waypoint, Screen::Aprs(a)) => super::aprs::save_waypoint(app, d, a.cur.sel),
+        // GPS-10.2: the selected waypoint deleted (the list or the one being gone to); back on the list.
+        (Sel::Delete, Screen::Gps(g)) => {
+            let i = g.cur.sel;
+            let (name, done) = match d.waypoint(i) {
+                Some(w) => (w.name, d.request(Op::DeleteWaypoint(i))),
+                None => (Buf::from(&b"Waypoint"[..]), false),
+            };
+            app.screen = Screen::Gps(super::gps::Gps { page: super::gps::Page::Waypoints, ..g });
+            app.show_toast(name.as_bytes(), if done { b"deleted" } else { b"not deleted" }, false);
+        }
         (_, _) if call.is_none() => app.show_toast(b"Contacts", b"nothing selected", false),
         (Sel::Message, _) => write_to(app, d, call.unwrap_or_default().as_bytes()),
         (Sel::Name, _) => {

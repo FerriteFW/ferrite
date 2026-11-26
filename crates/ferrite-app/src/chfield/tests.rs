@@ -208,3 +208,31 @@ fn hf_rules() {
     v.cfg.mode = 3;
     assert_eq!(check_edit(&v), Err(Refusal::NotHf));
 }
+
+/// CHAN-26, CHAN-26.1, CHAN-26.2, VFO-14 (ferrite#84): an 18-64 MHz channel (CB, chip 1 through the relay) takes
+/// FM, NFM and AM, and the Mode step goes on past the modes it doesn't have (NAM, WFM), so the knob reaches each
+/// of the three both ways; below 18 MHz NFM stays refused.
+#[test]
+fn cb_channel_modes() {
+    let cb = mhz(27) + 18_500;
+    let mut c = ch(cb);
+    c.cfg.mode = 0;
+    assert_eq!(check_edit(&c), Ok(()));
+    let mut seen = std::vec::Vec::new();
+    for _ in 0..4 {
+        c = step(ChField::It(Item::Mode), c, 1).unwrap();
+        seen.push(c.cfg.mode);
+    }
+    assert_eq!(seen, [1, 2, 0, 1], "FM, NFM, AM round");
+    assert!(c.cfg.narrow, "NFM is the narrow filter (VFO-20)");
+    let back: std::vec::Vec<u8> = (0..3)
+        .map(|_| {
+            c = step(ChField::It(Item::Mode), c, -1).unwrap();
+            c.cfg.mode
+        })
+        .collect();
+    assert_eq!(back, [0, 2, 1], "and back the other way, over WFM and NAM");
+    let mut low = ch(mhz(7) + 10_000);
+    low.cfg.mode = 2;
+    assert_eq!(step(ChField::It(Item::Mode), low, 1), Err(Refusal::HfMode), "below 18 MHz: HF mode's AM, no NFM");
+}

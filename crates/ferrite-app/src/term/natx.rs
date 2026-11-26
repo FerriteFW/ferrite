@@ -192,7 +192,7 @@ impl Term {
                     }
                     7 => {
                         if d.request(Op::MessagesReadAll) {
-                            (app.log_unread, app.inbox) = (app.log_unread.saturating_sub(app.inbox), 0); // INBOX-3.2
+                            (app.log_unread, app.inbox, app.pages_unread) = (app.log_unread.saturating_sub(app.badge()), 0, 0); // INBOX-3.2, DEC-22
                         }
                     }
                     // what was captured, as the typed line (a reply's callsign, from the list)

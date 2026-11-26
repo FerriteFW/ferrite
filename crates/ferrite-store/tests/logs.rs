@@ -829,3 +829,68 @@ fn delete_one_message() {
     assert_eq!(s.messages(), n - 1);
     assert_eq!(s.message(0).unwrap().text.as_bytes(), b"n518");
 }
+
+/// A Discord report on 0.9.7 (three radios on one base call, Ferrite VA7FER-2): frames through the firmware APRS
+/// task's path (the APRS task, the heard row, the inbox and the event log), then the station screen as it is shown.
+/// APRS-28, APRS-28.1 (ferrite#184): the Message line is the newest message the station was heard sending, to
+/// anyone, with its addressee: "6" to TEST after "3" to us showed "3" (the newest to us), and a station that sent
+/// only to others showed none. APRS-3: a message to another SSID of ours (APRS-6.3: not ours) is still heard.
+/// INBOX-6: the event log takes messages to us and to everyone only, so a message to TEST and a position beacon are
+/// in the heard list but not the log.
+#[test]
+fn heard_shows_every_message_the_log_only_ours() {
+    use ferrite_app::aprs_live::uaprs::ax25::{Address, Frame};
+    use ferrite_app::aprs_live::FRAME_MAX;
+    use ferrite_app::radio_data::RadioData;
+    let me = b"VA7FER-2";
+    let d = RadioData::new();
+    d.set_callsign(me);
+    let s = FlashStore::mount(SimFlash::new(), d);
+    let cfg = AprsCfg::DEFAULT;
+    // firmware/src/tasks/aprs.rs, Aprs::poll: a frame heard
+    let hear = |from: &[u8], info: &[u8], now: u32| {
+        let mut b = [0u8; FRAME_MAX];
+        let n = Frame::new(Address::from_text(from).unwrap(), Address::from_text(b"APDR16").unwrap(), &[], info).unwrap().write(&mut b).unwrap();
+        let rx = s.extra.aprs.receive(&b[..n], now, me, &cfg);
+        if let Some(st) = Data::station(&s, 0).filter(|_| rx.row) {
+            s.heard_row(&st);
+        }
+        if let Some((from, text)) = rx.inbound.filter(|(f, t)| !s.message_heard(f.as_bytes(), rx.inbound_id.as_bytes(), t.as_bytes())) {
+            s.message_to_us(from.as_bytes(), text.as_bytes(), rx.inbound_id.as_bytes(), rx.inbound_to.as_bytes());
+            s.log(&Event { src: Src::Aprs, ago_s: 0, freq: Default::default(), slot: 2, unread: true, id: 0, x: 0, y: 0, pos: None, name: Buf::from(from.as_bytes()), text: Buf::from(text.as_bytes()) });
+        }
+        if let Some((from, to, text)) = rx.notice {
+            let mut t = Buf::<64>::from(b"To ");
+            t.push(to.as_bytes());
+            t.push(b": ");
+            t.push(text.as_bytes());
+            s.log(&Event { src: Src::Aprs, ago_s: 0, freq: Default::default(), slot: 2, unread: true, id: 0, x: 0, y: 0, pos: None, name: Buf::from(from.as_bytes()), text: t });
+        }
+    };
+    // the station screen's Message line (APRS-28): its station, with the clock at minute 600
+    let line = |call: &[u8]| {
+        let i = (0..Data::stations(&s)).find(|&i| Data::station(&s, i).unwrap().call.as_bytes() == call).expect("in the heard list (APRS-3)");
+        let mut st = Data::station(&s, i).unwrap();
+        ferrite_app::screens::aprs::last_message(&mut st, &s, Some(600));
+        (st.msg_to.as_bytes().to_vec(), st.msg.as_bytes().to_vec(), st.msg_min)
+    };
+    let log = || (0..s.events()).map(|i| s.event(i).unwrap().text.as_bytes().to_vec()).collect::<Vec<_>>();
+    hear(b"VA7FER-1", b":VA7FER   :3{1", 100);
+    assert_eq!(line(b"VA7FER-1"), (b"VA7FER".to_vec(), b"3".to_vec(), Some(600)), "to us, plain call (APRS-6.3)");
+    hear(b"VA7FER-1", b":TEST     :6{2", 160);
+    assert_eq!(line(b"VA7FER-1"), (b"TEST".to_vec(), b"6".to_vec(), Some(600)), "symptom A: the newest heard, not the newest to us");
+    hear(b"VA7FER-4", b":TEST     :6", 220);
+    assert_eq!(line(b"VA7FER-4"), (b"TEST".to_vec(), b"6".to_vec(), Some(600)), "symptom A: sent only to others");
+    hear(b"VA7FER-1", b":VA7FER-5 :to five{3", 280);
+    assert_eq!(line(b"VA7FER-1"), (b"VA7FER-5".to_vec(), b"to five".to_vec(), Some(600)), "symptom B1: another SSID of ours, heard");
+    assert_eq!(s.messages(), 1, "APRS-6.3: only the one to us in the inbox");
+    hear(b"VA7FER-3", b"!4903.50N/07201.75W-Home", 340);
+    assert!(line(b"VA7FER-3").1.is_empty(), "a position beacon: heard, no message");
+    assert_eq!(log(), [b"3".to_vec()], "INBOX-6: only the message to us in the event log (B2, B3: by design)");
+    hear(b"VA7FER-4", b":CQ       :net", 400);
+    assert_eq!(line(b"VA7FER-4"), (b"CQ".to_vec(), b"net".to_vec(), Some(600)));
+    assert_eq!(log()[0], b"To CQ: net".to_vec(), "APRS-6.4: to everyone is logged");
+    // 57 minutes on: the clock time it came
+    s.extra.aprs.receive(&[], 3_700, me, &cfg);
+    assert_eq!(line(b"VA7FER-1").2, Some(600 - (3_700 - 280) / 60));
+}

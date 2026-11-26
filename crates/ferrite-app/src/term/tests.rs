@@ -274,10 +274,10 @@ fn auto_starts_on_enter_with_the_banner() {
     assert_eq!(r.term.page(), Page::Splash);
     assert!(r.vt.asked_size, "asks the terminal's size (TERM-15)");
     let top = r.vt.line(0);
-    assert!(top.starts_with(" Ferrite 0.9.6") && top.contains("RT-950 Pro") && top.contains("cable 115200"), "{top}");
+    assert!(top.starts_with(" Ferrite 0.9.7") && top.contains("RT-950 Pro") && top.contains("cable 115200"), "{top}");
     assert!(top.ends_with("14:32"), "the clock at the far right: {top}");
     assert!(r.vt.rev[0].iter().all(|&v| v), "the top line is reverse video, full width");
-    assert!(r.vt.has("FERRITE 0.9.6 - free firmware for the RT-950 Pro"));
+    assert!(r.vt.has("FERRITE 0.9.7 - free firmware for the RT-950 Pro"));
     assert!(r.vt.has("Press Enter for the menu, ? for help"));
     assert!(r.vt.line(23).contains("Enter Menu"), "keys on the bottom line");
     // No ASCII art: nothing but the banner's three lines in the body.
@@ -775,11 +775,11 @@ fn command_line_set_and_get() {
     r.cmd("set 0 5 9 7 APRS first");
     assert_eq!(r.app.settings().aprs_share, 0, "{}", r.bottom());
     // Typed values: the pager capcode (DEC-4), the custom APRS path (APRS-26), Popups (DEC-7).
-    r.cmd("set 0 4 2 3 1234567");
+    r.cmd("set 0 4 2 4 1234567");
     assert_eq!(r.app.set.pocsag_cap, 1_234_567);
-    r.cmd("set 0 4 2 3 none");
+    r.cmd("set 0 4 2 4 none");
     assert_eq!(r.app.set.pocsag_cap, 0);
-    r.cmd("set 0 4 2 3 9999999");
+    r.cmd("set 0 4 2 4 9999999");
     assert!(r.bottom().contains("a capcode up to 2097151"), "{}", r.bottom());
     r.cmd("set 0 5 9 2 wide2-2");
     assert_eq!(r.app.aprs_cfg().custom_text(), b"WIDE2-2");
@@ -909,7 +909,7 @@ fn command_errors() {
         ("ch 12 tone 300.0", "300.0 Hz is outside 60.0 to 260.0 Hz"),
         ("ch 12 tone D028N", "a DCS code (D023N, D023I)"),
         ("ch 12 rx 700", "rx: 0.15-64 MHz (HF), 64-630 or 756-1300 MHz"),
-        ("ch 12 rx 30", "an HF channel is AM, USB, LSB or CW"),
+        ("ch 12 rx 7", "an HF channel is AM, USB, LSB or CW"),
         ("ch 12 mode usb", "USB, LSB and CW are for HF channels"),
         ("ch 12 zone 9", "zone 9 doesn't exist"),
         ("ch 12 \"Name", "no closing quote"),
@@ -979,7 +979,7 @@ fn command_lists() {
 fn dump_format() {
     let r = Rig::main();
     let d = dump(&r.app, &r.store, &r.dev);
-    assert_eq!(d[0], "# Ferrite dump v1, firmware 0.9.6");
+    assert_eq!(d[0], "# Ferrite dump v1, firmware 0.9.7");
     for l in [
         "set 0 7 1 Dark                    # Theme",
         "set 0 6 6 24 h, GPS               # Clock",
@@ -1104,6 +1104,33 @@ fn load_reports_bad_lines() {
     assert_eq!(r.store.by_num(7).unwrap().0.cfg.power, 2);
     assert!(r.store.by_num(8).is_none(), "nothing after end");
     assert_eq!(r.app.set.region, crate::tests::set().region);
+}
+
+/// TERM-13.1 (issue #236): where the port lost bytes (its ring full), the line the mark lands in is refused
+/// whole, never applied with a hole in it; the lines around it go in. Even one that reads `end` after the hole.
+#[test]
+fn load_refuses_a_line_with_lost_bytes() {
+    let mut r = Rig::with(Blank::default());
+    r.send(b"\r\r");
+    r.cmd("load");
+    // "ch 2 ..." lost its tail and "ch 3"'s head: what is left would read as channel 2 at 146.53
+    let lost = ferrite_core::link::LOST;
+    let mut text = b"ch 1 \"One\" 146.52\r\nch 2 \"Two\" 14".to_vec();
+    text.push(lost);
+    text.extend_from_slice(b"6.53\r\nch 4 \"Four\" 146.54\r\n");
+    text.push(lost);
+    text.extend_from_slice(b"end\r\nend\r\n");
+    r.send(&text);
+    for _ in 0..4 {
+        r.poll();
+    }
+    assert_eq!(r.term.con, Con::Done);
+    let raw = r.raw();
+    assert!(raw.contains("line 2: bytes lost on the way"), "{raw}");
+    assert!(raw.contains("line 4: bytes lost on the way"), "{raw}");
+    assert!(raw.contains("Done: 4 lines read, 2 applied, 2 refused."), "{raw}");
+    assert!(r.store.by_num(0).is_some() && r.store.by_num(3).is_some()); // numbers from 0 here
+    assert!(r.store.by_num(1).is_none());
 }
 
 /// A load waits for the store before each line (TERM-13): the cable is held, nothing is lost.
@@ -1542,19 +1569,26 @@ fn debug_bk_rxaf() {
 #[cfg(feature = "bench")]
 #[test]
 fn debug_fsk() {
-    use ferrite_core::fskbench::{Ask, Cfg, Mode, Speed};
+    use ferrite_core::fskbench::{Ask, Cfg, Mode, Opts, Speed, BASE_FSK};
     let sp = |mode, baud| Speed { mode, baud };
     let mut r = Rig::main();
     r.cmd("fsk");
     assert_eq!(r.serve(4, regs), vec![DebugReq::Fsk(Ask::Show)]);
     assert!(r.raw().contains("fsk: off"), "{}", r.raw());
     for (cmd, want) in [
-        ("fsk rx 2400", Ask::Rx(Cfg { speed: sp(Mode::Fsk, 2400), crc: true })),
-        ("FSK RX ffsk2400 NOCRC", Ask::Rx(Cfg { speed: sp(Mode::Ffsk2400, 1200), crc: false })),
-        ("fsk rx 4800", Ask::Rx(Cfg { speed: sp(Mode::Fsk, 4800), crc: true })),
-        ("fsk tx ffsk1800 20", Ask::Tx(Cfg { speed: sp(Mode::Ffsk1800, 1200), crc: true }, 20)),
-        ("fsk tx 1200 999 nocrc", Ask::Tx(Cfg { speed: sp(Mode::Fsk, 1200), crc: false }, 999)),
+        ("fsk rx 2400", Ask::Rx(Cfg::new(sp(Mode::Fsk, 2400), true))),
+        ("FSK RX ffsk2400 NOCRC", Ask::Rx(Cfg::new(sp(Mode::Ffsk2400, 1200), false))),
+        ("fsk rx 4800", Ask::Rx(Cfg::new(sp(Mode::Fsk, 4800), true))),
+        ("fsk tx ffsk1800 20", Ask::Tx(Cfg::new(sp(Mode::Ffsk1800, 1200), true), 20)),
+        ("fsk tx 1200 999 nocrc", Ask::Tx(Cfg::new(sp(Mode::Fsk, 1200), false), 999)),
         ("fsk off", Ask::Off),
+        (
+            "fsk rx acars nocrc sync=01a3a33f pre=1 ptype=2 inv base=fsk",
+            Ask::Rx(Cfg {
+                opt: Opts { sync: [0x01, 0xA3, 0xA3, 0x3F], pre: 1, ptype: 2, inv: true, base: Some(BASE_FSK), ..Opts::FRAME },
+                ..Cfg::new(sp(Mode::Ffsk2400, 2400), false)
+            }),
+        ),
     ] {
         r.send(b"\r");
         r.cmd(cmd);
@@ -1572,7 +1606,7 @@ fn debug_fsk() {
     r.serve(6, regs);
     assert!(r.raw().contains("fsk tx 2400 (chip CRC on): 0 of 20 frames sent, armed for the next PTT key-up (Dry TX on only)"), "{}", r.raw());
     r.send(b"\r");
-    for bad in ["fsk rx", "fsk rx 299", "fsk rx 9601", "fsk rx ffsk", "fsk tx 2400", "fsk tx 2400 0", "fsk tx 2400 1000", "fsk rx 2400 crc", "fsk on", "fsk off 1"] {
+    for bad in ["fsk rx", "fsk rx 299", "fsk rx 9601", "fsk rx ffsk", "fsk tx 2400", "fsk tx 2400 0", "fsk tx 2400 1000", "fsk rx 2400 crc", "fsk on", "fsk off 1", "fsk rx acars pre=0", "fsk rx acars sync=12"] {
         r.cmd(bad);
         assert!(r.bottom().contains("fsk [off], fsk rx|tx SPEED"), "{bad}: {}", r.bottom());
         assert_eq!(r.term.debug_req(), None, "{bad}: nothing sent");
@@ -1915,14 +1949,14 @@ fn debug_bk_save() {
 
 #[cfg(feature = "bench")]
 /// TERM-40: `lcd` asks the display's bench state; each change is one request; bad words are refused before
-/// anything is sent.
+/// anything is sent. DISP-23.1: `lcd hz` and `lcd dither` set the screen light's PWM, and the answer shows it.
 #[test]
 fn debug_lcd() {
     use ferrite_core::msg::LcdSet;
     let mut r = Rig::main();
     r.cmd("lcd");
     assert_eq!(r.serve(4, regs), vec![DebugReq::Lcd(LcdSet::Ask)]);
-    assert!(r.raw().contains("lcd: idle on, partial off, sleep off, fps normal, bl normal, keys normal"), "{}", r.raw());
+    assert!(r.raw().contains("lcd: idle on, partial off, sleep off, fps normal, bl normal, keys normal, hz 31687, dither 1.0 % (plain)"), "{}", r.raw());
     for (cmd, want) in [
         ("lcd bl 30", LcdSet::Bl(Some(30))),
         ("lcd keys 0", LcdSet::Keys(Some(0))),
@@ -1934,6 +1968,11 @@ fn debug_lcd() {
         ("lcd sleep on", LcdSet::Sleep(true)),
         ("lcd reset", LcdSet::Reset),
         ("lcd bus", LcdSet::Bus),
+        ("lcd hz 25000", LcdSet::Hz(Some(25_000))),
+        ("lcd hz normal", LcdSet::Hz(None)),
+        ("lcd dither 0", LcdSet::Dither(Some(0))),
+        ("lcd dither 50", LcdSet::Dither(Some(50))),
+        ("lcd dither normal", LcdSet::Dither(None)),
     ] {
         r.send(b"\r");
         r.cmd(cmd);
@@ -1944,7 +1983,14 @@ fn debug_lcd() {
     r.serve(4, regs);
     assert!(r.raw().contains("bl 30"), "{}", r.raw());
     r.send(b"\r");
-    for bad in ["lcd bl 101", "lcd fps 21", "lcd idle maybe", "lcd bright 3", "lcd sleep", "lcd bl 3 4", "lcd bus 2"] {
+    r.send(b"\r");
+    r.cmd("lcd dither 25");
+    r.serve(4, regs);
+    assert!(r.raw().contains("hz 31687, dither 2.5 %"), "{}", r.raw());
+    r.send(b"\r");
+    for bad in
+        ["lcd bl 101", "lcd fps 21", "lcd idle maybe", "lcd bright 3", "lcd sleep", "lcd bl 3 4", "lcd bus 2", "lcd hz 1999", "lcd hz 60001", "lcd dither 51", "lcd hz"]
+    {
         r.cmd(bad);
         assert!(r.bottom().contains("lcd [idle"), "{bad}: {}", r.bottom());
         assert_eq!(r.term.debug_req(), None, "{bad}: nothing sent");
@@ -2266,12 +2312,12 @@ fn debug_no_answer_and_stop() {
 #[test]
 fn user_build_refuses_bench_commands() {
     let mut r = Rig::main();
-    for c in ["mem 20000000 16", "mem32 40010808", "gpio", "bk 0 30", "bk 1 47 6142", "bk 0 dump", "bk settle 2", "si 10 00", "bt AT+VERS?", "rx both", "rx", "mic", "af", "meter", "meter on", "synthfsk cal 1000 0 0", "pin pa15 0", "pin pc9 u", "txtest suite", "txtest", "TXTEST 4fsk", "gps query 1", "gps nmea off", "gps standby 60 quiet", "lcd bl 30", "bk rxaf 700", "fsk", "fsk rx 2400", "fsk tx ffsk1800 5", "crash fault", "crash hang"] {
+    for c in ["mem 20000000 16", "mem32 40010808", "gpio", "bk 0 30", "bk 1 47 6142", "bk 0 dump", "bk settle 2", "si 10 00", "bt AT+VERS?", "rx both", "rx", "mic", "af", "meter", "meter on", "synthfsk cal 1000 0 0", "pin pa15 0", "pin pc9 u", "txtest suite", "txtest", "TXTEST 4fsk", "gps query 1", "gps nmea off", "gps standby 60 quiet", "lcd bl 30", "bk rxaf 700", "fsk", "fsk rx 2400", "fsk tx ffsk1800 5", "crash fault", "crash hang", "acars feed 3", "dac 1000"] {
         r.cmd(c);
         assert!(r.bottom().contains("not in this build: a bench build has it"), "{c}: {}", r.bottom());
         assert_eq!(r.term.debug_req(), None, "{c}: nothing sent");
     }
-    assert_eq!(super::cmd::BENCH_ONLY.len(), 16);
+    assert_eq!(super::cmd::BENCH_ONLY.len(), 18);
     r.cmd("gps");
     assert_eq!(r.serve(4, regs), vec![DebugReq::Gga], "gps alone is every build's");
     r.send(b"\r");
@@ -2735,10 +2781,10 @@ fn set_frequency_settings() {
     r.cmd("set 0 5 4 446.000");
     assert!(r.bottom().contains("APRS takes 64-300 MHz"), "{}", r.bottom());
     assert_eq!(r.app.aprs_freq(), ferrite_core::freq::mhz(145) + 49_500, "a refusal changes nothing");
-    r.cmd("set 0 4 2 2 439.9875");
-    assert!(r.bottom().contains("0 4 2 2 Frequency: 439.987"), "{}", r.bottom());
+    r.cmd("set 0 4 2 3 439.9875");
+    assert!(r.bottom().contains("0 4 2 3 Frequency: 439.987"), "{}", r.bottom());
     assert_eq!(r.app.set.pocsag_freq, ferrite_core::freq::mhz(439) + 98_750);
-    r.cmd("set 0 4 2 2 439.987"); // as `get` and `dump` show it: kept, not cut to 439.98700
+    r.cmd("set 0 4 2 3 439.987"); // as `get` and `dump` show it: kept, not cut to 439.98700
     assert_eq!(r.app.set.pocsag_freq, ferrite_core::freq::mhz(439) + 98_750);
 }
 
@@ -2828,15 +2874,15 @@ fn quick_messages_in_the_terminal() {
 fn command_answers_golden() {
     const LINES: &[&str] = &[
         "", "# a note", "\"quoted\"", "frob", "help", "?", "HELP", "Get 0 7 1",
-        "get", "get 0 7 1", "get 0 5 1", "get 0 4 2 3", "get 0 5 4", "get 0 6 9", "get 9 9 9", "get x", "get 0", "get 0 7 1 1 1",
+        "get", "get 0 7 1", "get 0 5 1", "get 0 4 2 4", "get 0 5 4", "get 0 6 9", "get 9 9 9", "get x", "get 0", "get 0 7 1 1 1",
         "set 0 7 1 Daylight", "set 0 7 1 night", "set 0 7 1 purple", "set 0 7 1", "set 7 1 Dark", "set 0 9 4 EU",
-        "set 0 9 3 1 Off", "set 0 8 8 5 off", "set 0 8 8 5 on", "set 0 4 2 3 1234", "set 0 4 2 3 99999999",
-        "set 0 4 2 3 none", "set 0 5 5 3 Hello there", "set 0 5 5 3 none", "set 0 5 4 144.390", "set 0 5 4 abc",
-        "set 0 4 2 2 439.9875", "set 0 5 9 2 wide1-1,wide2-1", "set 0 5 9 2 bad,,bad,,", "set 0 5 9 2 none",
+        "set 0 9 3 1 Off", "set 0 8 8 5 off", "set 0 8 8 5 on", "set 0 4 2 4 1234", "set 0 4 2 4 99999999",
+        "set 0 4 2 4 none", "set 0 5 5 3 Hello there", "set 0 5 5 3 none", "set 0 5 4 144.390", "set 0 5 4 abc",
+        "set 0 4 2 3 439.9875", "set 0 5 9 2 wide1-1,wide2-1", "set 0 5 9 2 bad,,bad,,", "set 0 5 9 2 none",
         "set 0 6 9 FN25", "set 0 6 9 45.5 -75.6", "set 0 6 9 north", "set 0 6 9 none", "set 0 7 7 1", "set 0 7 7 x",
         "set 0 7 2 10", "set 0 1 1 Off", "set", "set x",
         "ch", "ch 12", "ch 999", "ch 4001", "ch x", "ch 12 power high", "ch 12 power ultra", "ch 12 tone 100.0",
-        "ch 12 tone 300.0", "ch 12 tone D023I", "ch 12 tone D028N", "ch 12 tone=D023N", "ch 12 rx 700", "ch 12 rx 30",
+        "ch 12 tone 300.0", "ch 12 tone D023I", "ch 12 tone D028N", "ch 12 tone=D023N", "ch 12 rx 700", "ch 12 rx 7", "ch 12 rx 27.185",
         "ch 12 mode usb", "ch 12 mode am", "ch 12 zone 9", "ch 12 zone 1", "ch 12 \"Name", "ch 12 name \"New one\"",
         "ch 12 name \"Club \\\"north\\\"\"", "ch 12 offset +0.6", "ch 12 offset x", "ch 12 offset off", "ch 12 tx 147.0",
         "ch 12 step 12.5", "ch 12 step 7", "ch 12 squelch 6", "ch 12 squelch 99", "ch 12 squelch global",
@@ -2930,4 +2976,23 @@ fn command_answers_golden() {
         let at = want.lines().zip(out.lines()).position(|(a, b)| a != b).unwrap_or(0);
         panic!("line {}: want {:?}, got {:?}", at + 1, want.lines().nth(at), out.lines().nth(at));
     }
+}
+
+/// ACARS-11.1: the bench's `acars tune FREQ` has the ACARS screen listen there instead (RAM only), `acars tune off`
+/// gives it back its own; a bad frequency is refused.
+#[cfg(feature = "bench")]
+#[test]
+fn acars_tune_overrides_the_frequency() {
+    let mut r = Rig::main();
+    let own = r.app.acars_freq();
+    r.cmd("acars tune 446.475");
+    assert!(r.raw().contains("the screen listens on 446475 kHz (bench)"), "{}", r.raw());
+    assert_eq!(r.app.acars_freq(), 44_647_500);
+    r.send(b"\r");
+    r.cmd("acars tune off");
+    assert!(r.raw().contains("back on the screen's frequency"), "{}", r.raw());
+    assert_eq!(r.app.acars_freq(), own);
+    r.send(b"\r");
+    r.cmd("acars tune");
+    assert!(r.bottom().contains("acars tune FREQ"), "{}", r.bottom());
 }

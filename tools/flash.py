@@ -6,6 +6,7 @@
     python3 tools/flash.py /dev/tty.usbserial-XXXX build/target/hwtest.bin     # packed on the fly
     python3 tools/flash.py --dry-run - stock.BTF                               # checks only, no radio
     python3 tools/flash.py PORT target/ferrite.btf --backup flash.bin         # Ferrite: needs the backup
+    python3 tools/flash.py auto target/ferrite-tx.ffw ...                     # PORT: auto, or a radio's name
     python3 tools/flash.py PORT stock.BTF --backup flash.bin                  # back to stock, marker put back
     python3 tools/flash.py PORT ferrite-0.9.ffw --backup flash.bin           # an update file (decision 335)
     python3 tools/flash.py PORT target/ferrite-tx.ffw --backup flash.bin --dev-unsigned   # a local build's
@@ -240,7 +241,7 @@ def check_sha256(path, data):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("port", help="serial port of the programming cable ('-' with --dry-run)")
+    ap.add_argument("port", help="the programming cable: a device, a radio's name (radios.toml) or auto ('-' with --dry-run)")
     ap.add_argument("file", help=".btf to send, or a raw .bin to pack first")
     ap.add_argument("--wait", type=float, default=30, help="seconds to wait for the bootloader")
     ap.add_argument("--dry-run", action="store_true", help="check the file and stop")
@@ -262,6 +263,12 @@ def main():
                     help="a .ffw's SPI parts only, to a radio already running that build (no MCU flash)")
     ap.add_argument("--pin", help="the radio's PIN, if it has a PIN lock (for writing the SPI parts)")
     a = ap.parse_args()
+    if not a.dry_run:
+        import ferrite_link
+        try:
+            a.port = ferrite_link.resolve_port(a.port, cable_only=True)  # a name, FERRITE_PORT or the only cable
+        except ferrite_link.PortError as e:
+            sys.exit(str(e))
 
     parts = []
     if a.file.lower().endswith(".ffw"):

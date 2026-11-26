@@ -333,7 +333,7 @@ fn broadcast_slot_and_audio_priority() {
     // B tuned in too: the broadcast moves; A says where it plays.
     r.press(Key::Slot).event(Event::FmStation).wait(2500);
     assert_eq!(r.sim.app().bcast_slot(), Some(1));
-    r.expect_text("FM on B").expect_text("Broadcast plays on B");
+    r.expect_text("WFM on B").expect_text("Broadcast plays on B");
 }
 
 

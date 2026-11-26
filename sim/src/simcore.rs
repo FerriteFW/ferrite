@@ -374,13 +374,18 @@ impl SimCore {
     /// A radio switched on now with the flash holding `stored` (see [`Stored`]).
     pub fn with_flash(scale: usize, owner_card: bool, stored: Stored) -> Self {
         let scale = scale.clamp(1, MAX_SCALE);
-        let nor = match &stored {
+        let mut nor = match &stored {
             Stored::Image(img) if img.len() == ferrite_store::sim::IMAGE_LEN => SimFlash::from_image(img),
             _ => SimFlash::new(),
         };
         // a kept image from another layout (its length): the sample, as if none was kept
         let sample = matches!(&stored, Stored::Sample) || matches!(&stored, Stored::Image(img) if !img.is_empty() && img.len() != ferrite_store::sim::IMAGE_LEN);
         let stored = if sample { Stored::Sample } else { stored };
+        // ACARS-6: the airline table's test fixture, as Console would write it (the kept image doesn't hold it)
+        let mut air = [0u8; ferrite_core::airlines::HEADER + ferrite_core::airlines::FIXTURE.len() * ferrite_core::airlines::ROW];
+        ferrite_core::airlines::fixture(&mut air);
+        let at = SimFlash::at(ferrite_core::layout::AIRLINES.start);
+        nor.mem[at..at + air.len()].copy_from_slice(&air);
         let store = Box::new(FlashStore::mount(nor, Sample::new()));
         if matches!(stored, Stored::Sample) && store.first_boot() {
             seed(&store);
@@ -553,13 +558,13 @@ impl SimCore {
         if self.booting && !self.off && now > self.boot_end {
             self.booting = false;
             // As the firmware does: setup on a first boot (BOOT-12); MENU held through the boot screen: the
-            // settings reset (PIN-6, BOOT-14); else the PIN if one is set.
+            // settings reset (PIN-6, BOOT-14); else the PIN if one is set, then the tool open at power off (BOOT-19).
             if self.store.first_boot() {
                 self.app.first_boot();
             } else if self.menu_held() {
                 self.app.power_on_reset();
             } else {
-                self.app.ask_pin();
+                self.app.power_on(true);
             }
         }
         if self.live() {
@@ -615,7 +620,8 @@ impl SimCore {
                 for (peer, text, st) in n.states.into_iter().flatten() {
                     store.message_state(peer.as_bytes(), text.as_bytes(), st);
                 }
-                if let Some(what) = n.tx {
+                // TX-51: none while HF mode, the scope, the counter, tone search or the satellite screen runs
+                if let Some(what) = n.tx.filter(|_| !app.auto_tx_paused()) {
                     if ferrite_app::screens::transmit::auto_tx(app, 2, what.as_bytes()) {
                         radio.burst(2);
                     }

@@ -26,6 +26,7 @@ pub mod aprs;
 pub mod aprs_card;
 pub mod bcast;
 pub mod aprs_live;
+pub mod aprs_traffic;
 pub mod chan;
 pub mod chanscan;
 pub mod chfield;
@@ -44,6 +45,7 @@ pub mod remote;
 pub mod sample;
 pub mod sat;
 pub mod sstv;
+pub mod acars;
 pub mod screens;
 pub mod slotctl;
 pub mod settings;
@@ -81,6 +83,19 @@ pub const POPUP_MS: u32 = 1200;
 /// KEY-13: the Keypad lock's popup offers the wider modes.
 pub const LOCK_ASK: &[u8] = "* all · 0 all but PTT".as_bytes();
 pub const UNDO_MS: u32 = 5000;
+/// BOOT-19 (decision 469): the tools that open again at power on, in MENU 0 3's order; [`Settings::resume_tool`]
+/// is 1 + the index. Crossband comes back at its ready screen, not running (opening it never starts it), so
+/// nothing transmits on its own at power on.
+pub const TOOLS: [Dest; 8] = [
+    Dest::BandScope,
+    Dest::Counter,
+    Dest::HfMode,
+    Dest::Crossband,
+    Dest::ToneSearch,
+    Dest::Satellites,
+    Dest::Sstv,
+    Dest::Acars,
+];
 /// [`App`]'s VOX flags (`vox_bits`).
 const VOX_REFUSED: u8 = 1;
 const VOX_SENT: u8 = 2;
@@ -299,6 +314,12 @@ pub struct App {
     /// this visit to the menu: going home forgets them, so the menu starts on row 1 again.
     pub(crate) group_rows: [u8; screens::groups::MEMO_BYTES],
     inbox: u8,
+    /// DEC-22, INBOX-3.1: unread pages, which count in the mail badge beside the messages ([`App::badge`]).
+    pub(crate) pages_unread: u8,
+    /// DEC-20.1: the pages heard since power-on and the newest one's capcode and time (ms), for C's pager card
+    /// (RAM: the small card is drawn every frame and never reads the store, PWR-26.13).
+    pub(crate) pages_boot: u16,
+    pub(crate) last_page: (u32, u32),
     /// The event log's unread entries (INBOX-7): the log's own count, not the mail badge's (INBOX-3.1).
     pub(crate) log_unread: u8,
     /// An unread alert (the bar's alert mark); [`ALERT_WAIT`]: one came in while the crossband repeater ran,
@@ -309,6 +330,8 @@ pub struct App {
     /// Dry TX (TX-48, 0 8 8 5): the PA drive held at 0 on every key-up of a `tx` build. Not a setting: off at
     /// every power-on and never stored, changed only on the radio's own menu (never by the link or terminal).
     dry_tx: bool,
+    /// BOOT-19: the tool to open once the power-on PIN is right ([`Settings::resume_tool`]'s value), 0 none.
+    resume_due: u8,
     /// Low Power Mode's flags ([`lpm`]: in it, Auto held off, the side keys' hold), the battery % Auto looks at
     /// (PWR-24) and when the side keys' hold began.
     lpm: u8,
@@ -390,6 +413,8 @@ pub struct App {
     /// APRS-29.2: 0 5 6 1's mode before Tracker started its own beacons (it was off or manual), put back when 0 5 3
     /// leaves Tracker unless 0 5 6 1 changed meanwhile, so stepping through Tracker to On leaves no beacons behind.
     tracker_was: Option<u8>,
+    /// DEC-20: the 0 5 3 value Pager replaced when 0 4 2 2 turned it on (RAM only: Off after a restart).
+    pager_was: Option<u8>,
     /// MODE-5.1: # paused home's scope strip (single + scope), so the watch and APRS have the receiver (RAM only).
     pub(crate) strip_paused: bool,
     /// The armed reset's # was held 3 s ([`screens::confirm`]): done at the next tick, which has the store.
@@ -495,10 +520,14 @@ impl App {
             lock_ask: 0,
             group_rows: [0; screens::groups::MEMO_BYTES],
             inbox: 0,
+            pages_unread: 0,
+            pages_boot: 0,
+            last_page: (0, 0),
             log_unread: 0,
             alert: 0,
             vox_on: false,
             dry_tx: false,
+            resume_due: 0,
             lpm: 0,
             batt: lpm::BATT_UNKNOWN,
             lpm_at: 0,
@@ -541,6 +570,7 @@ impl App {
             aprs: aprs::AprsCfg::DEFAULT,
             aprs_st: 0,
             tracker_was: None,
+            pager_was: None,
             strip_paused: false,
             want_reset: false,
             clock_set: None,
@@ -869,10 +899,12 @@ impl App {
         self.scan_mask &= !(1 << slot);
         let f = core::mem::take(&mut self.scan_hit[slot as usize]);
         self.scan_move(slot, f, store);
+        self.send_slot(slot); // SCAN-6 (ferrite#213): the receiver back from the scan's last step
     }
 
     /// SCAN-6: SIDE2 stops a scan; with Return to "Last hit" (0 1 6 4) the slot moves to the scan's last hit,
-    /// as a PTT on a hit does (SCAN-19); else it stays where the scan started.
+    /// as a PTT on a hit does (SCAN-19); else it stays where the scan started. Either way the slot is sent again:
+    /// the Radio task's receiver is still on the scan's last step, which the slot doesn't show (ferrite#213).
     pub(crate) fn stop_scan(&mut self, slot: u8, store: &impl ChannelStore) {
         self.out.push(RadioCmd::Scan { slot, on: false });
         self.range_feed = self.range_feed.filter(|f| f.0 != slot); // SCAN-27: a preset scan not started yet
@@ -881,6 +913,7 @@ impl App {
         if self.set.scan_return_hit {
             self.scan_move(slot, f, store);
         }
+        self.send_slot(slot);
     }
 
     /// The slot to a scan's hit `f` (none: 0): its channel on a channel scan, else its VFO.
@@ -963,6 +996,26 @@ impl App {
         self.clock_set.take()
     }
 
+    /// The mail badge's count (INBOX-3.1): unread messages to us and unread pages (DEC-22).
+    pub fn badge(&self) -> u8 {
+        self.inbox.saturating_add(self.pages_unread)
+    }
+
+    /// The unread pages at power on (DEC-22), after [`App::set_inbox`].
+    pub fn set_pages_unread(&mut self, n: u16) {
+        self.pages_unread = n.min(255) as u8;
+    }
+
+    /// An event read (INBOX-7): the log's count, and the badge's when it was a page (DEC-22).
+    pub(crate) fn event_read(&mut self, e: &crate::data::Event) {
+        if e.unread {
+            self.log_unread = self.log_unread.saturating_sub(1);
+            if e.src == crate::data::Src::Pocsag {
+                self.pages_unread = self.pages_unread.saturating_sub(1);
+            }
+        }
+    }
+
     /// A decoder's hit (DEC-7): the inbox count, and a toast only while Popups (0 4 4) is on.
     pub fn notify_decode(&mut self, head: &[u8], body: &[u8]) {
         if self.set.popups {
@@ -1039,6 +1092,7 @@ impl App {
     /// (INBOX-7).
     pub fn set_inbox(&mut self, messages: u16, log: u16) {
         self.inbox = messages.min(255) as u8;
+        self.pages_unread = 0;
         self.log_unread = log.min(255) as u8;
     }
 
@@ -1094,12 +1148,49 @@ impl App {
         self.screen = Screen::Setup(screens::setup::Setup::new(true));
     }
 
-    /// At power on, after the self-test: the PIN, if one is set (PIN-1, BOOT-13).
+    /// At power on, after the self-test: the PIN, if one is set (PIN-1, BOOT-13). Nothing reopens (as after a
+    /// failed check); [`App::power_on`] is the normal start.
     pub fn ask_pin(&mut self) {
+        self.power_on(false);
+    }
+
+    /// At power on, after a self-test that passed (`resume`) or failed: the PIN if one is set (BOOT-13), then the
+    /// tool open at the last power off (BOOT-19), once the PIN is right. The reset (BOOT-14) and first-run setup
+    /// don't come here.
+    pub fn power_on(&mut self, resume: bool) {
+        self.resume_due = if resume { self.set.resume_tool } else { 0 };
         if self.set.pin_len > 0 && self.set.pin_mode > 0 {
             self.go_home();
             self.screen = Screen::Pin(screens::pin::Pin::power_on());
+        } else {
+            self.resume_tool();
         }
+    }
+
+    /// BOOT-19: opens the tool due at power on, once, over home. One that refuses (Low Power Mode, PWR-24.4)
+    /// shows its own toast and home stays.
+    pub(crate) fn resume_tool(&mut self) {
+        let t = core::mem::take(&mut self.resume_due);
+        if let Some(&d) = TOOLS.get((t as usize).wrapping_sub(1)) {
+            self.open(d);
+        }
+    }
+
+    /// BOOT-19: the tool up now (1 + its index in [`TOOLS`]), 0 for any other screen: a menu, list or editor
+    /// opened over a tool isn't one.
+    fn tool_open(&self) -> u8 {
+        let i = match self.screen {
+            Screen::Scope(_) => 0,
+            Screen::Counter(_) => 1,
+            Screen::Hf(_) => 2,
+            Screen::Crossband(_) => 3,
+            Screen::ToneSearch(_) => 4,
+            Screen::Sat(_) => 5,
+            Screen::Sstv(_) => 6,
+            Screen::Acars(_) => 7,
+            _ => return 0,
+        };
+        i + 1
     }
 
     // ---- events the firmware (and the simulator) report: each opens its screen ----
@@ -1107,12 +1198,16 @@ impl App {
     /// The volume knob turned to off (the power switch, PWR-17): "Saving...", modal, while the writes finish;
     /// then the firmware cuts the power. Nothing else happens on screen after this.
     pub fn power_off(&mut self) {
+        // BOOT-19: the tool up now opens again at power on; any other screen, home. Set here only, so the
+        // power-off save carries it and nothing else writes for it.
+        self.set.resume_tool = self.tool_open();
         self.go_home();
         self.screen = Screen::Info(screens::info::Info { page: screens::info::Page::PowerOff });
     }
 
     /// The battery reached empty (PWR-16): the empty-battery screen, modal, before the firmware switches off.
     pub fn battery_empty(&mut self) {
+        self.set.resume_tool = self.tool_open(); // BOOT-19, as at power off
         self.go_home();
         self.screen = Screen::Info(screens::info::Info { page: screens::info::Page::EmptyBattery });
     }
@@ -1260,6 +1355,9 @@ impl App {
             // Neither keys voice.
             if matches!(self.screen, Screen::Compose(c) if !c.quick_edit_on()) {
                 return screens::msgs::send(self, store);
+            }
+            if self.pager_on() && self.aprs_slot(s) {
+                return self.open(Dest::Pages); // DEC-21: PTT on the pager slot opens Pages, never transmits
             }
             if self.aprs_slot(s) {
                 return self.open(Dest::Compose);
@@ -1967,6 +2065,21 @@ impl App {
         }
     }
 
+    /// CHAN-26.2 (ferrite#84): the knob's Mode step `v` (direction `d`) on a channel slot, moved on past the modes
+    /// its frequency doesn't have (an 18-64 MHz channel: FM, NFM, AM), so a step always lands on one it does; `v`
+    /// itself when none does (the refusal says why).
+    fn channel_mode_step(&self, slot: u8, v: i32, d: i32) -> i32 {
+        let cfg = *self.slots[slot as usize].cfg();
+        (0..crate::slot::SLOT_MODES as i32 - 1)
+            .map(|k| v + k * d.signum())
+            .find(|&w| {
+                let mut c = cfg;
+                let _ = Item::Mode.set(&mut c, w, 0);
+                self.channel_ok(slot, c).is_ok()
+            })
+            .unwrap_or(v)
+    }
+
     /// A channel field's refusal as a toast: its label and why ("Offset", "TX outside 64 to 1000 MHz"); TX-37's
     /// as [`App::relay_toast`].
     pub(crate) fn refusal_toast(&mut self, r: chfield::Refusal) {
@@ -2033,8 +2146,11 @@ impl App {
                 let rx = self.slots[a as usize].freq();
                 let shift = crate::slot::band_shift(band_near(rx), self.set.region());
                 let on_ch = self.slots[a as usize].on_channel();
+                let mut v = item.get(self.slots[a as usize].cfg()).0 + d;
+                if item == Item::Mode && on_ch && d.abs() == 1 {
+                    v = self.channel_mode_step(a, v, d); // CHAN-26.2: past the modes the channel's frequency lacks
+                }
                 let c = self.slots[a as usize].cfg_mut();
-                let mut v = item.get(c).0 + d;
                 if item == Item::Squelch && !on_ch && v.rem_euclid(11) == 0 {
                     v += d.signum(); // a VFO has no "Global": it is the slot's level (SQL-6)
                 }

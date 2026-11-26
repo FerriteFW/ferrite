@@ -223,6 +223,31 @@ fn scan_direction_and_return() {
     assert_eq!(t.freq(), here, "start");
 }
 
+/// SCAN-6 (ferrite#213): stopping a scan with nothing to move to (Return to "Start", or "Last hit" with no hit)
+/// retunes the slot where it shows, on a VFO and on a channel: the Radio task's receiver was left on the scan's
+/// last step, so the display said the start and the audio was the step's (or none, a channel's tone unmatched).
+#[test]
+fn scan_stop_retunes_the_start() {
+    let mut t = T::new();
+    for round in 0..4 {
+        if round == 2 {
+            t.tap(Key::VfoMem); // the other mode: VFO and channel both
+        }
+        t.app.set.scan_return_hit = round % 2 == 1;
+        let start = t.freq();
+        t.tap(Key::Side(2));
+        t.live.slots[0] = SlotLive { scanning: true, freq: start + 7_500, ..Default::default() };
+        t.wait(200);
+        t.cmds();
+        t.tap(Key::Side(2));
+        t.live.slots[0] = SlotLive { freq: start + 7_500, ..Default::default() };
+        t.wait(200);
+        assert_eq!(t.freq(), start, "round {round}: shows the start");
+        let c = t.cmds();
+        assert!(c.contains(&RadioCmd::TuneSlot { slot: 0, freq: start }), "round {round}: retuned to {start}: {c:?}");
+    }
+}
+
 /// APRS-47, APRS-48, APRS-49: the symbol, TX delay and TX level step and reset in the menu, and the levels are
 /// the calibrated 3.0 kHz one's neighbours.
 #[test]

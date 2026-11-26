@@ -1,7 +1,7 @@
 //! The driver against a recording bus.
 
 use st7789::{
-    Bus8080, St7789, Step, CASET, DISPOFF, DISPON, IDMOFF, IDMON, INVOFF, INVON, NORON, PTLAR, PTLON, RAMWR, RASET, SLPIN, SLPOUT, STARTUP,
+    Bus8080, St7789, Step, CASET, DISPOFF, DISPON, IDMOFF, IDMON, INVOFF, INVON, NORON, PTLAR, PTLON, RAMWR, RASET, SLPIN, SLPOUT, MODES, STARTUP,
     VSCRDEF, VSCSAD,
 };
 use uradio_bus::mock::MockDelay;
@@ -166,4 +166,17 @@ fn scroll_area_saturates_when_the_fixed_bars_cover_the_panel() {
     p.scroll_area(200, 200);
     let ev = p.release().0;
     assert_eq!(ev, vec![Ev::Cmd(VSCRDEF), Ev::Data(vec![0, 200, 0, 0, 0, 200])]);
+}
+
+/// DISP-32: `modes` sends the start-up's mode registers again (COLMOD 0x55, MADCTL 0xC0, INVON), in the start-up's
+/// order and nothing else: no reset, no sleep or display command, no wait.
+#[test]
+fn modes_resend_the_startup_mode_registers() {
+    let mut p = St7789::new(Rec::default(), 240, 320);
+    p.modes();
+    let ev = p.release().0;
+    assert_eq!(ev, [Ev::Cmd(0x3A), Ev::Data(vec![0x55]), Ev::Cmd(0x36), Ev::Data(vec![0xC0]), Ev::Cmd(INVON)]);
+    // The same steps as in STARTUP, in the same order.
+    let at = STARTUP.iter().position(|s| *s == MODES[0]).unwrap();
+    assert_eq!(&STARTUP[at..at + MODES.len()], MODES);
 }

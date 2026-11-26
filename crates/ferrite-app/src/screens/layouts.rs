@@ -36,6 +36,7 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
     let a = app.active;
     let lv = live.slots[a as usize];
     let f = app.shown_freq(a, live);
+    let fl = app.label(a, f); // VFO-18.2: the 8.33 kHz channel name
     let (state, sc) = app.state(a, live);
     // TSRCH-13: a tone hint takes the state's place, in a wider field; so does a long state (BCR-15).
     let mut ht = Buf::<24>::new();
@@ -59,7 +60,7 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
                 w::tag(lcd, 232, 24, b"RX", GREEN, BG);
                 // to x 204, 4 px short of the tag: with the header at its 140 px least, to 200 cut "Muted" (35 px in 34)
                 w::field(lcd, 26 + hw, 204 - 26 - hw, 22, 40, 36, b"Muted", &w::st(&UI_12, sc, BG, Align::Right));
-            } else if matches!(state, "RX" | "TX" | "MON" | "FM") {
+            } else if matches!(state, "RX" | "TX" | "MON" | "WFM") {
                 w::tag(lcd, 232, 24, state.as_bytes(), sc, BG);
             } else if state != "idle" {
                 w::field(lcd, 26 + hw, 206 - hw, 22, 40, 36, state.as_bytes(), &w::st(&UI_12, sc, BG, Align::Right));
@@ -68,16 +69,16 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
     }
     // Channel mode: the name large, the frequency small under it (HOME-4).
     let name = app.card_name(a, live, cx.store);
-    if let Some(clear) = app.dirty_shape(2, Mix::new().h(&f).h(&name).get(), name.is_empty()) {
+    if let Some(clear) = app.dirty_shape(2, Mix::new().h(&fl).h(&name).get(), name.is_empty()) {
         redraw_box!(clear, lcd, (8, 42, 224, 52, BG), {
             if name.is_empty() {
-                w::freq_centred(lcd, 8, 232, 88, f, &DIG_46, &DIG_28, FREQ, SUB, BG); // HOME-3: centred
+                w::freq_centred(lcd, 8, 232, 88, fl, &DIG_46, &DIG_28, FREQ, SUB, BG); // HOME-3: centred
             } else {
                 // 26 px when the whole name fits, else 22 px (HOME-4.3).
                 let nb = name.as_bytes();
                 let (font, base) = if text4_width(nb, &NAME_26) <= 224 { (&NAME_26, 70) } else { (&NAME_22, 68) };
                 w::field(lcd, 8, 224, 43, 76, base, w::fit(nb, font, 224), &w::st(font, TEXT, BG, Align::Left));
-                w::freq(lcd, 8, 232, 92, f, &DIG_17, &DIG_17, SUB, SUB, BG);
+                w::freq(lcd, 8, 232, 92, fl, &DIG_17, &DIG_17, SUB, SUB, BG);
             }
         });
     }
@@ -218,7 +219,7 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
         let (st, c) = app.state(o, live);
         let sl = app.slot(o);
         let mut t = Buf::<40>::new();
-        t.push(w::freq3(app.shown_freq(o, live)).as_bytes());
+        t.push(w::freq3(app.label(o, app.shown_freq(o, live))).as_bytes());
         t.push(" \u{b7} ".as_bytes());
         // APRS-15.3: the APRS slot is named for what holds it, never the channel C held before
         let holder = app.aprs_slot(o).then(|| app.aprs_holder()).flatten();
@@ -294,21 +295,22 @@ pub fn activity(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>)
             w::field(lcd, 226 - sw, sw, y + 4, y + 21, y + 17, stt.as_bytes(), &w::st(f, sc, SURFACE, Align::Right));
         }
         let f = app.shown_freq(s, live);
+        let fl = app.label(s, f); // VFO-18.2
         // Channel mode: the name at the left, the frequency small at the right (HOME-4).
         let name = app.card_name(s, live, cx.store);
         let mut right = Buf::<16>::new();
         if lv.scanning {
             let _ = ufmt::uwrite!(right, "{} hits", lv.hits);
         } else if !name.is_empty() {
-            right.set(w::freq3(f).as_bytes());
+            right.set(w::freq3(fl).as_bytes());
         }
         let (x, c, fo) = if name.is_empty() { (140, TEXT, &UI_12B) } else { (170, SUB, &UI_12) };
         let info = app.dirty(R_INFO + p, Mix::new().h(&right).get());
-        if app.dirty(R_FREQ + p, Mix::new().h(&f).h(&name).get()) {
+        if app.dirty(R_FREQ + p, Mix::new().h(&fl).h(&name).get()) {
             // Off-screen, sent once with the text at its right, which shares the rows (DISP-25).
             canvas::banded(lcd, 15, y + 22, 211, 24, SURFACE, |b| {
                 if name.is_empty() {
-                    w::freq(b, 15, 140, y + 44, f, &DIG_26, &DIG_17, TEXT, SUB, SURFACE);
+                    w::freq(b, 15, 140, y + 44, fl, &DIG_26, &DIG_17, TEXT, SUB, SURFACE);
                 } else {
                     let nb = name.as_bytes();
                     let font = if text4_width(nb, &NAME_22) <= 150 { &NAME_22 } else { &UI_15B };
@@ -334,8 +336,8 @@ pub fn activity(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>)
                 }
             }
         } else if super::home::card_kind(app, s) == 2 {
-            // BCR-26: FM, as much of the RDS text as fits, the stereo pilot
-            cols[0].set(b"FM");
+            // BCR-26: WFM, as much of the RDS text as fits, the stereo pilot
+            cols[0].set(b"WFM");
             if let ModeLive::Fm { ps, rt, stereo, .. } = live.mode {
                 if app.bcast_slot() == Some(s) && app.radio.fm_on {
                     cols[1].set(w::fit(crate::bcast::rds_text(&ps, &rt), &UI_12, 104));

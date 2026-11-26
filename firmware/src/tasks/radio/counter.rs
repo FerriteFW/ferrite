@@ -157,7 +157,7 @@ impl Radio {
             log(b"tone found ", srch.found as u32);
         }
         let sl = &mut self.live.slots[s as usize];
-        (sl.rssi, sl.squelch_open) = (if st.squelch_open { rssi } else { rssi.min(-121) }, st.squelch_open);
+        (sl.rssi, sl.squelch_open) = (rssi, st.squelch_open); // the level, open or closed
         self.live.mode = ModeLive::Probe { freq: f, rssi, tone: srch.found };
         self.tsearch = Some((s, srch));
     }

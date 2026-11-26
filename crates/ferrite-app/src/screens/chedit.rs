@@ -248,8 +248,10 @@ impl View for ChEdit {
             field_box(lcd, 7, 46, 226, 20, b"Name", ch.name(), cell == NAME, false);
         }
         // Regions: the grid takes 1-12, so the frequency uses R_SUB.
-        if app.dirty(R_SUB, Mix::new().h(&ch.rx).h(&(cell == FREQ)).get()) {
-            w::freq(lcd, 7, 232, 102, ch.rx, &DIG_46, &DIG_28, TEXT, SUB, BG);
+        // VFO-18.2: on the airband with the 8.33 kHz step, the channel name
+        let rx = if ch.cfg.step == crate::slot::STEP_833 { ferrite_core::freq::shown_833(ch.rx) } else { ch.rx };
+        if app.dirty(R_SUB, Mix::new().h(&rx).h(&(cell == FREQ)).get()) {
+            w::freq(lcd, 7, 232, 102, rx, &DIG_46, &DIG_28, TEXT, SUB, BG);
             lcd.fill(7, 104, 225, 2, if cell == FREQ { BLUE } else { BG });
         }
         for (i, c) in CELLS.into_iter().enumerate() {

@@ -63,6 +63,28 @@ fn power_on_misses_and_wait() {
     assert_eq!(t.screen(), Screen::Home);
 }
 
+/// PIN-2.1: at power on the owner card shows under the boxes (the callsign, then the lines set); not at
+/// unlock or for changing the PIN, and not when the card is empty.
+#[test]
+fn power_on_shows_the_owner_card() {
+    let mut t = with_pin(1234);
+    t.app.set.set_callsign(b"va7fer");
+    show_pin(&mut t, Pin::power_on());
+    t.hides("IF FOUND"); // the callsign alone isn't a card
+    crate::sample::owner_card(t.app.set);
+    t.app.set.boot_card = false; // shown whatever the boot screen is set to
+    show_pin(&mut t, Pin::power_on());
+    t.shows("IF FOUND, PLEASE CONTACT");
+    t.shows("VA7FER");
+    t.shows("Sam Fernandez");
+    t.shows("+1 604 555 0142");
+    t.shows("va7fer@example.org");
+    show_pin(&mut t, Pin::unlock());
+    t.hides("Sam Fernandez"); // only at power on
+    show_pin(&mut t, Pin::off());
+    t.hides("Sam Fernandez");
+}
+
 /// PIN-4: changing the PIN: the current one, then the new one with its digits shown, then again; a second
 /// entry that differs starts the new one over.
 #[test]

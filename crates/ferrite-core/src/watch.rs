@@ -203,6 +203,13 @@ impl Watch {
         self.open & 1 << slot != 0
     }
 
+    /// SQL-21: an exclusive mode reads only the slots in `read`: every other slot's squelch is closed, so it isn't
+    /// left open from before the mode and holds no chip when the watch takes its turns again. Not a close the
+    /// slot heard: no hang time ([`HOLD_MS`]) follows.
+    pub fn unread(&mut self, read: u8) {
+        self.open &= read;
+    }
+
     /// WATCH-17.5: each chip's squelch is rising: its own bit reads open and the debounce before it opens
     /// (SQL-18.7) is still counting. Such a chip keeps its slot and the receive path past the dwell, as stock never
     /// hops while the bit reads open: the bit comes some 48 ms after a retune and the count needs 30 ms more, past
@@ -570,10 +577,33 @@ impl TurnClock {
     }
 }
 
+/// SQL-12.4: the slots whose level is read (a bit per slot): the active one, the watched ones, and any a chip is
+/// tuned to now (a scan's or the APRS slot's). A slot outside it keeps no reading, so its S-meter shows empty rather
+/// than frozen at its last level.
+pub fn listened(watch_set: u8, active: u8, tuned: &[Option<u8>; 2]) -> u8 {
+    tuned.iter().flatten().filter(|&&s| s < 8).fold(watch_set | 1 << (active & 7), |m, &s| m | 1 << s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::freq::mhz;
+
+    /// SQL-21: C open when an exclusive mode starts (a packet under way) is closed by it, A (the mode's slot) kept;
+    /// no hang time follows, and the watch's turns after the mode leave C closed until it is heard open again.
+    #[test]
+    fn unread_slots_close_for_an_exclusive_mode() {
+        let c = Cfg { set: 0b101, active: 0, freq: [mhz(146) + 55_000, mhz(147), mhz(144) + 39_000], muted: 0, off: 0, held: 0, prio: 0, aprs: 0, scan: 0, first: false, swap: 0 };
+        let mut w = Watch::new();
+        w.open = 0b101;
+        w.unread(0b001);
+        assert!(w.open(0), "the mode's own slot is kept");
+        assert!(!w.open(2) && !w.open(1), "C closed by the mode");
+        assert_eq!(w.recent & 1 << 2, 0, "no hang time: C was never heard closing");
+        let out = w.turn(1_000, &c, [false; 2], [false; 2], false);
+        assert!(!w.open(2), "nothing heard since: still closed");
+        assert_ne!(out.audio, Some(2));
+    }
 
     /// WATCH-17.1, WATCH-17: A (146.55, active) and B (147.00) both on chip 0, watch A+B, nothing heard, in the
     /// Radio task's 10 ms ticks: the turn clock fed at each retune counts turns of 150 ms on A and 70 ms on B, C
@@ -1400,5 +1430,13 @@ mod sim {
         set_aprs_first(true);
         assert!(aprs_first());
     }
-}
 
+    /// SQL-12.4: the active, watched and tuned slots are read; the rest show an empty meter.
+    #[test]
+    fn listened_slots_are_the_active_watched_and_tuned() {
+        assert_eq!(listened(0, 0, &[Some(0), None]), 0b001, "watch off: only A");
+        assert_eq!(listened(0, 1, &[Some(1), Some(2)]), 0b110, "B active, C on the other chip (a scan)");
+        assert_eq!(listened(0b101, 0, &[Some(0), Some(2)]), 0b101, "A and C watched: B unread");
+        assert_eq!(listened(0, 2, &[None, Some(9)]), 0b100, "a chip off the slots counts for none");
+    }
+}

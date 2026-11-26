@@ -382,15 +382,16 @@ pub const SLOTS: usize = 3;
 pub struct SlotLive {
     /// What the receiver is on (while scanning, the current step).
     pub freq: Freq10,
-    /// dBm.
+    /// dBm, as read, whether the squelch is open or not (a closed slot's meter shows it dimmed).
     pub rssi: i16,
     /// A carrier above the squelch (the BK4829's RSSI and noise squelch), whatever tone it carries.
     pub squelch_open: bool,
     /// SQL-13.1: a carrier, as the squelch decided it: not level 0's always-open nor monitor. Busy lockout, the green
     /// LED, receive activity and DTMF go by this; the audio by `squelch_open`.
     pub carrier: bool,
-    /// SQL-12.1: the RSSI as read (dBm), not held down while closed as `rssi` is for the S-meters: the squelch
-    /// screen's floor and meter show the signal under the threshold.
+    /// SQL-12.1: the RSSI as read (dBm): the squelch screen's floor and meter show the signal under the threshold.
+    /// The same as `rssi` now that `rssi` isn't held down while closed; a slot deferring to the APRS slot (APRS-21.2)
+    /// shows the APRS slot's in `rssi` and keeps its own here.
     pub rssi_raw: i16,
     pub scanning: bool,
     /// The scan is stopped on a hit (held there until it resumes), not just passing a busy step.
@@ -970,6 +971,17 @@ impl LiveAll {
         a == *old
     }
 
+    /// SQL-21: the slots an exclusive mode doesn't read (those not in `read`) show as not read: squelch closed, no
+    /// carrier (so no busy for TX-21 or the APRS slot's check), an empty meter (SQL-12.4), rather than frozen at what
+    /// the receive tick last saw before the mode started.
+    pub fn unread(&mut self, read: u8) {
+        for (i, s) in self.slots.iter_mut().enumerate() {
+            if read & 1 << i == 0 {
+                (s.squelch_open, s.carrier, s.rssi, s.rssi_raw) = (false, false, -121, -121);
+            }
+        }
+    }
+
     /// The (slot, position) a channel scan asks for, if any ([`LiveAll::want`]).
     pub fn wanted(&self) -> Option<(u8, u16)> {
         self.want.checked_sub(1).map(|w| ((w >> 12) as u8, w & crate::scan::POS_MAX))
@@ -1202,6 +1214,25 @@ pub struct GpsSky {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// SQL-21: an exclusive mode reading only A leaves B and C closed, carrier-free and with empty meters, whatever
+    /// they showed before (C mid-packet: open, a carrier); A's own reading stays.
+    #[test]
+    fn unread_slots_show_as_not_read() {
+        let mut l = LiveAll::default();
+        for s in &mut l.slots {
+            (s.squelch_open, s.carrier, s.rssi, s.rssi_raw, s.freq) = (true, true, -80, -80, 14_439_000);
+        }
+        l.unread(0b001);
+        assert!(l.slots[0].squelch_open && l.slots[0].carrier && l.slots[0].rssi == -80, "the mode's slot kept");
+        for s in &l.slots[1..] {
+            assert!(!s.squelch_open && !s.carrier, "no squelch, no busy");
+            assert_eq!((s.rssi, s.rssi_raw), (-121, -121), "an empty meter (SQL-12.4)");
+            assert_eq!(s.freq, 14_439_000, "only the reading goes");
+        }
+        l.unread(0);
+        assert!(!l.slots[0].squelch_open, "HF or the satellite screen: none read");
+    }
 
     #[test]
     fn small() {

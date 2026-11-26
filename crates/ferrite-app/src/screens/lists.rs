@@ -28,6 +28,9 @@ pub(crate) const LIST_Y: i32 = 41;
 /// Two-line rows: 32 px, eight on a page (the AprsHeard mock-up).
 pub(crate) const ROW2_H: i32 = 32;
 pub(crate) const ROWS2: u16 = 8;
+/// Compact two-line rows ([`Row2::compact`]): 25 px, the title in the 12 px bold font; ten on a page (APRS-59).
+pub(crate) const ROW2C_H: i32 = 25;
+pub(crate) const ROWS2C: u16 = 10;
 /// One-line rows: 23 px; nine on a page above a help box, eleven without one.
 pub(crate) const ROW1_H: i32 = 23;
 pub(crate) const ROWS1: u16 = 9;
@@ -245,6 +248,32 @@ pub struct Row2<'a> {
     pub tag_w: u8,
     pub dot: bool,
     pub selected: bool,
+    /// [`ROW2C_H`] tall, the title in the 12 px bold font (`big` is ignored): Traffic's ten to a page.
+    pub compact: bool,
+}
+
+/// Where a two-line row's parts go, from its top: the tag's box (top, height) and the label's baseline and painted
+/// rows, the arrow's centre, the first line's baseline and painted rows, the second line's baseline and first
+/// painted row (it paints to the row's line).
+struct Geo {
+    h: i32,
+    tag: (i32, i32, i32, i32, i32),
+    arrow: i32,
+    base: i32,
+    rows: (i32, i32),
+    sub: (i32, i32),
+}
+
+static GEO: [Geo; 2] = [
+    Geo { h: ROW2_H, tag: (4, 15, 16, 5, 18), arrow: 12, base: 17, rows: (1, 21), sub: (29, 18) },
+    Geo { h: ROW2C_H, tag: (0, 13, 10, 1, 12), arrow: 6, base: 10, rows: (0, 13), sub: (22, 13) },
+];
+
+impl Row2<'_> {
+    /// The row's height: [`ROW2_H`], or [`ROW2C_H`] when compact.
+    pub(crate) fn h(&self) -> i32 {
+        GEO[self.compact as usize].h
+    }
 }
 
 /// The tag column: wide enough for "iGate", "Pager" and "Selcall".
@@ -252,68 +281,70 @@ pub(crate) const TAG_W: i32 = 46;
 
 /// A two-line row at y, off-screen in bands with its part of the scroll cue (DISP-25).
 pub(crate) fn row2(lcd: &mut impl Panel, y: i32, r: &Row2, cue: w::Cue) {
-    ferrite_ui::canvas::banded(lcd, 0, y, 240, ROW2_H, BG, |b| {
+    ferrite_ui::canvas::banded(lcd, 0, y, 240, r.h(), BG, |b| {
         row2_now(b, y, r);
         cue.draw(b);
     });
 }
 
 fn row2_now(lcd: &mut impl Panel, y: i32, r: &Row2) {
-    let h = ROW2_H;
+    let g = &GEO[r.compact as usize];
+    let h = g.h;
     let bg = if r.selected { BLUE } else { BG };
     let (fg, sub) = if r.selected { (BLUE_FG, BLUE_FG) } else { (TEXT, SUB) };
     lcd.fill(0, y, 240, h - 1, bg);
     lcd.fill(0, y + h - 1, 240, 1, LINE);
+    let (ty, th, tb, t0, t1) = g.tag;
     let mut x = 8; // the side margin (DISP-2)
     if !r.tag.is_empty() {
         // 15 px tall so the 9 px capitals centre (DISP-19), the ink centred across
         let tw = text4_width(r.tag, &UI_12) + 8;
         let tx = x + text4_ink(r.tag, &UI_12).map_or(4, |(l, rr)| (tw - (rr - l) + 1) / 2 - l);
-        lcd.fill(x, y + 4, tw, 15, bg);
-        lcd.text4_rows(tx, y + 16, r.tag, &UI_12, sub, bg, y + 5, y + 18);
-        lcd.frame_r(x, y + 4, tw, 15, 1, if r.selected { BLUE_FG } else { DIM });
+        lcd.fill(x, y + ty, tw, th, bg);
+        lcd.text4_rows(tx, y + tb, r.tag, &UI_12, sub, bg, y + t0, y + t1);
+        lcd.frame_r(x, y + ty, tw, th, 1, if r.selected { BLUE_FG } else { DIM });
         x += if r.tag_w > 0 { r.tag_w as i32 } else { TAG_W }.max(tw + 4);
     }
     // right side of line 1: arrow, value
     let mut xr = 232;
     match r.arrow {
         Some(Some(deg)) => {
-            arrow(lcd, 224, y + 12, 6, deg as i32, fg, bg);
+            arrow(lcd, 224, y + g.arrow, 6, deg as i32, fg, bg);
             xr = 214;
         }
         Some(None) => {
-            lcd.fill(219, y + 12, 9, 2, fg);
+            lcd.fill(219, y + g.arrow, 9, 2, fg);
             xr = 214;
         }
         None => {}
     }
     if !r.right.is_empty() {
         let rw = text4_width(r.right, &UI_12B);
-        lcd.text4_rows(xr - rw, y + 17, r.right, &UI_12B, fg, bg, y + 2, y + 20);
+        lcd.text4_rows(xr - rw, y + g.base, r.right, &UI_12B, fg, bg, y + g.rows.0, y + g.rows.1);
         xr -= rw + 6;
     }
     // the big title on the tag's baseline: its capitals end 3 px above the sub line's (ferrite#33: 1 px at y + 18)
-    let (f, base) = if r.big { (&UI_15B, y + 16) } else { (&UI_12B, y + 17) };
+    let (f, base) = if r.big && !r.compact { (&UI_15B, y + 16) } else { (&UI_12B, y + g.base) };
     let mut tx = x;
     if r.dot {
-        lcd.fill_r(x, y + 8, 6, 6, 3, if r.selected { BLUE_FG } else { BLUE });
+        lcd.fill_r(x, y + g.arrow - 4, 6, 6, 3, if r.selected { BLUE_FG } else { BLUE });
         tx += 10;
     }
-    lcd.text4_rows(tx, base, w::fit(r.title, f, xr - tx), f, fg, bg, y + 1, y + 21);
+    lcd.text4_rows(tx, base, w::fit(r.title, f, xr - tx), f, fg, bg, y + g.rows.0.max(1), y + g.rows.1);
     // line 2
     let srw = text4_width(r.sub_right, &UI_12);
     if srw > 0 {
-        lcd.text4_rows(232 - srw, y + 29, r.sub_right, &UI_12, sub, bg, y + 18, y + h - 1);
+        lcd.text4_rows(232 - srw, y + g.sub.0, r.sub_right, &UI_12, sub, bg, y + g.sub.1, y + h - 1);
     }
     let sc = if r.selected || r.sub_c == 0 { sub } else { r.sub_c };
-    lcd.text4_rows(x, y + 29, w::fit(r.sub, &UI_12, 232 - x - srw - 6), &UI_12, sc, bg, y + 18, y + h - 1);
+    lcd.text4_rows(x, y + g.sub.0, w::fit(r.sub, &UI_12, 232 - x - srw - 6), &UI_12, sc, bg, y + g.sub.1, y + h - 1);
 }
 
 impl App {
     /// Two-line row `i` of a list page, drawn when it changed.
     pub(crate) fn row2(&mut self, lcd: &mut impl Panel, i: usize, r: &Row2) {
         if self.dirty(R_ROW + i, hash(r)) {
-            row2(lcd, LIST_Y + i as i32 * ROW2_H, r, self.cue());
+            row2(lcd, LIST_Y + i as i32 * r.h(), r, self.cue());
         }
     }
 

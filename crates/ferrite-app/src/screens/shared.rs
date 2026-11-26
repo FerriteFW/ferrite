@@ -535,6 +535,12 @@ impl App {
         self.slot(s).on_channel().then(|| crate::chanscan::at(self, s, p, store)).flatten()
     }
 
+    /// f as slot s draws it: on the airband with the 8.33 kHz step, the channel name ("118.010" for 118.00833,
+    /// VFO-18.2), tagged [`ferrite_core::freq::NAMED`] for the widgets; else f.
+    pub(crate) fn label(&self, s: u8, f: u32) -> u32 {
+        if self.tuned_cfg(s).step == crate::slot::STEP_833 { ferrite_core::freq::shown_833(f) } else { f }
+    }
+
     /// The slot's frequency, or the scan's current step while it scans.
     pub(crate) fn shown_freq(&self, s: u8, live: &LiveAll) -> u32 {
         let lv = &live.slots[s as usize];
@@ -543,7 +549,7 @@ impl App {
 
     /// The slot's state word and colour on a card: TX (a data key-up, HOME-18), Off (turned off with \*, HOME-15.1),
     /// Muted or RX muted (quick mute; drawn as "Muted" with the RX tag, HOME-15.3), RX, relay, off (not watched),
-    /// heard (a tone hint), scanning, idle; on a broadcast slot FM (playing), muted (a slot heard has the speaker) or off, and "FM on B" on
+    /// heard (a tone hint), scanning, idle; on a broadcast slot WFM (playing), muted (a slot heard has the speaker) or off, and "WFM on B" on
     /// another slot in the band (BCR-22, BCR-27); "Watch off: relay" while broadcast plays (BCR-15).
     pub(crate) fn state(&self, s: u8, live: &LiveAll) -> (&'static str, u16) {
         let lv = &live.slots[s as usize];
@@ -567,9 +573,9 @@ impl App {
         let watched = s == self.active || self.watch_mask() & 1 << s != 0;
         if self.in_bcast_band(s) && !lv.scanning {
             return match self.bcast_slot() {
-                Some(b) if b != s => (["FM on A", "FM on B", "FM on C"][b as usize % 3], DIM),
+                Some(b) if b != s => (["WFM on A", "WFM on B", "WFM on C"][b as usize % 3], DIM),
                 Some(_) if !self.radio.fm_on => ("off", DIM),
-                Some(_) if self.bcast_heard(live) => ("FM", GREEN),
+                Some(_) if self.bcast_heard(live) => ("WFM", GREEN),
                 Some(_) => ("muted", AMBER),
                 None => ("off", DIM),
             };

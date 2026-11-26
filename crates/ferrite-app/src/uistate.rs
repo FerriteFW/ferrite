@@ -928,6 +928,26 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
                 }
             }
         }
+        // APRS-59.8: the Traffic page's rows on the page, as the screen says them, uncut:
+        // `traffic "VE7GPL-1 > TEST" "\"6\"" "4 min"`, with ` sel` on the selected one
+        Screen::AprsTraffic(st) => {
+            let data = cx.store.data();
+            let t = data.traffic();
+            st.cur.rows(t.map_or(0, |t| t.len()), screens::lists::ROWS2C, &|_| true, |_, i| {
+                if let (Some(r), Some(l)) = (t.and_then(|t| t.get(i)), d.ln()) {
+                    let (title, sub, age) = aprs::traffic_row(&r, data);
+                    l.push(b"traffic ");
+                    q(l, title.as_bytes());
+                    l.push(b" ");
+                    q(l, sub.as_bytes());
+                    l.push(b" ");
+                    q(l, age.as_bytes());
+                    if i == st.cur.sel {
+                        l.push(b" sel");
+                    }
+                }
+            });
+        }
         // APRS-53: the Sent page's rows on the page: `row 0 "4 min ago" "by VE3RSB-1"`, `grey` when not heard back
         Screen::AprsSent(st) => {
             let data = cx.store.data();
@@ -1499,6 +1519,7 @@ pub fn id(s: Screen) -> &'static str {
         Screen::Options(_) => "Options",
         Screen::Aprs(_) => "Aprs",
         Screen::AprsSent(_) => "AprsSent",
+        Screen::AprsTraffic(_) => "AprsTraffic",
         Screen::Msgs(_) => "Msgs",
         Screen::Compose(_) => "Compose",
         Screen::QuickMsgs(_) => "QuickMsgs",

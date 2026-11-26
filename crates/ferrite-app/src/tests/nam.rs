@@ -134,3 +134,36 @@ fn slot_change_reaches_every_mode() {
         }
     }
 }
+
+/// VFO-18.2: on the 8.33 kHz step an airband channel name goes in at its third decimal as its channel: 118.005 is
+/// 118.000, 118.010 is 118.00833, 118.015 is 118.01667, 118.030 is 118.025; 118.020 is no name and waits for OK,
+/// which takes it as typed. Off the airband (2 m) the names don't apply: 146.010 waits too.
+#[test]
+fn typed_833_channel_names() {
+    let typed = |keys: &[u8], at: Freq10| {
+        let mut t = T::new();
+        t.app.slots[0].vfo = at;
+        t.app.slots[0].cfg_mut().step = STEP_833;
+        for (i, &d) in keys.iter().enumerate() {
+            if i == 3 {
+                t.tap(Key::Star); // the point
+            }
+            t.tap(Key::Digit(d));
+        }
+        let went = t.app.slots[0].vfo;
+        t.tap(Key::Menu); // OK
+        (went, t.app.slots[0].vfo)
+    };
+    for (keys, want) in [
+        (&[1, 1, 8, 0, 0, 5][..], MHZ118),
+        (&[1, 1, 8, 0, 1, 0][..], MHZ118 + 833),
+        (&[1, 1, 8, 0, 1, 5][..], MHZ118 + 1667),
+        (&[1, 1, 8, 0, 3, 0][..], MHZ118 + 2500),
+        (&[1, 1, 8, 0, 4, 0][..], MHZ118 + 4167),
+        (&[1, 2, 1, 5, 0, 0][..], 12_150_000),
+    ] {
+        assert_eq!(typed(keys, MHZ118 + 5000).0, want, "{keys:?}");
+    }
+    assert_eq!(typed(&[1, 1, 8, 0, 2, 0], MHZ118 + 5000), (MHZ118 + 5000, MHZ118 + 2000), "118.020: not a name, OK takes it");
+    assert_eq!(typed(&[1, 4, 6, 0, 1, 0], 14_652_000), (14_652_000, 14_601_000), "2 m: no names");
+}

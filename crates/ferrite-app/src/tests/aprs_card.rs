@@ -399,15 +399,15 @@ fn kiss_suspends_the_radios_own_aprs() {
 }
 
 /// APRS-17.7, APRS-17.3, MENU-25 (decision 257): one APRS list in one order from the APRS slot and from the heard
-/// list (1 Messages, 2 Heard, 3 Sent (APRS-53), 4 Beacon now, 5 Event log, 6 Clear the heard list, 7 APRS settings;
-/// decision 375 took out Beacon on/off);
+/// list (1 Messages, 2 Heard, 3 Sent (APRS-53), 4 Beacon now, 5 Event log, 6 Clear the heard list, 7 APRS settings,
+/// 8 Traffic (APRS-59, at the end so the others keep their numbers); decision 375 took out Beacon on/off);
 /// OK 1 on C reads the messages; hold MENU on C opens the same list on the same row as OK; a digit on a row that
 /// does something only moves to it.
 #[test]
 fn one_aprs_list_from_c_and_heard() {
     use crate::screens::opts::{rows, Of};
     let names: Vec<&str> = rows(Of::AprsCard).iter().map(|r| r.0).collect();
-    assert_eq!(names, ["Messages", "Heard", "Sent", "Beacon now", "Event log", "Clear the heard list", "APRS settings"]);
+    assert_eq!(names, ["Messages", "Heard", "Sent", "Beacon now", "Event log", "Clear the heard list", "APRS settings", "Traffic"]);
     assert!(core::ptr::eq(rows(Of::AprsCard), rows(Of::Heard)), "one list");
     let mut a = A::new();
     a.app.set_aprs_mode(true);
@@ -550,6 +550,53 @@ fn sent_page_lists_our_beacons() {
     assert_eq!(a.s.beacon_sent(0).unwrap().by[0].as_bytes(), b"VE3OTW-10");
     a.press(Key::Exit, 100);
     assert!(!matches!(a.app.screen(), Screen::AprsSent(_)), "BACK leaves it");
+}
+
+/// APRS-59, APRS-59.6, APRS-59.8: the APRS list's 8 opens Traffic: every packet heard lately, newest first, ten to a page, a row
+/// each: the sender (a message's `SRC > DEST`) and its age, then what it was (a message's text, `ack 12`, a
+/// position with its station's distance and bearing, repeats as `x3`); the readback says it as the screen does.
+/// APRS-59.7: OK on a row opens its station; BACK twice comes back to Traffic.
+#[test]
+fn traffic_page_lists_every_packet() {
+    let mut a = A::new();
+    a.app.set_aprs_mode(true);
+    a.tick();
+    a.c_active();
+    a.press(Key::Menu, 100);
+    a.press(Key::Digit(8), 100);
+    assert!(matches!(a.app.screen(), Screen::AprsTraffic(_)), "8: Traffic, not {}", a.app.screen().name());
+    let rows = |a: &A| {
+        let dev = Device::default();
+        let mut l = crate::term::cmd::Line::new();
+        (0..).map_while(|i| crate::uistate::line(&a.app, &a.s, &dev, &a.live, i, &mut l).then(|| String::from_utf8_lossy(l.as_bytes()).into_owned())).filter(|l| l.starts_with("traffic ")).collect::<Vec<_>>()
+    };
+    let r = rows(&a);
+    assert_eq!(r.len(), 10, "a page of compact rows: {r:?}");
+    assert_eq!(r[0], r#"traffic "VE3KPW-9 > VA7FER-9" "\"On my way\"" "2 min" sel"#);
+    assert!(r[1].starts_with(r#"traffic "VA3RTX" "position · "#) && r[1].contains(" km "), "with the distance: {r:?}");
+    assert_eq!(r[2], r#"traffic "VE3KPW-9 > VA7FER-9" "ack 12" "4 min""#);
+    assert!(r[3].starts_with(r#"traffic "VE3RSB-1" "telemetry""#), "{r:?}");
+    assert_eq!(r[4], r#"traffic "VE3OBW" "weather · x3" "9 min""#);
+    assert!(r.iter().any(|l| l.starts_with(r#"traffic "VA3ZZB-7 > VE3JLH" "\"QSY 446.100\"""#)), "to another station: {r:?}");
+    a.press(Key::Down, 100);
+    let r = rows(&a);
+    assert!(r[1].ends_with(" sel"), "{r:?}");
+    // further down: a third party's sender and an object's name
+    for _ in 0..7 {
+        a.press(Key::Down, 100);
+    }
+    let r = rows(&a);
+    assert!(r.iter().any(|l| l.starts_with(r#"traffic "VE2GPA-10" "3rd party VE3ABC-9""#)), "{r:?}");
+    assert!(r.iter().any(|l| l.starts_with(r#"traffic "VE3RSB-1" "object CLUBNET""#)), "{r:?}");
+    for _ in 0..8 {
+        a.press(Key::Up, 100);
+    }
+    // OK on the newest: VE3KPW-9's station page; BACK twice: Traffic again
+    a.press(Key::Menu, 100);
+    assert!(matches!(a.app.screen(), Screen::Aprs(s) if s.station && s.cur.sel == 0), "{}", a.app.screen().name());
+    a.press(Key::Exit, 100);
+    a.press(Key::Exit, 100);
+    assert!(matches!(a.app.screen(), Screen::AprsTraffic(_)), "back to Traffic, not {}", a.app.screen().name());
 }
 
 /// SQL-19, SQL-19.4: the APRS squelch's counts in the card's readback.

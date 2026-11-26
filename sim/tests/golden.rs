@@ -197,7 +197,7 @@ fn tone_hint_matches_its_goldens() {
 }
 
 /// BCR-26.1, BCR-26.2, BCR-26.3, BCR-26.6, BCR-27, BCR-28: slot A tuned to 100.5 MHz plays broadcast FM: its card with
-/// the full radio text, stereo and SNR; 99.1 (no radio text: the station name); slot B tuned in too takes it ("FM on B"
+/// the full radio text, stereo and SNR; 99.1 (no radio text: the station name); slot B tuned in too takes it ("WFM on B"
 /// on A); quick settings and the other two layouts with the broadcast slot.
 #[test]
 fn broadcast_slot_matches_its_goldens() {

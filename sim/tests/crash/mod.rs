@@ -392,24 +392,10 @@ fn repaint_known(m: &RepaintMiss) -> bool {
 
 /// Text cut off in odd states, found by these hunts (Nov 23, 2026) and not fixed yet: (the cut text, the file
 /// that drew it, "" when the cut is past the screen's edge with no widget site; what it is). Each is a wording or
-/// layout call, so left for a person. Shrink this list; never widen an entry to make a test pass.
-pub const CLIPS_KNOWN: &[(&str, &str, &str)] = &[
-    // TX-35: auto_tx's toast is "Beacon not sent:" (or KISS, Reply, ...) with the reason after it, in ~105 px
-    ("outside the band plan", "screens/shared.rs", "an automatic transmit's refusal toast: the reason after \"Beacon not sent:\""),
-    ("AM is receive only", "screens/shared.rs", "the same toast"),
-    ("emergency frequency", "screens/shared.rs", "the same toast"),
-    ("already transmitting", "screens/shared.rs", "the same toast"),
-    ("no callsign set", "screens/shared.rs", "the same toast"),
-    ("repeater running", "screens/shared.rs", "the same toast"),
-    // a form's slot strip over a slot (the editors, the tone picker): its head field is 66 px
-    ("VFO · ", "screens/forms.rs", "a form's slot strip: the head in 66 px (\"VFO · Marine\", \"VFO · Airband\", \"VFO · 1.25 m\")"),
-    // XB-14's checks list: the band pair's line, 206 px
-    ("HF needs the relay", "screens/xb.rs", "the crossband repeater's check line \"6 m and UHF, HF needs the relay\" (and VHF and 6 m)"),
-    // PWR-24.7: Low Power Mode's home, the slot's mode line with a shift and power
-    ("  T ", "screens/lowpower.rs", "Low Power Mode's home: the mode, tone, shift and power line (\"NFM  T 100.0  +5M  No TX\")"),
-    // SAT-13: the pass page keyed with HD on (full duplex off): the note runs past the screen's right edge
-    ("Downlink muted while you talk (HD)", "", "the satellite pass page keyed with HD: the note past the screen's edge"),
-];
+/// layout call, so left for a person. Shrink this list; never widen an entry to make a test pass. Empty since
+/// ferrite#144 fixed the first five (the auto-transmit toast, the editors' slot strip, the crossband check line,
+/// Low Power Mode's mode line, the satellite pass page with HD).
+pub const CLIPS_KNOWN: &[(&str, &str, &str)] = &[];
 
 fn clip_known(c: &ferrite_ui::clipcheck::Clip) -> bool {
     CLIPS_KNOWN.iter().any(|&(t, f, _)| c.text.contains(t) && c.at.map_or(f.is_empty(), |a| !f.is_empty() && a.file().ends_with(f)))

@@ -120,7 +120,7 @@ fn activity_cards() {
     t.live.slots[third as usize] = SlotLive::default();
     let a = t.app.active;
     fm_live(&mut t, a);
-    t.shows("FM");
+    t.shows("WFM");
     t.shows("Some text");
     t.shows("STEREO");
 }

@@ -14,7 +14,7 @@ use crate::chan::ChannelStore;
 use crate::slot::{card_tone, mode_chip, shift_text};
 use crate::App;
 use ferrite_ui::assets::*;
-use ferrite_ui::gfx::{rgb565, Align, Gfx};
+use ferrite_ui::gfx::{rgb565, text4_width, Align, Gfx};
 use ferrite_ui::panel::Panel;
 use ferrite_ui::text::Buf;
 use ferrite_ui::widgets as w;
@@ -98,35 +98,45 @@ pub(crate) fn render(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelSt
         drew = true;
     }
     // The frequency (the transmit one while keyed), big.
-    let f = if keyed { app.tuned_cfg(a).tx_of(app.tuned_freq(a)) } else { app.shown_freq(a, live) };
+    let f = if keyed { app.tuned_cfg(a).tx_of(app.tuned_freq(a)) } else { app.label(a, app.shown_freq(a, live)) }; // VFO-18.2
     if app.dirty(R_FREQ, Mix::new().h(&f).get()) || drew {
         lcd.fill(SIDE_W, FREQ.0, 240 - 2 * SIDE_W, FREQ.1 - FREQ.0, LP_BLACK);
         w::freq(lcd, 10, 232, FREQ.2, f, &DIG_46, &DIG_28, LP_TEXT, LP_SUB, LP_BLACK);
         drew = true;
     }
     // Mode, tone, shift, power.
+    // Two spaces between the parts where the line fits, else one, else the smaller font (ferrite#144: "NFM  T 100.0
+    // +5M  No TX" ran past W in the 15 px font).
     let cfg = app.tuned_cfg(a);
     let mut line = Buf::<40>::new();
-    let mut part = Buf::<16>::new();
-    mode_chip(&cfg, &mut part);
-    line.push(part.as_bytes());
-    for i in 0..3 {
-        part.clear();
-        match i {
-            0 => card_tone(&cfg, &mut part),
-            1 => shift_text(&cfg, false, &mut part),
-            _ => part.set(super::transmit::power_name(app, a).as_bytes()),
+    for gap in [&b"  "[..], b" "] {
+        line.clear();
+        let mut part = Buf::<16>::new();
+        mode_chip(&cfg, &mut part);
+        line.push(part.as_bytes());
+        for i in 0..3 {
+            part.clear();
+            match i {
+                0 => card_tone(&cfg, &mut part),
+                1 => shift_text(&cfg, false, &mut part),
+                _ => part.set(super::transmit::power_name(app, a).as_bytes()),
+            }
+            if !part.is_empty() {
+                line.push(gap);
+                line.push(part.as_bytes());
+            }
         }
-        if !part.is_empty() {
-            line.push(b"  ");
-            line.push(part.as_bytes());
+        if text4_width(line.as_bytes(), &UI_15B) <= W {
+            break;
         }
     }
+    let small = text4_width(line.as_bytes(), &UI_15B) > W;
     if app.dirty(R_INFO, Mix::new().h(&line).get()) || drew {
         // the strips either side of the text column too: the leaving box reaches into them
         lcd.fill(SIDE_W, INFO.0, X - SIDE_W, INFO.1 - INFO.0, LP_BLACK);
         lcd.fill(X + W, INFO.0, 240 - SIDE_W - X - W, INFO.1 - INFO.0, LP_BLACK);
-        w::field(lcd, X, W, INFO.0, INFO.1, INFO.2, line.as_bytes(), const { &w::st(&UI_15B, LP_SUB, LP_BLACK, Align::Left) });
+        let st = if small { const { &w::st(&UI_12B, LP_SUB, LP_BLACK, Align::Left) } } else { const { &w::st(&UI_15B, LP_SUB, LP_BLACK, Align::Left) } };
+        w::field(lcd, X, W, INFO.0, INFO.1, INFO.2, line.as_bytes(), st);
         drew = true;
     }
     // RX: the S-meter's text and 8 blocks; TX: the time keyed; else Quiet and empty blocks.

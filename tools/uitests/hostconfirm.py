@@ -324,7 +324,7 @@ def channel_squelch_override(t):
 
 @test("TSRCH-8", "DEC-1", "SAFE-16", pages=("Counter", "Home"))
 def counter_and_decoders_never_key(t):
-    """The frequency counter (hold SIDE2) and a decoder running (the pager, 0 4 2 1) only receive: the radio's own
+    """The frequency counter (hold SIDE2) and a decoder running (the pager, 0 4 2 2 Decode) only receive: the radio's own
     keyed state stays idle throughout (`status`)."""
     t.home()
     u = t.press("SIDE2", long=True)
@@ -335,11 +335,12 @@ def counter_and_decoders_never_key(t):
         keyed.add(fl.parse_status(t.r.status_text())["keyed"])
     t.eq(keyed, {None}, "the counter: never keyed")
     t.home()
-    t.set("0 4 2 1", "On")
+    t.set("0 4 2 2", "On")
     end = time.time() + 3
     keyed = set()
     while time.time() < end:
         keyed.add(fl.parse_status(t.r.status_text())["keyed"])
+    t.set("0 4 2 2", "Off")
     t.eq(keyed, {None}, "the pager decoding: never keyed")
 
 

@@ -417,7 +417,7 @@ def scope_listen_tunes_the_chip(t):
 @test("APRS-16", "DEC-8", needs=("bench",), where="radio", pages=("Home",))
 def kept_chips_stay_awake(t):
     """APRS mode on with watch off: C (144.39) is watched, its chip kept awake beside the active one through
-    Battery Save (REG_30 never 0 on it over a few seconds); a pager decoder running (0 4 2 1 on, a slot on its
+    Battery Save (REG_30 never 0 on it over a few seconds); a pager decoder running (0 4 2 2 Decode on, a slot on its
     frequency) keeps its chip out of the sleep likewise."""
     t.bench()
     stopped = quiet(t, watch="Off", bsave="Level 1")
@@ -432,8 +432,8 @@ def kept_chips_stay_awake(t):
         t.check(0 not in s, "C's chip (0) never asleep", s)
         t.set("0 5 3", "Off")
         t.home()
-        t.set("0 4 2 1", "On")
-        f = t.get("0 4 2 2")
+        t.set("0 4 2 2", "On")
+        f = t.get("0 4 2 3")
         t.cmd(f"slot B vfo {f}")
         t.set("0 1 1", "A+B")
         time.sleep(2)

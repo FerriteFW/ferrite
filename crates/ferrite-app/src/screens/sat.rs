@@ -1097,7 +1097,7 @@ fn keyed_page(app: &mut App, lcd: &mut impl Panel, p: &Pass, sat: &ferrite_core:
             let wd = lcd.text4(30, 192, df.as_bytes(), &DIG_17, if pr.hd { DIM } else { TEXT }, BG);
             lcd.text4(36 + wd, 191, ds.as_bytes(), &UI_12, SUB, BG);
             if pr.hd {
-                lcd.text4(30, 214, b"Downlink muted while you talk (HD)", &UI_12, SUB, BG);
+                lcd.text4(30, 214, b"Muted while you talk (HD)", &UI_12, SUB, BG);
                 return;
             }
             lcd.text4(30, 212, b"you", &UI_12, GREEN, BG);

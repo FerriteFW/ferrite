@@ -118,16 +118,14 @@ fn checks(app: &App, batt: u8, out: &mut [(Check, Buf<40>); 4]) -> Option<usize>
     };
     let hf = f1 < mhz(64) || f2 < mhz(64);
     let mut b = Buf::<40>::new();
-    let _ = uwrite!(b, "{} and {}, ", band_name(f1), band_name(f2));
     if hf {
-        b.push(b"HF needs the relay");
-        put(0, Check::Fail, b.as_bytes(), &mut fail);
-    } else if chip1 == chip2 {
-        b.push(b"one chip");
-        put(0, Check::Fail, b.as_bytes(), &mut fail);
+        // the stop's own wording (XB-14's checks), without the bands: "6 m and UHF, HF needs the relay" ran past
+        // the line's 206 px (ferrite#144); the longest band pair with "one chip" or "two chips" fits
+        put(0, Check::Fail, ferrite_core::xb::Stop::Hf.text().as_bytes(), &mut fail);
     } else {
-        b.push(b"two chips");
-        put(0, Check::Ok, b.as_bytes(), &mut fail);
+        let _ = uwrite!(b, "{} and {}, ", band_name(f1), band_name(f2));
+        b.push(if chip1 == chip2 { b"one chip" } else { b"two chips" });
+        put(0, if chip1 == chip2 { Check::Fail } else { Check::Ok }, b.as_bytes(), &mut fail);
     }
     // Simplex only (XB-18): each side transmits on its own receive frequency, never through a shift or split.
     let tx = |s: u8| {

@@ -172,12 +172,12 @@ fn a_long_text_scrolls() {
 fn hash_toggles_the_strip() {
     let mut a = A::new();
     a.app.open(crate::screens::nav::Dest::Acars);
-    for _ in 0..7 {
+    for _ in 0..9 {
         a.tap(Key::Down);
     }
     a.tap(Key::Hash);
     let s = a.acars();
-    assert!(s.strip && s.cur.top > 0, "the 8th row is off a 7-row page: {s:?}");
+    assert!(s.strip && s.cur.top > 0, "the 10th row is off a 9-row page (compact rows, ACARS-4): {s:?}");
     let fb = a.render();
     // the strip's background under the status bar
     assert_eq!(fb.at(120, 22), ferrite_ui::gfx::SURFACE);

@@ -146,7 +146,7 @@ impl Acars {
     }
 
     fn rows(self) -> u16 {
-        if self.strip { ROWS2 - 1 } else { ROWS2 }
+        if self.strip { ROWS2C - 1 } else { ROWS2C }
     }
 
     /// ACARS-5: slot B's frequency, mode and state, one line under the status bar.
@@ -239,19 +239,20 @@ impl Acars {
                 sub_right: lab_r.as_bytes(),
                 sub_c: if m.crc_ok() { 0 } else { RED },
                 selected: i == self.cur.sel,
+                compact: true,
                 ..Row2::default()
             };
             if app.dirty(R_ROW + row, hash(&r) ^ top as u32) {
-                row2(lcd, top + row as i32 * ROW2_H, &r, app.cue());
+                row2(lcd, top + row as i32 * ROW2C_H, &r, app.cue());
             }
         });
         for i in rows..vis as usize {
             if app.dirty(R_ROW + i, 1) {
-                lcd.fill(0, top + i as i32 * ROW2_H, 240, ROW2_H, BG);
+                lcd.fill(0, top + i as i32 * ROW2C_H, 240, ROW2C_H, BG);
             }
         }
         let more = self.cur.more(n, vis, rows, &keep);
-        app.scroll_cue(lcd, (0, vis as usize), top, vis as i32 * ROW2_H, more, self.cur.top as u32, vis as u32, shown as u32);
+        app.scroll_cue(lcd, (0, vis as usize), top, vis as i32 * ROW2C_H, more, self.cur.top as u32, vis as u32, shown as u32);
         if n == 0 {
             app.empty(lcd, b"No messages yet", b"They show here as they're heard");
         } else if shown == 0 {
@@ -418,7 +419,7 @@ impl View for Acars {
                 app.screen = Screen::Acars(Acars { cur, line: 0, ..self });
             }
             (Key::Menu, Short, false) if self.cur.sel < n && keep(self.cur.sel) => app.screen = Screen::Acars(Acars { detail: true, line: 0, ..self }),
-            (Key::Hash, Short, false) => app.screen = Screen::Acars(Acars { strip: !self.strip, cur: self.cur.shown(n, if self.strip { ROWS2 } else { ROWS2 - 1 }, &keep), ..self }),
+            (Key::Hash, Short, false) => app.screen = Screen::Acars(Acars { strip: !self.strip, cur: self.cur.shown(n, if self.strip { ROWS2C } else { ROWS2C - 1 }, &keep), ..self }),
             // ACARS-4.2: * shows only the messages with text, or all again (kept in the settings)
             (Key::Star, Short, false) => {
                 app.set.acars_text = !app.set.acars_text;

@@ -97,6 +97,12 @@ pub const STARTUP: &[Step] = &[
     Step::Command(NORON, &[]),
 ];
 
+/// The mode registers [`STARTUP`] sets that decide how drawn pixels look: 16-bit colour, orientation, inversion on.
+/// [`St7789::modes`] sends them again (DISP-32): a panel that lost one (an upset on its flex, a lone stray command)
+/// shows every colour inverted, mirrored or garbled until they are set again. Six bytes, no waits, nothing on the
+/// screen changes when they already hold.
+pub const MODES: &[Step] = &[Step::Command(COLMOD, &[0x55]), Step::Command(MADCTL, &[MADCTL_RT950]), Step::Command(INVON, &[])];
+
 /// The panel.
 pub struct St7789<B: Bus8080> {
     bus: B,
@@ -134,6 +140,14 @@ impl<B: Bus8080> St7789<B> {
         }
         self.fill(0, 0, self.width, self.height, color);
         self.on(true);
+    }
+
+    /// DISP-32: sends [`MODES`] again (colour format, orientation, inversion); idle, partial and the scroll area
+    /// are left as they are.
+    pub fn modes(&mut self) {
+        for &s in MODES {
+            self.step(s);
+        }
     }
 
     pub fn width(&self) -> u16 {

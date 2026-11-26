@@ -259,6 +259,8 @@ fn own_frame<F: core::future::Future>(f: F) -> OwnFrame<F> {
 
 /// DISP-27: the ST7789's wait after sleep out before drawing, and between sleep in and sleep out.
 const PANEL_SLEEP_MS: u32 = 120;
+/// DISP-32: how often an awake panel's mode registers (colour format, orientation, inversion) are sent again.
+const PANEL_MODES_MS: u32 = 10_000;
 
 /// PWR-24.5: the shortest gap between redraws for live changes in Low Power Mode.
 const LPM_FRAME_MS: u32 = 1000;
@@ -626,6 +628,8 @@ pub async fn task() {
     let mut bt_q: Option<BtQuery> = None;
     // DISP-27: the panel asleep while the screen is dark, and when it last changed.
     let (mut panel_asleep, mut panel_at) = (false, now_ms());
+    // DISP-32: when the panel's mode registers were last sent.
+    let mut modes_at = panel_at;
     // TERM-40: the display's bench state (the power bench); default is normal.
     #[cfg(feature = "bench")]
     let mut lcdb = ferrite_core::msg::LcdBench::default();
@@ -1124,12 +1128,19 @@ pub async fn task() {
             } else {
                 lcd.0.sleep(false);
                 Timer::after_millis(PANEL_SLEEP_MS as u64).await;
+                lcd.0.modes(); // DISP-32: lost while dark (#182), set again before anything shows
                 lcd.0.on(true);
                 app.redraw_all();
                 urgent = true;
             }
             (panel_asleep, panel_at) = (want_sleep, now_ms());
+            modes_at = panel_at;
             crate::chan::SCREEN_DARK.store(want_sleep, Relaxed); // PWR-26.17
+        } else if !panel_asleep && now_ms().wrapping_sub(modes_at) >= PANEL_MODES_MS {
+            // DISP-32 (#182: every colour inverted after hours with the APRS tracker on, until a restart): the
+            // panel's mode registers again now and then while it is awake. Six bytes, a few microseconds.
+            lcd.0.modes();
+            modes_at = now_ms();
         }
         // PWR-24.9, PWR-26: the MCU clock. In Low Power Mode 24 MHz after LPM_CLOCK_MS (and the boost after
         // input, PWR-24.10; transmit stays at 24 MHz); otherwise the governor: 24 MHz at rest, the build's speed

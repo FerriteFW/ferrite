@@ -88,12 +88,14 @@ impl I2c for SiBus {
     }
 }
 
-/// The display's 8080 bus: data on PD8-PD15, write strobe PD0, D/C PD3, reset PD2. The panel is alone on it, so
-/// chip select stays low.
+/// The display's 8080 bus: data on PD8-PD15, write strobe PD0, chip select PD1, D/C PD3, reset PD2. Chip select is
+/// low only during a call (a command, its data, a band of pixels) and high between them, as stock (which raises it
+/// after every byte): a deselected panel ignores the strobe and D/C, so a glitch on the flex between draws (a
+/// transmission close by, ESD) can't write it (DISP-32, #182). Held low always until Nov 25, 2026.
 pub struct Lcd;
 impl Lcd {
     pub fn new() -> Self {
-        LCD_CS.output(false, Mode::OutPpFast);
+        LCD_CS.output(true, Mode::OutPpFast);
         LCD_WR.output(true, Mode::OutPpFast);
         LCD_DC.output(true, Mode::OutPpFast);
         LCD_RST.output(true, Mode::OutPp);
@@ -154,15 +156,38 @@ fn nop_reps() -> u32 {
 // The trees' fastest is 240 MHz (`clock::TOP`): the strobe's count is 1 or 2, each a constant in the byte loops.
 const _: () = assert!(crate::hal::clock::TOP.lcd_nops() <= 2 && crate::hal::clock::NORMAL.lcd_nops() <= 2);
 
+/// Chip select low before a call's first strobe: read back, then a few nops (33 ns at 120 MHz, as long above it), so
+/// its setup before the strobe falls (15 ns) holds at any clock. Once a call, not a byte.
+#[inline(always)]
+fn select(reps: u32) {
+    LCD_CS.clr();
+    gpio::sync(LCD_DATA_PORT);
+    for _ in 0..reps {
+        // SAFETY: nops only.
+        unsafe { core::arch::asm!("nop", "nop", "nop", "nop", options(nomem, nostack, preserves_flags)) };
+    }
+}
+
+/// Chip select high after a call: `byte` already waited the strobe's high time after the last rising edge, which
+/// covers the hold (15 ns).
+#[inline(always)]
+fn deselect() {
+    LCD_CS.set();
+}
+
 impl st7789::Bus8080 for Lcd {
     fn command(&mut self, cmd: u8) {
+        let r = nop_reps();
         LCD_DC.clr();
-        byte(cmd, nop_reps());
+        select(r);
+        byte(cmd, r);
+        deselect();
         LCD_DC.set();
     }
     fn data(&mut self, data: &[u8]) {
         add_bytes(data.len() as u32);
         let r = nop_reps();
+        select(r);
         // The count as a constant (1 at 120 MHz and below, 2 at 240, the fastest tree: `lcd_nops`) lets the
         // strobe's nop loops fold away: read at run time each byte paid a loop's counter and branch twice, 385 ns
         // a byte against 240 (black, Nov 4, 2026: the slot switch's redraw 135-166 ms against Oct 23's 95-106)
@@ -175,12 +200,14 @@ impl st7789::Bus8080 for Lcd {
                 byte(b, 2)
             }
         }
+        deselect();
     }
     /// Straight from the pixels: copying them into a byte buffer first made a band's send about 0.4 us a byte
     /// against a fill's 0.24 (Oct 23, 2026). The strobe is `byte`'s, unchanged.
     fn pixels(&mut self, px: &[u16]) {
         add_bytes(2 * px.len() as u32);
         let r = nop_reps();
+        select(r);
         if r <= 1 {
             for &c in px {
                 byte((c >> 8) as u8, 1);
@@ -192,11 +219,13 @@ impl st7789::Bus8080 for Lcd {
                 byte(c as u8, 2);
             }
         }
+        deselect();
     }
     fn repeat(&mut self, color: u16, count: u32) {
         let (hi, lo) = ((color >> 8) as u8, color as u8);
         add_bytes(count.wrapping_mul(2));
         let r = nop_reps();
+        select(r);
         if r <= 1 {
             for _ in 0..count {
                 byte(hi, 1);
@@ -208,6 +237,7 @@ impl st7789::Bus8080 for Lcd {
                 byte(lo, 2);
             }
         }
+        deselect();
     }
     fn reset(&mut self, active: bool) {
         LCD_RST.write(!active)

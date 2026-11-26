@@ -771,7 +771,7 @@ def free_port():
 
 
 def start_sim(secs=3600, quiet=True, build=True, ports=None, extra=()):
-    exe = os.path.join(FERRITE, "target", "debug", "ferrite-sim")
+    exe = os.path.join(os.environ.get("CARGO_TARGET_DIR") or os.path.join(FERRITE, "target"), "debug", "ferrite-sim")
     if build:
         if not quiet:
             say("building the simulator (cargo build -p ferrite-sim) ...")

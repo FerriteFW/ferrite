@@ -28,6 +28,9 @@ on the approved test frequencies; a setting a test changes is put back by the ru
 import re
 import time
 
+# SELF-5.1 (decision 466): About's version row is labelled so on any build but an official release.
+UNOFFICIAL = "Unofficial build"
+
 REGISTRY = []
 
 # Home's readback ids: home, and Low Power Mode's own home (PWR-24.7).
@@ -163,6 +166,8 @@ class U:
         for r in self.rows:
             if r["name"] == name:
                 return r
+        if name == "Version":  # SELF-5.1: About's version row on a build that isn't an official release
+            return self.row(UNOFFICIAL)
         return None
 
     def num(self, n):
@@ -172,7 +177,8 @@ class U:
         return None
 
     def names(self):
-        return [r["name"] for r in self.rows]
+        """The rows' names; About's "Unofficial build" (SELF-5.1) as "Version", the row it is."""
+        return [("Version" if r["name"] == UNOFFICIAL else r["name"]) for r in self.rows]
 
     @property
     def active(self):

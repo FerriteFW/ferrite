@@ -1439,13 +1439,14 @@ def raw_audio(link, seconds, path, rate, poke=None):
 
 
 BENCH_BIT = 0x80  # LINK-35: bit 7 of the build byte marks a bench build (decision 151: tx-dry is 0x82)
+UNOFFICIAL_BIT = 0x40  # SELF-5.1: bit 6 marks a build that isn't an official release (decision 466)
 
 
 def build_name(rest):
     """LINK-35: the build byte after HELLO's version or INFO's callsign (absent before Oct 13, 2026): its flavour,
-    bit 7 (a bench build) masked off; build_bench() says whether it is set. "tx+dry" (3): a full-power tx build with
+    bits 7 (a bench build) and 6 (unofficial, SELF-5.1) masked off; build_bench() says whether it is set. "tx+dry" (3): a full-power tx build with
     Dry TX on (TX-48), the PA drive held at 0 until it is turned off on the radio; build_dry() covers both dry kinds."""
-    return {0: "receive", 1: "tx", 2: "tx-dry", 3: "tx+dry"}.get(rest[0] & 0x7F, f"unknown {rest[0]}") if rest else "not given"
+    return {0: "receive", 1: "tx", 2: "tx-dry", 3: "tx+dry"}.get(rest[0] & 0x3F, f"unknown {rest[0]}") if rest else "not given"
 
 
 def build_dry(rest):
@@ -1456,6 +1457,11 @@ def build_dry(rest):
 def build_bench(rest):
     """LINK-35: a bench build (bit 7): the bench terminal commands (txtest, bk, mem, gpio, ...) are in it."""
     return bool(rest and rest[0] & BENCH_BIT)
+
+
+def build_official(rest):
+    """SELF-5.1: an official release (bit 6 clear; a radio before it was added never sets it)."""
+    return bool(rest) and not rest[0] & UNOFFICIAL_BIT
 
 
 UID_DIGITS = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base32 (ferrite_core::uid)
@@ -1558,7 +1564,8 @@ def run(link, a):
     if a.cmd == "hello":
         ver, rest = text(hello[3:])
         print(f"protocol {hello[0]}, max payload {hello[1]}, may write {bool(hello[2])}, firmware {ver}, "
-              f"build {build_name(rest)}{' (bench)' if build_bench(rest) else ''}")
+              f"build {build_name(rest)}{' (bench)' if build_bench(rest) else ''}"
+              f"{'' if build_official(rest) else ', unofficial'}")
     elif a.cmd == "info":
         i = read_info(link)
         print(f"firmware {i['version']} ({i['build']}{', bench' if i['bench'] else ''}); {i['channels']} channels, "

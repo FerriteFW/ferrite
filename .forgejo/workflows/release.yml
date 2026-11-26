@@ -67,9 +67,18 @@ jobs:
 
       # Every run, by hand too, keeps target/out as a download on the run's page: the update file, the reader image,
       # SHA256SUMS, their signatures and the build report.
+      # SELF-5.1 (decision 466): only a published release's image is an official build; a run by hand, like every
+      # local build, says "Unofficial build" on About. Set here only: the tests and the sim run above stay unofficial,
+      # as their screenshots expect.
       - name: Images
+        env:
+          FERRITE_OFFICIAL: ${{ github.event_name == 'release' && '1' || '' }}
         run: |
           tools/mkbtf.sh tx
+          # the release's image must say so (the build report reads the same marker)
+          if [ "$FERRITE_OFFICIAL" = 1 ] && grep -q "Unofficial build" target/ferrite-tx.bin; then
+            echo "not an official build: FERRITE_OFFICIAL didn't reach the firmware"; exit 1
+          fi
           tools/mkbtf.sh reader
           tools/mkbtf.sh restorer # Back to stock without Ferrite running (BACKUP-13)
           # The release tag without a leading v (v0.9 -> ferrite-0.9.btf); a run by hand uses the commit.

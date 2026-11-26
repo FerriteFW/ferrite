@@ -1471,6 +1471,9 @@ fn boot_report(flash: Option<(u32, u32)>, checks: &[Check], key_seen: bool) {
             let _ = ufmt::uwrite!(b, "Ferrite {} bring-up build: nothing is written to the SPI flash", VERSION);
         } else {
             let _ = ufmt::uwrite!(b, "Ferrite {} {}", VERSION, ferrite_core::build());
+            if !ferrite_core::OFFICIAL {
+                b.push(b" (unofficial build)"); // SELF-5.1
+            }
         }
     });
     if cfg!(all(feature = "tx", feature = "bench")) {

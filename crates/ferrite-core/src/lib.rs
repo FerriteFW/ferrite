@@ -91,6 +91,12 @@ pub const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
 /// The build (SELF-5): the git commit, short, "+" when built from uncommitted changes (build.rs).
 pub const BUILD: &str = env!("FERRITE_BUILD");
 
+/// SELF-5.1 (decision 466): built by FerriteFW's release workflow, the only build that sets `FERRITE_OFFICIAL=1`
+/// (build.rs). Everything else (a local build, a bench build, a fork's) says "Unofficial" on About, in `ui radio`
+/// and in the link's build byte ([`link::build::UNOFFICIAL`]). A marker, not a lock: the names policy
+/// (TRADEMARKS.md) is what keeps a modified build from passing as Ferrite.
+pub const OFFICIAL: bool = cfg!(ferrite_official);
+
 /// Set by the simulators' screenshot tests, so pictures don't change with every commit: [`build`] then reads
 /// "0000000".
 pub static BUILD_FIXED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);

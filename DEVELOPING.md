@@ -55,6 +55,7 @@ tools/mkbtf.sh reader      # target/ferrite-reader.btf: the read-only backup rea
 - `mkbtf.sh` builds, checks what must sit in fast flash (`tools/slowcheck.py`), packs the image for the stock bootloader and the `.ffw` update file.
 - Install your build with Ferrite Console (Install › Advanced, or Firmware Update), or over the cable: `.venv/bin/python tools/flash.py PORT target/ferrite-tx.ffw --backup backup.bin --dev-unsigned` (it refuses without a whole-chip backup).
 - Your own builds aren't signed: Console takes them with "Allow unsigned files" ticked, `flash.py` with `--dev-unsigned`.
+- Your own builds say "Unofficial build" on About (and Console says "Unofficial firmware"): only the release workflow sets `FERRITE_OFFICIAL=1` (SELF-5.1). Changed something? Send it back ([CONTRIBUTING.md](CONTRIBUTING.md)); a build you share needs its own name ([TRADEMARKS.md](TRADEMARKS.md)).
 - Flash the `.ffw`, not the bare `.btf`: the `.btf` leaves out the text and other parts kept in SPI flash.
 
 ## Before a commit

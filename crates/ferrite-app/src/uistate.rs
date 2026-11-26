@@ -1609,6 +1609,9 @@ pub fn radio_line<S: ChannelStore>(app: &App, st: &S, dev: &Device, i: u16, l: &
         0 => {
             l.push(b"firmware version=");
             l.push(ferrite_core::VERSION.as_bytes());
+            l.push(b" build=");
+            l.push(ferrite_core::build().as_bytes());
+            kn(l, "official", ferrite_core::OFFICIAL as u32); // SELF-5.1
             kn(l, "tx", dev.tx_built as u32);
             kn(l, "bench", dev.bench as u32);
             kn(l, "dry", app.dry_tx() as u32);

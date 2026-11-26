@@ -109,11 +109,14 @@ fn volts(b: &mut Buf<40>, mv: u16) {
     let _ = uwrite!(b, "{}.{} V", mv / 1000, Zero((mv % 1000 / 10) as u32, 2));
 }
 
+/// SELF-5.1 (decision 466): the version row's label, "Unofficial build" on any build but an official release's.
+const VERSION_LABEL: &str = if ferrite_core::OFFICIAL { "Version" } else { "Unofficial build" };
+
 const ABOUT: [InfoRow; 9] = [
-    // SELF-5: version and build (the git commit; "+" built from uncommitted changes).
-    ("Version", |_, b| {
+    // SELF-5: version and build (the git commit; "+" built from uncommitted changes); SELF-5.1: amber when unofficial.
+    (VERSION_LABEL, |_, b| {
         let _ = uwrite!(b, "{} {}", VERSION, ferrite_core::build());
-        TEXT
+        if ferrite_core::OFFICIAL { TEXT } else { AMBER }
     }),
     ("MCU", |Ctx { dev: d, .. }, b| {
         let t = &d.selftest;

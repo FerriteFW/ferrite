@@ -581,6 +581,11 @@ pub enum DebugReq {
     /// burst. Answered with [`DebugAns::Pin`].
     Pin { which: u8, mode: PinMode },
     #[cfg(feature = "bench")]
+    /// TERM-54 (a bench test): DAC1's triangle-wave tone (the key beeps' generator) at `hz` and `level` (1-11), or
+    /// off (`hz` 0), played now with no key-up and no path step, so it lands wherever the pins route DAC1 then
+    /// (TERM-46). Answered with [`DebugAns::Dac`].
+    Dac { hz: u16, level: u8 },
+    #[cfg(feature = "bench")]
     /// TERM-44 (decision 315, a bench test): the receive level meter on (zeroed), off, or only asked (`None`).
     /// Answered with [`DebugAns::Meter`].
     Meter(Option<bool>),
@@ -765,6 +770,9 @@ pub enum DebugAns {
     #[cfg(feature = "bench")]
     /// TERM-46: the pin and its level read back.
     Pin { which: u8, mode: PinMode, high: bool },
+    #[cfg(feature = "bench")]
+    /// TERM-54: the tone DAC1 plays now, its actual frequency (0: off) and level.
+    Dac { hz: u16, level: u8 },
     #[cfg(feature = "bench")]
     /// TERM-44: the receive level meter's state and its bins.
     Meter(crate::rxmeter::Report),

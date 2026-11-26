@@ -974,7 +974,7 @@ impl FakeRadio {
             DebugReq::Mic(_) => DebugAns::Mic(ferrite_core::vox::MicCapture::from_samples(&[0; ferrite_core::vox::MIC_SAMPLES], 32_000)),
             // TERM-42 - TERM-46: register overrides, the meter, FSK tests and the audio pins act on real chips and pins
             #[cfg(feature = "bench")]
-            DebugReq::RxAf(_) | DebugReq::RxIf(_) | DebugReq::Hold(_) | DebugReq::Swap(_) | DebugReq::Meter(_) | DebugReq::Fsk(_) | DebugReq::SynthFsk(_) | DebugReq::Pin { .. } => {
+            DebugReq::RxAf(_) | DebugReq::RxIf(_) | DebugReq::Hold(_) | DebugReq::Swap(_) | DebugReq::Meter(_) | DebugReq::Fsk(_) | DebugReq::SynthFsk(_) | DebugReq::Pin { .. } | DebugReq::Dac { .. } => {
                 DebugAns::Refused("a bench test of the radio's chips and pins: not in the simulator")
             }
         }

@@ -1373,6 +1373,8 @@ fn regs(r: DebugReq) -> DebugAns {
         #[cfg(feature = "bench")]
         DebugReq::Pin { which, mode } => DebugAns::Pin { which, mode, high: mode == ferrite_core::msg::PinMode::High || mode == ferrite_core::msg::PinMode::PullUp },
         #[cfg(feature = "bench")]
+        DebugReq::Dac { hz, level } => DebugAns::Dac { hz, level },
+        #[cfg(feature = "bench")]
         DebugReq::Hold(set) => DebugAns::Hold([set.flatten().unwrap_or((0, 0)), (0, 0), (0, 0), (0, 0)]),
         #[cfg(feature = "bench")]
         DebugReq::Swap(set) => DebugAns::Swap(set.unwrap_or(0)),
@@ -1425,7 +1427,8 @@ fn fsk_answer(a: ferrite_core::fskbench::Ask) -> ferrite_core::fskbench::Report 
 #[cfg(feature = "bench")]
 /// TERM-42.3: `bk hold` holds up to four registers. TERM-42.2: `bk rxif` asks the receive IF override, `bk rxif HEX` holds the whole of REG_43, `bk rxif off` ends it;
 /// anything else is refused before anything is sent. TERM-44: `meter` shows the bins (a head line and five lines of
-/// five), `meter on` and `meter off` set it; `bk rxif` and `meter` alone only read (TERM-25).
+/// five), `meter on` and `meter off` set it; `bk rxif` and `meter` alone only read (TERM-25). TERM-54: `dac HZ [LEVEL]`
+/// and `dac off` ask the Radio task for DAC1's tone; out-of-range values are refused.
 #[test]
 fn debug_bk_rxif_and_meter() {
     let mut r = Rig::main();
@@ -1512,6 +1515,22 @@ fn debug_bk_rxif_and_meter() {
     for bad in ["pin", "pin pa14 0", "pin pa15 2", "pin pc12 1 1", "pin pc9 x"] {
         r.cmd(bad);
         assert!(r.bottom().contains("pin pa15|pc12|pc9|pb8|pe1|pe4 0|1|u|d"), "{bad}: {}", r.bottom());
+    }
+    // TERM-54: `dac`
+    r.cmd("dac 1000 4");
+    assert_eq!(r.serve(4, regs), vec![DebugReq::Dac { hz: 1000, level: 4 }]);
+    assert!(r.raw().contains("dac 1000 Hz, level 4"), "{}", r.raw());
+    r.send(b"\r");
+    r.cmd("dac 1500");
+    assert_eq!(r.serve(4, regs), vec![DebugReq::Dac { hz: 1500, level: 6 }], "level 6 when left out");
+    r.send(b"\r");
+    r.cmd("dac off");
+    assert_eq!(r.serve(4, regs), vec![DebugReq::Dac { hz: 0, level: 0 }]);
+    assert!(r.raw().contains("dac off"), "{}", r.raw());
+    r.send(b"\r");
+    for bad in ["dac", "dac 50", "dac 6000", "dac 1000 12", "dac 1000 0", "dac off 3", "dac 1000 4 4"] {
+        r.cmd(bad);
+        assert!(r.bottom().contains("dac HZ [LEVEL]"), "{bad}: {}", r.bottom());
     }
     for bad in ["synthfsk", "synthfsk cal 50 0 0", "synthfsk 3000 17 0 0 1 2 3 4", "synthfsk 3000 4 0 0 1 2 3 200", "synthfsk 3000 4 0 0 1 2 3"] {
         r.cmd(bad);
@@ -2293,12 +2312,12 @@ fn debug_no_answer_and_stop() {
 #[test]
 fn user_build_refuses_bench_commands() {
     let mut r = Rig::main();
-    for c in ["mem 20000000 16", "mem32 40010808", "gpio", "bk 0 30", "bk 1 47 6142", "bk 0 dump", "bk settle 2", "si 10 00", "bt AT+VERS?", "rx both", "rx", "mic", "af", "meter", "meter on", "synthfsk cal 1000 0 0", "pin pa15 0", "pin pc9 u", "txtest suite", "txtest", "TXTEST 4fsk", "gps query 1", "gps nmea off", "gps standby 60 quiet", "lcd bl 30", "bk rxaf 700", "fsk", "fsk rx 2400", "fsk tx ffsk1800 5", "crash fault", "crash hang", "acars feed 3"] {
+    for c in ["mem 20000000 16", "mem32 40010808", "gpio", "bk 0 30", "bk 1 47 6142", "bk 0 dump", "bk settle 2", "si 10 00", "bt AT+VERS?", "rx both", "rx", "mic", "af", "meter", "meter on", "synthfsk cal 1000 0 0", "pin pa15 0", "pin pc9 u", "txtest suite", "txtest", "TXTEST 4fsk", "gps query 1", "gps nmea off", "gps standby 60 quiet", "lcd bl 30", "bk rxaf 700", "fsk", "fsk rx 2400", "fsk tx ffsk1800 5", "crash fault", "crash hang", "acars feed 3", "dac 1000"] {
         r.cmd(c);
         assert!(r.bottom().contains("not in this build: a bench build has it"), "{c}: {}", r.bottom());
         assert_eq!(r.term.debug_req(), None, "{c}: nothing sent");
     }
-    assert_eq!(super::cmd::BENCH_ONLY.len(), 17);
+    assert_eq!(super::cmd::BENCH_ONLY.len(), 18);
     r.cmd("gps");
     assert_eq!(r.serve(4, regs), vec![DebugReq::Gga], "gps alone is every build's");
     r.send(b"\r");

@@ -108,6 +108,9 @@ pub enum Kind {
     /// `pin PIN 0|1|u|d`: an audio pin (TERM-46).
     Pin { which: u8, mode: ferrite_core::msg::PinMode },
     #[cfg(feature = "bench")]
+    /// `dac HZ [LEVEL]` or `dac off`: DAC1's tone (TERM-54).
+    Dac { hz: u16, level: u8 },
+    #[cfg(feature = "bench")]
     /// `meter [on|off]`: the receive level meter (TERM-44).
     Meter(Option<bool>),
     #[cfg(feature = "bench")]
@@ -218,6 +221,8 @@ impl Job {
             Kind::SynthFsk(c) => DebugReq::SynthFsk(c),
             #[cfg(feature = "bench")]
             Kind::Pin { which, mode } => DebugReq::Pin { which, mode },
+            #[cfg(feature = "bench")]
+            Kind::Dac { hz, level } => DebugReq::Dac { hz, level },
             #[cfg(feature = "bench")]
             Kind::Meter(set) => DebugReq::Meter(set),
             #[cfg(feature = "bench")]
@@ -501,6 +506,16 @@ impl Job {
                     PinMode::PullDown => "input, pull-down",
                 };
                 put!(out, "  pin {} {}: reads {} (until the radio's next path step sets it)", PINS[which as usize % PINS.len()], m, high as u8);
+                self.st = St::Over;
+                Step::Line
+            }
+            #[cfg(feature = "bench")]
+            (Kind::Dac { .. }, DebugAns::Dac { hz, level }) => {
+                if hz == 0 {
+                    out.push(b"  dac off");
+                } else {
+                    put!(out, "  dac {} Hz, level {}: DAC1 plays where the pins route it (a key beep or path step can stop it)", hz, level);
+                }
                 self.st = St::Over;
                 Step::Line
             }

@@ -117,6 +117,11 @@ impl Radio {
                 crate::hal::time::delay_us(50); // the level settles (a pull through a few k into a few nF)
                 DebugAns::Pin { which, mode, high: p.read() }
             }
+            // TERM-54: DAC1's tone now, wherever the pins route it
+            DebugReq::Dac { hz, level } => {
+                crate::hal::tone::start(hz as u32, level);
+                DebugAns::Dac { hz: crate::hal::tone::hz() as u16, level: if hz == 0 { 0 } else { level } }
+            }
             // TERM-45 (decision 318): tone-generator 4FSK while keyed (transmit builds)
             #[cfg(feature = "tx")]
             DebugReq::SynthFsk(c) => self.synth_fsk(c),

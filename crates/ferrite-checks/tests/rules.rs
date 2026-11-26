@@ -359,3 +359,33 @@ fn channels_are_read_on_demand() {
     assert!(members.contains("pub nums: [u16; ZONE_CAP as usize],"), "a list holds a zone's channels at most");
     assert!(!body.contains("Channel;") && !body.contains("[Channel"), "no channel array in the store");
 }
+
+/// DISP-23.1, PWR-23: DMA2's clock bit (CRM AHBEN 0x4002_1014 bit 1) has one owner. Only `hal/audio.rs` names
+/// the register; its writes there are each inside a critical section (the DMA1 bit's around the capture, and
+/// `dma2_use`, which counts DMA2's users: the playback and the screen light's dither), so neither clears the
+/// other's bit and no user drops the clock while another runs. `hal/backlight.rs` may read it (the bench `lcd`
+/// readback) but never writes it. TMR8's DMA request enable (IDEN) is the backlight's alone.
+#[test]
+fn dma2_clock_one_owner() {
+    let r = root();
+    let named: Vec<String> = rs_files("firmware/src")
+        .into_iter()
+        .filter(|p| hex_literals(&code(p)).contains(&0x4002_1014))
+        .map(|p| p.strip_prefix(&r).unwrap().to_string_lossy().into_owned())
+        .collect();
+    only(named, &["firmware/src/hal/audio.rs"], "CRM AHBEN's address");
+    only(files_using("firmware/src", "CRM_AHBEN"), &["firmware/src/hal/audio.rs", "firmware/src/hal/backlight.rs"], "CRM_AHBEN");
+    let bl = code(&r.join("firmware/src/hal/backlight.rs"));
+    assert!(!bl.contains("modify(super::audio::CRM_AHBEN") && !bl.contains("wr(super::audio::CRM_AHBEN"), "backlight.rs writes AHBEN");
+    let audio = code(&r.join("firmware/src/hal/audio.rs"));
+    let writes: Vec<&str> = audio.lines().filter(|l| l.contains("modify(CRM_AHBEN") || l.contains("wr(CRM_AHBEN")).collect();
+    assert!(!writes.is_empty());
+    let in_cs = |l: &str| l.contains("critical_section::with");
+    // dma2_use's two writes sit in its critical section; every other write carries its own.
+    let body = audio.split("fn dma2_use").nth(1).expect("dma2_use").split("\n}").next().unwrap();
+    assert!(body.contains("critical_section::with"), "dma2_use outside a critical section");
+    for l in writes {
+        assert!(in_cs(l) || body.contains(l.trim()), "an AHBEN write outside a critical section: {l}");
+    }
+    only(files_using("firmware/src", "TMR8 + TMR_IDEN"), &["firmware/src/hal/backlight.rs"], "TMR8's DMA request enable");
+}

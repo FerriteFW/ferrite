@@ -1956,7 +1956,7 @@ fn debug_lcd() {
     let mut r = Rig::main();
     r.cmd("lcd");
     assert_eq!(r.serve(4, regs), vec![DebugReq::Lcd(LcdSet::Ask)]);
-    assert!(r.raw().contains("lcd: idle on, partial off, sleep off, fps normal, bl normal, keys normal, hz 31687, dither 1.0 % (plain)"), "{}", r.raw());
+    assert!(r.raw().contains("lcd: idle on, partial off, sleep off, fps normal, bl normal, keys normal, light 0.0 %, hz 31687, dither 1.0 % (plain)"), "{}", r.raw());
     for (cmd, want) in [
         ("lcd bl 30", LcdSet::Bl(Some(30))),
         ("lcd keys 0", LcdSet::Keys(Some(0))),

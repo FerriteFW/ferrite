@@ -988,7 +988,8 @@ pub async fn task() {
                             use ferrite_core::screenpwm::{DITHER_TENTHS, SCREEN_HZ};
                             backlight::tune(new.hz.map_or(SCREEN_HZ, u32::from), new.dither.unwrap_or(DITHER_TENTHS));
                         }
-                        new.dithering = backlight::dithering();
+                        (new.dithering, new.dither_hw) = backlight::dithering();
+                        new.light = backlight::level();
                         lcdb = new;
                         ports.debug_answer(ferrite_core::msg::DebugAns::Lcd(lcdb));
                     }

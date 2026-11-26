@@ -148,15 +148,19 @@ fn screen(t: Tree) {
     let permille = SCREEN.load(Relaxed);
     let depth = DEPTH.load(Relaxed);
     let n = nominal(t);
-    if pwm::plain(permille, depth) {
-        stop();
-        wr(TMR8 + TMR_PR, n - 1);
-    } else if !DITHERING.load(Relaxed) {
-        wr(TMR8 + TMR_PR, n - 1); // until the first overflow's transfer
-        for (p, &v) in PERIODS.iter().zip(DITHER.iter()) {
-            p.store(pwm::step(n, depth, v) - 1, Relaxed);
+    match pwm::act(DITHERING.load(Relaxed), permille, depth) {
+        pwm::Act::Plain => {
+            stop();
+            wr(TMR8 + TMR_PR, n - 1);
         }
-        start();
+        pwm::Act::Start => {
+            wr(TMR8 + TMR_PR, n - 1); // until the first overflow's transfer
+            for (p, &v) in PERIODS.iter().zip(DITHER.iter()) {
+                p.store(pwm::step(n, depth, v) - 1, Relaxed);
+            }
+            start();
+        }
+        pwm::Act::Keep => {}
     }
     wr(TMR8 + TMR_C1DT, pwm::duty(n, permille));
 }
@@ -208,8 +212,19 @@ pub(super) fn retime(t: Tree) {
     wr(TMR2 + TMR_SWEVT, 1);
 }
 
-/// Bench builds (TERM-40): the screen's dither runs now (not while the light is dark or full on, DISP-23.1).
+/// Bench builds (TERM-40): the screen's dither runs now as this file believes it (not while the light is dark or
+/// full on, DISP-23.1), and as the hardware says: DMA2 clocked, its channel 1 on and TMR8's OVFDEN set. The `lcd`
+/// readback shows both, so a light gone dark by its timeout (plain) isn't taken for a dither that failed.
 #[cfg(feature = "bench")]
-pub fn dithering() -> bool {
-    DITHERING.load(Relaxed)
+pub fn dithering() -> (bool, bool) {
+    let hw = rd(super::audio::CRM_AHBEN) & super::audio::CRM_AHB_DMA2 != 0
+        && rd(ch(DMA2, DMA_CH) + CH_CTRL) & DMA_EN != 0
+        && rd(TMR8 + TMR_IDEN) & IDEN_OVFDEN != 0;
+    (DITHERING.load(Relaxed), hw)
+}
+
+/// Bench builds (TERM-40): the screen light's duty now, thousandths (0 while dark).
+#[cfg(feature = "bench")]
+pub fn level() -> u16 {
+    SCREEN.load(Relaxed)
 }

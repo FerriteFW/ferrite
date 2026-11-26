@@ -63,6 +63,34 @@ pub const fn plain(permille: u16, tenths: u16) -> bool {
     permille == 0 || permille >= 1000 || tenths == 0
 }
 
+/// What `hal::backlight::screen` does for a level (DISP-23.1), given whether the dither runs now.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Act {
+    /// Stop the dither (if it runs) and load the nominal period.
+    Plain,
+    /// Fill the table and start the dither.
+    Start,
+    /// Running already: only the compare changes.
+    Keep,
+}
+
+/// [`Act`] for `permille` at depth `tenths`, the dither running or not.
+pub const fn act(running: bool, permille: u16, tenths: u16) -> Act {
+    if plain(permille, tenths) {
+        Act::Plain
+    } else if running {
+        Act::Keep
+    } else {
+        Act::Start
+    }
+}
+
+/// DMA2's users after `user` (a bit) starts (`on`) or stops using it: `hal::audio::dma2_use` clocks DMA2 while
+/// the result isn't 0 (the playback and the screen light's dither, DISP-23.1, PWR-23).
+pub const fn dma2_users(users: u8, user: u8, on: bool) -> u8 {
+    if on { users | user } else { users & !user }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -153,5 +181,76 @@ mod tests {
         assert_eq!(duty(3787, 500), 1893);
         assert!(plain(0, 10) && plain(1000, 10) && plain(500, 0));
         assert!(!plain(500, 10));
+    }
+
+    /// DISP-23.1: the dither's start and stop as `hal::backlight` and `hal::audio::dma2_use` do them, against a
+    /// model of the registers, through random levels, speed switches (`retime`: stop, then the level again), bench
+    /// depth changes (`tune`) and playbacks starting and stopping. The flag the `lcd` readback shows always agrees
+    /// with the hardware: DMA2 clocked, channel 1 on and TMR8's OVFDEN set exactly while it runs, and it runs
+    /// exactly when the level isn't plain. (Black, Nov 25, 2026, read the flag set with DMA2 unclocked and OVFDEN
+    /// clear: no sequence of these reaches that.)
+    #[test]
+    fn start_stop_agree_with_hardware() {
+        const PLAY: u8 = 1;
+        const LIGHT: u8 = 2;
+        #[derive(Default)]
+        struct Hw {
+            flag: bool,
+            users: u8,
+            clock: bool,
+            ovfden: bool,
+            ch_en: bool,
+            level: u16,
+            depth: u16,
+        }
+        impl Hw {
+            fn use_dma2(&mut self, user: u8, on: bool) {
+                self.users = dma2_users(self.users, user, on);
+                self.clock = self.users != 0;
+            }
+            fn stop(&mut self) {
+                if !core::mem::replace(&mut self.flag, false) {
+                    return;
+                }
+                self.ovfden = false;
+                self.ch_en = false;
+                self.use_dma2(LIGHT, false);
+            }
+            fn screen(&mut self) {
+                match act(self.flag, self.level, self.depth) {
+                    Act::Plain => self.stop(),
+                    Act::Start => {
+                        self.use_dma2(LIGHT, true);
+                        self.ch_en = self.clock; // an unclocked DMA2 drops the write
+                        self.ovfden = true;
+                        self.flag = true;
+                    }
+                    Act::Keep => {}
+                }
+            }
+        }
+        let mut hw = Hw { depth: DITHER_TENTHS, ..Default::default() };
+        let mut x = 472u32;
+        let levels = [0u16, 45, 90, 355, 999, 1000];
+        for _ in 0..20_000 {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            match x % 6 {
+                0 | 1 => hw.level = levels[(x >> 8) as usize % levels.len()],
+                2 => hw.stop(), // retime's stop; the screen below is its second half
+                3 => {
+                    hw.depth = [0, DITHER_TENTHS, DITHER_MAX][(x >> 8) as usize % 3];
+                    hw.stop();
+                }
+                4 => hw.use_dma2(PLAY, true),
+                _ => hw.use_dma2(PLAY, false),
+            }
+            hw.screen();
+            assert_eq!(hw.flag, !plain(hw.level, hw.depth));
+            assert_eq!((hw.ovfden, hw.ch_en), (hw.flag, hw.flag));
+            assert!(!hw.flag || hw.clock, "running with DMA2 unclocked");
+            assert_eq!(hw.clock, hw.users != 0);
+        }
     }
 }

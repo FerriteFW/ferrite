@@ -59,7 +59,7 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
                 w::tag(lcd, 232, 24, b"RX", GREEN, BG);
                 // to x 204, 4 px short of the tag: with the header at its 140 px least, to 200 cut "Muted" (35 px in 34)
                 w::field(lcd, 26 + hw, 204 - 26 - hw, 22, 40, 36, b"Muted", &w::st(&UI_12, sc, BG, Align::Right));
-            } else if matches!(state, "RX" | "TX" | "MON" | "FM") {
+            } else if matches!(state, "RX" | "TX" | "MON" | "WFM") {
                 w::tag(lcd, 232, 24, state.as_bytes(), sc, BG);
             } else if state != "idle" {
                 w::field(lcd, 26 + hw, 206 - hw, 22, 40, 36, state.as_bytes(), &w::st(&UI_12, sc, BG, Align::Right));
@@ -334,8 +334,8 @@ pub fn activity(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>)
                 }
             }
         } else if super::home::card_kind(app, s) == 2 {
-            // BCR-26: FM, as much of the RDS text as fits, the stereo pilot
-            cols[0].set(b"FM");
+            // BCR-26: WFM, as much of the RDS text as fits, the stereo pilot
+            cols[0].set(b"WFM");
             if let ModeLive::Fm { ps, rt, stereo, .. } = live.mode {
                 if app.bcast_slot() == Some(s) && app.radio.fm_on {
                     cols[1].set(w::fit(crate::bcast::rds_text(&ps, &rt), &UI_12, 104));

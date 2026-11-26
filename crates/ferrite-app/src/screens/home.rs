@@ -863,7 +863,7 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
     let mut clr = Buf::<16>::new();
     let mut clr_c = AMBER;
     let c = app.slots[s as usize].clar;
-    let tagged = matches!(state, "RX" | "TX" | "MON" | "FM");
+    let tagged = matches!(state, "RX" | "TX" | "MON" | "WFM");
     if let Some((t, ab)) = app.aprs_priority().filter(|_| aprs) {
         clr.set(t.as_bytes());
         clr_c = if ab { AMBER } else { SUB };
@@ -1221,7 +1221,7 @@ pub(crate) fn head_right_w(big: bool, state: &str, clr: &Buf<16>) -> i32 {
     }
     match state {
         "RX muted" => beside(32 + muted - 8), // HOME-15.3: the RX tag and "Muted" left of it
-        "RX" | "TX" | "MON" | "FM" => (text4_width(state.as_bytes(), &UI_12B) + 10).max(if cw > 0 { 32 + cw } else { 0 }),
+        "RX" | "TX" | "MON" | "WFM" => (text4_width(state.as_bytes(), &UI_12B) + 10).max(if cw > 0 { 32 + cw } else { 0 }),
         "idle" => cw,
         _ => beside(text4_width(state.as_bytes(), &UI_12)),
     }
@@ -1298,7 +1298,7 @@ mod tests {
         let head = "999 \u{b7} WWWWWWWWWWWWWWWW";
         let hw = |big: bool, state: &str, clr: &[u8]| (226 - 6 - super::head_right_w(big, state, &Buf::from(clr)) - 34).max(120);
         let need = text4_width(head.as_bytes(), &UI_12);
-        for st in ["idle", "RX", "MON", "FM"] {
+        for st in ["idle", "RX", "MON", "WFM"] {
             assert!(need <= hw(true, st, b""), "large card, {st}: {need} > {}", hw(true, st, b""));
         }
         // ("scanning" heads "SCAN · band": no zone name)

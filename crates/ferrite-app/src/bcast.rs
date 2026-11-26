@@ -1,6 +1,6 @@
 //! Broadcast FM by frequency (manual chapter 20, BCR-21 to BCR-30; decision 107): a slot tuned into the broadcast
 //! FM band plays on the SI4732 by itself, with no menu, and becomes a BK4829 slot again when tuned out. One slot
-//! at a time: the slot that last came into the band has it, and another one in the band shows "FM on B" with no
+//! at a time: the slot that last came into the band has it, and another one in the band shows "WFM on B" with no
 //! audio until it is tuned out. The FM screen and the broadcast slot share one FM state: its frequency is the
 //! slot's while there is one, and the presets recall into it.
 //!
@@ -169,7 +169,7 @@ impl App {
     }
 
     /// HOME-14, MODE-5: home's strip can't sweep beside the broadcast: the active slot is in the broadcast band (it
-    /// plays, or shows "FM on B"), or needs the band relay the broadcast leaves released (BCR-15).
+    /// plays, or shows "WFM on B"), or needs the band relay the broadcast leaves released (BCR-15).
     /// MODE-5.1 (ferrite#120): nor with the APRS slot active: a sweep is all the Radio task does while it runs (no
     /// watch turns, no turn for C, no squelch for the decoder's capture), so around C APRS would hear nothing. With
     /// A or B active the strip sweeps and APRS waits; # pauses the strip ([`App::strip_paused`]) to give it back.

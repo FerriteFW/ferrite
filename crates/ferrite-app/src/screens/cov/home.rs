@@ -187,3 +187,30 @@ fn channel_step_in_an_empty_zone() {
     t.app.key_up(Key::VfoMem, t.t + 100, &empty);
     assert_eq!(t.toast(), "No channels yet / ");
 }
+
+/// VFO-18.2: on the airband with the 8.33 kHz step every home layout shows the channel name ("118.010" for
+/// 118.00833) without 10 Hz digits, and 121.500 as itself; with another step, the frequency.
+#[test]
+fn airband_833_names() {
+    for l in 0..3 {
+        let mut t = T::ready();
+        t.app.set_layout(l);
+        let a = t.app.active;
+        t.app.set_vfo(a, mhz(118) + 833);
+        t.app.slots[a as usize].cfg_mut().step = crate::slot::STEP_833;
+        t.wait(100);
+        t.shows("118.010");
+        t.hides("118.008 33"); // the single layout's scope strip keeps its centre's frequency (a scale)
+        t.hides("118.010 33");
+        t.app.set_vfo(a, mhz(121) + 50_000);
+        t.app.slots[a as usize].cfg_mut().step = crate::slot::STEP_833;
+        t.wait(100);
+        t.shows("121.500"); // a block's base keeps its 25 kHz name, not 121.505
+        t.hides("121.505");
+        t.app.set_vfo(a, mhz(118) + 833);
+        t.app.slots[a as usize].cfg_mut().step = 11; // 25 kHz
+        t.wait(100);
+        t.shows("118.008 33");
+        t.hides("118.010");
+    }
+}

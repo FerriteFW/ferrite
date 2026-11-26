@@ -120,6 +120,55 @@ pub fn parse(s: &[u8]) -> Option<Freq10> {
     Some(mhz * 100_000 + frac)
 }
 
+/// The airband's voice band, where 8.33 kHz channels are named (VFO-18.2): 117.975 to 137.000 MHz, the band ICAO
+/// Annex 10 Volume V 4.1.1 allots to the aeronautical mobile (R) service.
+pub const AIR_COM: (Freq10, Freq10) = (11_797_500, 13_700_000);
+
+/// Display only: the value is an 8.33 kHz channel name, not a frequency, and is drawn with three decimals and no
+/// 10 Hz digits ([`channel_name`]). Never tuned: [`channel_freq`] gives the frequency a name stands for.
+pub const NAMED: Freq10 = 1 << 31;
+
+/// VFO-18.2: the channel name of an airband frequency on the 8.33 kHz grid, as ICAO Annex 10 Volume V Table
+/// 4-1 (bis) pairs them: each 25 kHz block keeps its 25 kHz name (118.000) for its base, and its other two 8.33 kHz
+/// channels are named 10 and 15 kHz above the base (118.00833 is 118.010, 118.01667 is 118.015). The base's own
+/// 8.33 kHz name (118.005) is the same frequency; the 25 kHz name is shown, so 121.500 stays 121.500. None off
+/// the grid or off the band. The name is in 10 Hz units (11_801_000 for 118.010).
+pub fn channel_name(f: Freq10) -> Option<Freq10> {
+    if !(AIR_COM.0..AIR_COM.1).contains(&f) {
+        return None;
+    }
+    let (block, r) = (f / 2500 * 2500, f % 2500);
+    match r {
+        0 => Some(f),
+        833 => Some(block + 1000),
+        1667 => Some(block + 1500),
+        _ => None,
+    }
+}
+
+/// VFO-18.2: the frequency an airband channel name stands for (Table 4-1 (bis)): a 25 kHz block's base name
+/// (118.000) and its first 8.33 kHz name (118.005) are the base, +10 kHz (118.010) is +8.333 kHz and +15 kHz
+/// (118.015) is +16.667 kHz. None for any other value: the unused +20 kHz (118.020), a value off the 5 kHz names
+/// (VDL Mode 3's 118.001-118.004 aren't voice) or off the band.
+pub fn channel_freq(name: Freq10) -> Option<Freq10> {
+    if !(AIR_COM.0..AIR_COM.1).contains(&name) {
+        return None;
+    }
+    let (block, r) = (name / 2500 * 2500, name % 2500);
+    match r {
+        0 | 500 => Some(block),
+        1000 => Some(block + 833),
+        1500 => Some(block + 1667),
+        _ => None,
+    }
+}
+
+/// f for display with the 8.33 kHz step (VFO-18.2): its channel name tagged [`NAMED`] on the airband's grid, else
+/// f itself.
+pub fn shown_833(f: Freq10) -> Freq10 {
+    channel_name(f).map_or(f, |n| n | NAMED)
+}
+
 /// Tiny self-check for the on-target image.
 pub fn selftest() -> bool {
     let mut b = [0u8; 16];
@@ -191,5 +240,57 @@ mod tests {
         assert_eq!(fmt(130_000_000, 16), "1300.000 00");
         assert_eq!(parse(b"12345.6"), None);
         assert_eq!(parse(b"1300"), Some(130_000_000));
+    }
+    /// VFO-18.2: the pairing of ICAO Annex 10 Volume V Table 4-1 (bis), its 118.000-118.100 rows, both ways.
+    #[test]
+    fn channel_names_833() {
+        let n = |s: &[u8]| parse(s).unwrap();
+        // (channel name, frequency) as the table lists them; the 25 kHz names and their first 8.33 name share one
+        for (name, f) in [
+            ("118.000", "118.00000"),
+            ("118.005", "118.00000"),
+            ("118.010", "118.00833"),
+            ("118.015", "118.01667"),
+            ("118.025", "118.02500"),
+            ("118.030", "118.02500"),
+            ("118.035", "118.03333"),
+            ("118.040", "118.04167"),
+            ("118.050", "118.05000"),
+            ("118.055", "118.05000"),
+            ("118.060", "118.05833"),
+            ("118.065", "118.06667"),
+            ("118.075", "118.07500"),
+            ("118.080", "118.07500"),
+            ("118.085", "118.08333"),
+            ("118.090", "118.09167"),
+            ("118.100", "118.10000"),
+            ("121.500", "121.50000"),
+            ("136.990", "136.99167"),
+        ] {
+            assert_eq!(channel_freq(n(name.as_bytes())), Some(n(f.as_bytes())), "{name}");
+        }
+        // Frequency to name: the 25 kHz name for a block's base, so 121.500 stays 121.500
+        for (f, name) in [("118.00000", "118.000"), ("118.00833", "118.010"), ("118.01667", "118.015"), ("118.04167", "118.040"), ("121.50000", "121.500"), ("117.97500", "117.975")] {
+            assert_eq!(channel_name(n(f.as_bytes())), Some(n(name.as_bytes())), "{f}");
+        }
+        // Every name maps back to itself or to its block's base name, all through the band
+        let mut g = AIR_COM.0;
+        while g < AIR_COM.1 {
+            for o in [0, 833, 1667] {
+                let name = channel_name(g + o).unwrap();
+                assert_eq!(channel_freq(name), Some(g + o));
+            }
+            g += 2500;
+        }
+        // Not names: +20 kHz, VDL Mode 3's slots, the 10 Hz digits, off the band
+        for s in ["118.020", "118.045", "118.001", "118.024", "118.0083", "117.970", "137.000", "108.000", "146.010"] {
+            assert_eq!(channel_freq(n(s.as_bytes())), None, "{s}");
+        }
+        // Not on the grid or off the band: no name, and shown as the frequency
+        for f in [n(b"118.008"), n(b"118.010"), n(b"137.00000"), n(b"146.00833")] {
+            assert_eq!(channel_name(f), None);
+            assert_eq!(shown_833(f), f);
+        }
+        assert_eq!(shown_833(n(b"118.00833")), n(b"118.010") | NAMED);
     }
 }

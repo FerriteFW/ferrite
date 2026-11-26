@@ -964,20 +964,21 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
         return;
     }
     let f = app.shown_freq(s, live);
+    let fl = app.label(s, f); // VFO-18.2
     // Channel mode puts the name first, the frequency small under it (HOME-4); a VFO, a scan or a channel
     // without a name shows the frequency large.
     let name = app.card_name(s, live, cx.store);
     if big {
-        if let Some(clear) = app.dirty_shape(R_FREQ + p, Mix::new().h(&f).h(&name).get(), name.is_empty()) {
+        if let Some(clear) = app.dirty_shape(R_FREQ + p, Mix::new().h(&fl).h(&name).get(), name.is_empty()) {
             redraw_box!(clear, lcd, (15, y + 28, 211, 49, SURFACE), {
                 if name.is_empty() {
-                    w::freq(lcd, 15, 226, y + 67, f, &DIG_46, &DIG_28, FREQ, SUB, SURFACE);
+                    w::freq(lcd, 15, 226, y + 67, fl, &DIG_46, &DIG_28, FREQ, SUB, SURFACE);
                 } else {
                     // 26 px when the whole name fits (13 characters), else 22 px (16 always fit).
                     let nb = name.as_bytes();
                     let (font, base) = if text4_width(nb, &NAME_26) <= 211 { (&NAME_26, y + 54) } else { (&NAME_22, y + 52) };
                     w::field(lcd, 15, 211, y + 29, y + 60, base, w::fit(nb, font, 211), &w::st(font, TEXT, SURFACE, Align::Left));
-                    w::freq(lcd, 15, 226, y + 75, f, &DIG_17, &DIG_17, SUB, SUB, SURFACE);
+                    w::freq(lcd, 15, 226, y + 75, fl, &DIG_17, &DIG_17, SUB, SUB, SURFACE);
                 }
             });
         }
@@ -1027,16 +1028,16 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
         if lv.scanning {
             let _ = uwrite!(right, "{} hits", lv.hits);
         } else if !name.is_empty() {
-            right.set(w::freq3(f).as_bytes());
+            right.set(w::freq3(fl).as_bytes());
         }
         let (x, c) = if name.is_empty() { (130, TEXT) } else { (170, SUB) };
         let info = app.dirty(R_INFO + p, Mix::new().h(&right).get());
-        let freq = app.dirty_shape(R_FREQ + p, Mix::new().h(&f).h(&name).get(), name.is_empty());
+        let freq = app.dirty_shape(R_FREQ + p, Mix::new().h(&fl).h(&name).get(), name.is_empty());
         if let Some(clear) = freq {
             // A new layout redraws the row in bands with the right-hand text, which shares it.
             redraw_box!(clear, lcd, (15, y + 25, 211, 24, SURFACE), {
                 if name.is_empty() {
-                    w::freq(lcd, 15, 130, y + 45, f, &DIG_26, &DIG_17, TEXT, SUB, SURFACE);
+                    w::freq(lcd, 15, 130, y + 45, fl, &DIG_26, &DIG_17, TEXT, SUB, SURFACE);
                 } else {
                     // The 22 px name when it fits beside the frequency, else 15 px bold.
                     let nb = name.as_bytes();

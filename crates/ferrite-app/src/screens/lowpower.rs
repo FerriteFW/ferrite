@@ -98,7 +98,7 @@ pub(crate) fn render(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelSt
         drew = true;
     }
     // The frequency (the transmit one while keyed), big.
-    let f = if keyed { app.tuned_cfg(a).tx_of(app.tuned_freq(a)) } else { app.shown_freq(a, live) };
+    let f = if keyed { app.tuned_cfg(a).tx_of(app.tuned_freq(a)) } else { app.label(a, app.shown_freq(a, live)) }; // VFO-18.2
     if app.dirty(R_FREQ, Mix::new().h(&f).get()) || drew {
         lcd.fill(SIDE_W, FREQ.0, 240 - 2 * SIDE_W, FREQ.1 - FREQ.0, LP_BLACK);
         w::freq(lcd, 10, 232, FREQ.2, f, &DIG_46, &DIG_28, LP_TEXT, LP_SUB, LP_BLACK);

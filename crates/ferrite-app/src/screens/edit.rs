@@ -80,7 +80,7 @@ impl View for Edit {
             w::field(lcd, 27, 160, 25, 42, 38, w::fit(head.as_bytes(), &UI_12, 160), const { &w::st(&UI_12, SUB, BG, Align::Left) }); // HOME-4.3
             w::tag(lcd, 232, 25, b"EDIT", BLUE, BG); // EDIT-1
         }
-        let f = app.shown_freq(a, live);
+        let f = app.label(a, app.shown_freq(a, live)); // VFO-18.2: the 8.33 kHz channel name
         // R_FREQ is grid cell 6's region (R_ROW + 6): the frequency uses R_SUB.
         if app.dirty(R_SUB, Mix::new().h(&f).get()) {
             w::freq(lcd, 7, 232, 76, f, &DIG_46, &DIG_28, TEXT, SUB, BG);
@@ -134,7 +134,7 @@ pub(crate) fn other_slots(app: &mut App, lcd: &mut impl Panel, live: &ferrite_co
     // The other two slots, one line each.
     for (k, s) in [(a + 1) % 3, (a + 2) % 3].into_iter().enumerate() {
         let mut t = Buf::<48>::new();
-        t.push(w::freq3(app.shown_freq(s, live)).as_bytes());
+        t.push(w::freq3(app.label(s, app.shown_freq(s, live))).as_bytes());
         let sl = &app.slots[s as usize];
         let lv = &live.slots[s as usize];
         if lv.scanning {

@@ -535,6 +535,12 @@ impl App {
         self.slot(s).on_channel().then(|| crate::chanscan::at(self, s, p, store)).flatten()
     }
 
+    /// f as slot s draws it: on the airband with the 8.33 kHz step, the channel name ("118.010" for 118.00833,
+    /// VFO-18.2), tagged [`ferrite_core::freq::NAMED`] for the widgets; else f.
+    pub(crate) fn label(&self, s: u8, f: u32) -> u32 {
+        if self.tuned_cfg(s).step == crate::slot::STEP_833 { ferrite_core::freq::shown_833(f) } else { f }
+    }
+
     /// The slot's frequency, or the scan's current step while it scans.
     pub(crate) fn shown_freq(&self, s: u8, live: &LiveAll) -> u32 {
         let lv = &live.slots[s as usize];

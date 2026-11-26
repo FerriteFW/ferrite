@@ -5,6 +5,11 @@
 //!
 //! - `FERRITE_FUZZ_SCALE=N` (default 1) runs N times the cases, for a long CI run.
 //! - `FERRITE_FUZZ_CASE=SEED` runs one case alone (the seed a failure printed).
+//! - `FERRITE_FUZZ_SEED=N` (default 0) mixes N into every target's seed: other cases than the default run's, for
+//!   long runs that each try new inputs (`FERRITE_FUZZ_SCALE=100 FERRITE_FUZZ_SEED=$RANDOM cargo nextest run fuzz`).
+//! - A case that never returns (a hang: an endless loop on some input) is caught by a watchdog after five times the
+//!   target's slow limit (at least 10 s): it prints and saves the input as a failure does, then aborts the test
+//!   process (a stuck thread can't be unwound).
 //! - `FERRITE_FUZZ_NO_TESTDATA=1` leaves out the test data's recordings ([`testdata_dir`]), as CI runs.
 //! - A failure prints the target, the case's seed and the input as hex, and writes the input to
 //!   `target/fuzz-found/TARGET/SEED.hex`. Copy that file into `fuzz/regress/TARGET/` to keep it: every file there
@@ -12,6 +17,7 @@
 
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 /// A small PRNG (SplitMix64): std only, the same numbers on every machine.
@@ -223,6 +229,8 @@ pub struct Fuzz {
 
 impl Fuzz {
     pub fn new(name: &str, seed: u64, cases: usize) -> Self {
+        let mix = std::env::var("FERRITE_FUZZ_SEED").ok().and_then(|s| s.trim().parse::<u64>().ok()).unwrap_or(0);
+        let seed = if mix == 0 { seed } else { Rng::new(seed ^ mix.rotate_left(32)).u64() };
         Fuzz { name: name.into(), seed, cases: cases * scale(), slow: Duration::from_secs(2) }
     }
 
@@ -237,7 +245,9 @@ impl Fuzz {
     pub fn run(self, mut make: impl FnMut(&mut Rng) -> Vec<u8>, mut check: impl FnMut(&[u8])) {
         let started = Instant::now();
         let mut failed = Vec::new();
+        let dog = Watchdog::start(&self.name, (self.slow * 5).max(Duration::from_secs(10)));
         for (file, input) in regressions(&self.name) {
+            dog.case(0, &input);
             if let Err(why) = self.one(&input, &mut check) {
                 eprintln!("fuzz {}: regression {} fails again: {why}\n  input ({} bytes): {}", self.name, file, input.len(), hex(&input));
                 failed.push(file);
@@ -255,6 +265,7 @@ impl Fuzz {
             }
             let mut r = Rng::new(case);
             let input = make(&mut r);
+            dog.case(case, &input);
             if let Err(why) = self.one(&input, &mut check) {
                 let saved = save(&self.name, case, &input);
                 eprintln!(
@@ -272,6 +283,7 @@ impl Fuzz {
                 }
             }
         }
+        dog.stop();
         eprintln!("fuzz {}: {} cases in {} ms", self.name, self.cases, started.elapsed().as_millis());
         assert!(failed.is_empty(), "fuzz {}: {} failed: {failed:?} (inputs above)", self.name, failed.len());
     }
@@ -289,6 +301,52 @@ impl Fuzz {
             Ok(()) if took > self.slow => Err(format!("took {} ms (limit {} ms)", took.as_millis(), self.slow.as_millis())),
             Ok(()) => Ok(()),
         }
+    }
+}
+
+/// The case running now, for [`Watchdog`]: when it started, its seed and its input.
+type Running = Arc<Mutex<Option<(Instant, u64, Vec<u8>)>>>;
+
+/// Catches a case that never returns: a thread that looks at the running case every 50 ms and, once it has run
+/// longer than the limit, reports it (seed, input, saved file) and aborts the process.
+struct Watchdog {
+    now: Running,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl Watchdog {
+    fn start(name: &str, limit: Duration) -> Self {
+        let now: Running = Arc::new(Mutex::new(None));
+        let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (n, s, name) = (now.clone(), stop.clone(), name.to_string());
+        std::thread::spawn(move || {
+            while !s.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(Duration::from_millis(50));
+                let g = n.lock().unwrap_or_else(|e| e.into_inner());
+                if let Some((t, case, input)) = g.as_ref().filter(|(t, _, _)| t.elapsed() > limit) {
+                    let saved = save(&name, *case, input);
+                    eprintln!(
+                        "fuzz {name}: case {case:#x} HUNG (still running after {} ms, limit {} ms)\n  FERRITE_FUZZ_CASE={case:#x} runs it alone\n  input ({} bytes): {}\n  saved: {}",
+                        t.elapsed().as_millis(),
+                        limit.as_millis(),
+                        input.len(),
+                        hex(input),
+                        saved.map_or_else(|| "not saved".into(), |p| p.display().to_string()),
+                    );
+                    std::process::abort();
+                }
+            }
+        });
+        Watchdog { now, stop }
+    }
+
+    fn case(&self, case: u64, input: &[u8]) {
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = Some((Instant::now(), case, input.to_vec()));
+    }
+
+    fn stop(&self) {
+        self.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        *self.now.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 }
 

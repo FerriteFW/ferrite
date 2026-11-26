@@ -547,7 +547,9 @@ impl<const N: usize, const POOL: usize> Log<N, POOL> {
         self.frames = self.frames.saturating_add(1);
         if !f.crc_ok {
             self.bad = self.bad.saturating_add(1);
-        } else if self.recent.iter().any(|&(c, t)| c == f.crc && t != 0 && now_s.wrapping_sub(t) < DUP_S) {
+        } else if self.recent.iter().any(|&(c, t)| c == f.crc && t != 0 && now_s.wrapping_sub(t).wrapping_add(1) <= DUP_S) {
+            // (`t` is the second it came with its low bit set, so up to 1 s late: a copy in the same even second
+            // read as 2^32 - 1 seconds old, and was kept twice)
             self.dups = self.dups.saturating_add(1);
             return;
         } else {
@@ -914,6 +916,12 @@ mod tests {
         assert_eq!((l.len(), l.dups), (1, 1));
         push(&mut l, &DOWN, 10 + DUP_S + 1);
         assert_eq!(l.len(), 2, "long after, it's a new message");
+        // a copy in the same second as the first, an even one (its stamp is kept with the low bit set, a second
+        // ahead): a copy too, not 2^32 - 1 seconds old (found by fuzz_acars_clock)
+        let mut l = L::new();
+        push(&mut l, &DOWN, 20);
+        push(&mut l, &DOWN, 20);
+        assert_eq!((l.len(), l.dups), (1, 1));
     }
 
     /// ACARS-2.4: a downlink's blocks joined by message number, another message between them.

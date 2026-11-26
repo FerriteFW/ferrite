@@ -8,7 +8,10 @@ The fuzz targets live in `ferrite/fuzz/`, a workspace of its own. They are not p
 
 - The targets' bodies are in `fuzz/src/harness.rs`; `crates/ferrite-app/tests/fuzz_packets.rs` runs the same functions in `cargo nextest run`, seeded and mutated (`crates/ferrite-fuzzkit`).
 - Every other untrusted input has its own `fuzz_*` test: the link, the terminal, the store, settings, updates, NMEA, the drivers, the other decoders, text entry.
+- Besides no panic, the receive paths are checked for getting stuck (ferrite#73): each `*_recovers` test feeds garbage, then a good frame or signal, and wants it decoded (back to idle within a stated bound); the `*_clock` tests jump the clock (late turns, hours, the millisecond count's wrap) and want queues drained and rings within their sizes.
 - `FERRITE_FUZZ_SCALE=N` runs N times the cases. `FERRITE_FUZZ_CASE=SEED` runs one failing case alone.
+- `FERRITE_FUZZ_SEED=N` mixes N into every target's seed: new cases each long run, e.g. `FERRITE_FUZZ_SCALE=100 FERRITE_FUZZ_SEED=$RANDOM cargo nextest run fuzz` on the Xeon.
+- A case that never returns is caught by a watchdog (five times the target's time limit, at least 10 s): it prints and saves the input, then aborts the test.
 - A failure prints its seed and input and saves it under `target/fuzz-found/`. Copy it into `fuzz/regress/TARGET/` to keep it: those run first, every time.
 
 ## Running

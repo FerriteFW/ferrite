@@ -133,7 +133,10 @@ impl Aprs {
         if decode != self.on && DSP.try_send(DspCmd::Decoder(if decode { DecoderKind::Afsk } else { DecoderKind::Off })).is_ok() {
             self.on = decode;
         }
-        let now_s = now_ms / 1000;
+        // Seconds since power-on from the 64-bit count, never going back: `now_ms / 1000` went back to 0 after 49.7
+        // days, and our messages being tried (APRS-13.6), a digipeat waiting and the beacon's timer then waited
+        // another 49.7 days for the clock to come round (found by fuzz_aprs_clock).
+        let now_s = embassy_time::Instant::now().as_secs() as u32;
         // Frames heard (APRS-3, APRS-6), and FX.25 blocks corrected here (APRS-44: 3 to 13 ms of this task's
         // time, not the DSP task's).
         while let Ok(h) = APRS_RX.try_receive() {

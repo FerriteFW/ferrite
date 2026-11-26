@@ -302,6 +302,17 @@ fn edit(f: &mut SimFlash, e: &[u8]) {
     }
 }
 
+/// The store's background jobs (repairs, compaction, the writes queued) run to the end, within a bound: a job that
+/// queues itself again forever would keep the storage task busy for good (ferrite#73's kind of freeze).
+fn drain(s: &Store) {
+    let mut n = 0;
+    while let Some(j) = s.next_job() {
+        block(s.run(j));
+        n += 1;
+        assert!(n < 2_000, "the store's jobs never end");
+    }
+}
+
 fn run(input: &[u8]) {
     let Some((&flags, edits)) = input.split_first() else { return };
     let mut f = populated().clone();
@@ -331,9 +342,7 @@ fn run(input: &[u8]) {
         let _ = s.restore(&mut a);
         aprs_in_range(&s.aprs_cfg());
     }
-    while let Some(j) = s.next_job() {
-        block(s.run(j));
-    }
+    drain(&s);
     // the same chip mounted again reads the same
     let s = mount(s.into_parts().0);
     same(&first, &snap(&s), "a second mount read the chip differently");
@@ -343,9 +352,7 @@ fn run(input: &[u8]) {
         let _ = s.add_zone(b"Fuzz", &ZoneCfg::default());
         let _ = s.log(&Event { src: Src::Aprs, ago_s: 0, freq: 14_439_000, slot: 0, unread: true, id: 77, x: 0, y: 0, pos: None, name: Buf::from(b"X"), text: Buf::from(b"Y") });
         let _ = s.save(&app());
-        while let Some(j) = s.next_job() {
-            block(s.run(j));
-        }
+        drain(&s);
         // what the chip holds, less how this power-on found it (a first boot's chip is set up now)
         let before = snap(&s).split_once('\n').unwrap().1.to_string();
         let s = mount(s.into_parts().0);

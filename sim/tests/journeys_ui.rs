@@ -159,7 +159,7 @@ fn quick_menu_on_hold_star() {
     r.home();
     let keyed = |r: &mut Radio| r.take_cmds().iter().any(|c| matches!(c, RadioCmd::Transmit { on: true, .. }));
     r.hold(Key::Star);
-    for t in ["PTT A", "Reverse", "PTT B", "Night red", "PF1", "GPS", "PF2", "Bluetooth", "Knob", "Brightness"] {
+    for t in ["PTT A", "Reverse", "PTT B", "Night/day", "PF1", "GPS", "PF2", "Bluetooth", "Knob", "Brightness"] {
         r.expect_text(t);
     }
     let rows = |r: &mut Radio| {
@@ -175,10 +175,12 @@ fn quick_menu_on_hold_star() {
     r.up(Key::Ptt(ferrite_core::keys::PTT_A)).wait(100);
     r.press(Key::Side(1)).press(Key::Side(2)).knob(2).wait(300);
     assert_eq!(rows(&mut r), ["9", "on", "off", "off", "on"]);
-    // PTT B: night red, and back.
+    // PTT B: night red, then daylight, then back (HOME-17).
     r.down(Key::Ptt(ferrite_core::keys::PTT_B)).wait(300);
     assert_eq!(r.sim.app().settings().theme, 2, "night red");
     r.up(Key::Ptt(ferrite_core::keys::PTT_B)).press(Key::Ptt(ferrite_core::keys::PTT_B)).wait(300);
+    assert_eq!(r.sim.app().settings().theme, 1, "daylight");
+    r.press(Key::Ptt(ferrite_core::keys::PTT_B)).wait(300);
     assert_eq!(r.sim.app().settings().theme, 0);
     assert!(!keyed(&mut r));
     // BACK closes it and does nothing else; the card shows the reverse.

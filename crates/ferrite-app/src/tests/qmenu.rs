@@ -102,28 +102,41 @@ fn reverse_retunes_the_receiver_to_the_input() {
     assert_eq!(tunes(&t.cmds()), [rx], "back on the output");
 }
 
-/// HOME-17, DISP-18: PTT B toggles night red, and back to the theme in use before it (daylight here); the
-/// brightness row follows night red's own level (DISP-23).
+/// HOME-17, DISP-18: PTT B steps the theme in use, night red, daylight, then back to the theme in use; daylight
+/// is skipped when it is the theme in use. The brightness row follows night red's own level (DISP-23).
 #[test]
-fn ptt_b_is_night_red() {
+fn ptt_b_is_night_then_day() {
+    let press = |t: &mut T| {
+        down(t, Key::Ptt(PTT_B));
+        up(t, Key::Ptt(PTT_B));
+    };
     let mut t = ready();
-    t.app.set.theme = 1; // daylight
+    t.app.set.theme = 0; // dark
     t.app.set.brightness_night = 3;
     open(&mut t);
-    down(&mut t, Key::Ptt(PTT_B));
+    press(&mut t);
     assert_eq!(t.app.set.theme, NIGHT_RED);
-    assert_eq!((shown(&t, 1).as_str(), shown(&t, 4).as_str()), ("on", "3"));
-    up(&mut t, Key::Ptt(PTT_B));
-    down(&mut t, Key::Ptt(PTT_B));
-    up(&mut t, Key::Ptt(PTT_B));
-    assert_eq!(t.app.set.theme, 1, "back to daylight");
+    assert_eq!((shown(&t, 1).as_str(), shown(&t, 4).as_str()), ("red", "3"));
+    press(&mut t);
+    assert_eq!(t.app.set.theme, crate::settings::DAYLIGHT);
+    assert_eq!(shown(&t, 1).as_str(), "day");
+    press(&mut t);
+    assert_eq!(t.app.set.theme, 0, "back to dark");
     assert_eq!((shown(&t, 1).as_str(), shown(&t, 4).as_str()), ("off", "7"));
     assert!(!keyed(&t.cmds()));
-    // Night red already on (set at 0 7 1 from dark): PTT B goes back to dark.
+    // Daylight in use: night red, then back to daylight (no second daylight step).
+    t.app.set.theme = crate::settings::DAYLIGHT;
+    press(&mut t);
+    assert_eq!(t.app.set.theme, NIGHT_RED);
+    press(&mut t);
+    assert_eq!((t.app.set.theme, shown(&t, 1).as_str()), (crate::settings::DAYLIGHT, "off"));
+    // Night red already on (set at 0 7 1 from dark): PTT B steps to daylight, then dark.
     t.app.set.theme = 0;
     crate::screens::groups::change(&mut t.app, &[7, 1], 2);
     assert_eq!(t.app.set.theme, NIGHT_RED);
-    down(&mut t, Key::Ptt(PTT_B));
+    press(&mut t);
+    assert_eq!(t.app.set.theme, crate::settings::DAYLIGHT);
+    press(&mut t);
     assert_eq!(t.app.set.theme, 0);
 }
 

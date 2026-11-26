@@ -1058,6 +1058,7 @@ pub(crate) fn change(app: &mut App, p: &[u8], d: i32) -> bool {
                 app.day_theme = s.theme; // HOME-17: the quick menu's PTT B comes back to it from night red
             }
             s.theme = cycle(s.theme, d, THEMES.len());
+            app.day_theme &= !super::qmenu::DAY_STEP; // a theme picked here is the one in use, not PTT B's step
         }
         [9, 4] => {
             // In the lists' order (Canada first, then by name): the stored values stay as they were.

@@ -296,7 +296,8 @@ pub struct App {
     /// HOME-17 (safety): PTT A (bit 0) and PTT B (bit 1) went down while the quick menu was up: dead until let go,
     /// whether or not the menu is still up ([`screens::qmenu::ptt_bit`]).
     pub(crate) ptt_block: u8,
-    /// The theme in use before night red, for the quick menu's PTT B (0 7 1; RAM only).
+    /// The theme in use before night red, for the quick menu's PTT B (0 7 1; RAM only). Bit 7 ([`DAY_STEP`]):
+    /// daylight is PTT B's step after night red, so the next press goes back to the theme (HOME-17).
     pub(crate) day_theme: u8,
     /// Index into Watch's values: off, A+B, A+B+C.
     watch: u8,

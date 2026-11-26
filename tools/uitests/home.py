@@ -210,10 +210,10 @@ def star_quick_mute(t):
 
 @test("HOME-17", "HOME-17.1", "KEY-18", pages=("Home", "Scan"))
 def quick_menu(t):
-    """Hold * on home: the quick menu (PTT A Reverse, PTT B Night red, PF1 GPS, PF2 Bluetooth, Knob
+    """Hold * on home: the quick menu (PTT A Reverse, PTT B Night/day, PF1 GPS, PF2 Bluetooth, Knob
     Brightness); the knob changes the brightness, PF1 steps GPS (off, auto, on); BACK closes it. Not while scanning."""
     u = t.press("STAR", long=True)
-    t.eq([q[:2] for q in u.qmenu], [["Knob", "Brightness"], ["PTT A", "Reverse"], ["PTT B", "Night red"],
+    t.eq([q[:2] for q in u.qmenu], [["Knob", "Brightness"], ["PTT A", "Reverse"], ["PTT B", "Night/day"],
                                      ["PF1", "GPS"], ["PF2", "Bluetooth"]], "the quick menu, the knob first (HOME-17.1)")
     b0 = int(u.qmenu[0][2])
     g0 = u.qmenu[3][2]

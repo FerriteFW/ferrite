@@ -404,6 +404,8 @@ pub const TONE_LEVELS: [&str; 3] = ["Low", "Normal", "High"];
 pub const BACKLIGHT_TIMES: [u16; 9] = [0, 5, 10, 15, 30, 60, 120, 300, 600];
 /// 0 7 4 4's values (DISP-15).
 pub const WAKE_ON: [&str; 3] = ["Keys", "Keys and RX", "Keys, RX and TX"];
+/// The daylight theme's index in [`THEMES`] (HOME-17: the quick menu's PTT B steps to it after night red).
+pub const DAYLIGHT: u8 = 1;
 /// The night red theme's index in [`THEMES`] (DISP-23: its own brightness).
 pub const NIGHT_RED: u8 = 2;
 /// 0 7 4 5's values.

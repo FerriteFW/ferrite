@@ -178,8 +178,9 @@ impl App {
         self.set.layout == 1 && !self.strip_blocked() && !self.low_power()
     }
 
+    /// MODE-5.1: Pager mode's C (DEC-20) the same as APRS's: active, the strip would leave the pager decoder nothing.
     pub(crate) fn strip_blocked(&self) -> bool {
-        if self.aprs_slot(self.active) {
+        if self.aprs_slot(self.active) || (self.active == crate::aprs::APRS_SLOT && self.pager_on()) {
             return true;
         }
         self.radio.bcast.is_some() && (self.in_bcast_band(self.active) || ferrite_core::path::Sel::rx(self.tuned_freq(self.active)).relay())

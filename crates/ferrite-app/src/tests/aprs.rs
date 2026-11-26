@@ -911,3 +911,21 @@ fn aprs_mode_selector_off_tracker_on_kiss() {
     change(&mut a.app, &[5, 3], 1);
     assert_eq!(a.app.aprs_cfg().beacon, 3);
 }
+
+/// MODE-5.1, DEC-20: Pager mode's C blocks home's strip as APRS's does: C active on the single + scope layout, no
+/// sweep (the pager decoder would hear nothing); A active, the strip sweeps and # pauses it, as beside APRS.
+#[test]
+fn pager_slot_blocks_the_strip_like_aprs() {
+    use crate::screens::activity::Mode;
+    let mut a = A::new();
+    a.app.set_pager(true);
+    a.app.set_layout(1);
+    a.app.active = APRS_SLOT;
+    a.wait(700);
+    assert!(a.app.pager_on(), "Pager mode holds C");
+    assert!(a.app.strip_blocked() && !a.app.strip_pausable());
+    assert_ne!(a.app.radio.mode, Mode::Strip, "no sweep around the pager slot");
+    a.app.active = 0;
+    a.wait(700);
+    assert!(!a.app.strip_blocked() && a.app.strip_pausable(), "A active: the strip sweeps, # can pause it");
+}

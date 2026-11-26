@@ -348,7 +348,7 @@ const ROWS: [(&str, Val<Station>); 8] = [
     }),
     ("Message", |c, b| {
         let s = c.x;
-        if s.msg.is_empty() {
+        if s.msg.is_empty() && s.msg_to.is_empty() {
             return text(b, b"-");
         }
         let mut clock = Buf::<12>::new();
@@ -364,13 +364,21 @@ const ROWS: [(&str, Val<Station>); 8] = [
     }),
 ];
 
-/// The station screen's Message line (APRS-28): the newest message it sent us, from the stored messages (the
-/// newest [`MSG_LOOK`] only, so the screen never reads the whole ring), with the clock time it came.
-pub(crate) fn last_message(s: &mut crate::data::Station, data: &dyn crate::data::Data, clock_min: Option<u16>) {
+/// The station screen's Message line (APRS-28): the newest message the station was heard sending, to anyone (RAM
+/// keeps it for the stations heard most recently this power-on, APRS-4.5), else the newest it sent us from the
+/// stored messages (the newest [`MSG_LOOK`] only, so the screen never reads the whole ring) or to everyone lately
+/// (APRS-28.1), with the clock time it came.
+pub fn last_message(s: &mut crate::data::Station, data: &dyn crate::data::Data, clock_min: Option<u16>) {
+    let min_of = |ago_s: u32| clock_min.filter(|_| ago_s != crate::data::AGO_UNKNOWN).map(|c| (c as i32 - (ago_s / 60) as i32).rem_euclid(1440) as u16);
+    // RAM's (it heard every message the station sent over the air, to us and to everyone too) is the newest; one
+    // the sample gives is shown as it is
+    if let Some(a) = s.msg_ago_s {
+        s.msg_min = min_of(a);
+        return;
+    }
     if !s.msg.is_empty() {
         return;
     }
-    let min_of = |ago_s: u32| clock_min.filter(|_| ago_s != crate::data::AGO_UNKNOWN).map(|c| (c as i32 - (ago_s / 60) as i32).rem_euclid(1440) as u16);
     // APRS-28.1: a message to everyone it sent lately (APRS-6.4) counts too, when it's newer than its last to us
     let note = (0..data.notices()).filter_map(|i| data.notice(i)).find(|n| n.from.as_bytes().eq_ignore_ascii_case(s.call.as_bytes()));
     let n = data.messages().min(MSG_LOOK);

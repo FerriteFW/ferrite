@@ -101,6 +101,11 @@ struct Det {
     comment: Buf<40>,
     /// APRS-44: its last frame came as FX.25: the bytes corrected + 1 (0: plain AX.25).
     fx25: u8,
+    /// APRS-28: the newest message it was heard sending, to anyone (cut to the station screen's 32 characters),
+    /// its addressee (empty: none heard) and when (RAM only: the stored row has no message, so its format stays).
+    msg: Buf<32>,
+    msg_to: Buf<9>,
+    msg_at: u32,
 }
 
 /// [`Det::known`]'s bits, and [`AprsLive::row_of`]'s mask of the fields the stored row fills.
@@ -576,9 +581,11 @@ impl AprsLive {
             alt_m: d.filter(|_| known & DET_COURSE != 0).and_then(|d| d.alt_m),
             times: h.times,
             comment: d.filter(|_| known & DET_COMMENT != 0).map_or(Buf::new(), |d| d.comment),
-            msg: Buf::new(),
+            // APRS-28: the newest message heard from it, while its details are in RAM
+            msg: d.filter(|d| !d.msg_to.is_empty()).map_or(Buf::new(), |d| d.msg),
             msg_min: None,
-            msg_to: Default::default(),
+            msg_to: d.map_or(Buf::new(), |d| Buf::from(d.msg_to.as_bytes())),
+            msg_ago_s: d.filter(|d| !d.msg_to.is_empty()).map(|d| self.now_s.get().wrapping_sub(d.msg_at)),
             fx25: d.filter(|_| known & DET_FX25 != 0).and_then(|d| d.fx25.checked_sub(1)),
             device: d.filter(|_| known & DET_COURSE != 0).and_then(|d| d.device),
         })
@@ -617,6 +624,9 @@ impl AprsLive {
                 d.comment = o.comment;
             }
             d.known |= o.known & (DET_COURSE | DET_COMMENT);
+            if d.msg_to.is_empty() {
+                (d.msg, d.msg_to, d.msg_at) = (o.msg, o.msg_to, o.msg_at);
+            }
         }
         let end = old.unwrap_or(self.det.len() - 1);
         for i in (1..=end).rev() {
@@ -848,7 +858,7 @@ impl AprsLive {
         }
         let direct = if via.is_empty() { HEARD_DIRECT } else { 0 };
         let mut h = Heard { call, sym: Sym::Ht, pos: None, at_s: now_s, times: 1, row_at: NO_ROW, row_key: 0, seq: NO_SEQ, flags: HEARD_NOW | direct };
-        let mut d = Det { call, known: DET_VIA | DET_FX25, via, course: None, alt_m: None, device: None, comment: Buf::new(), fx25: 0 };
+        let mut d = Det { call, known: DET_VIA | DET_FX25, via, course: None, alt_m: None, device: None, comment: Buf::new(), fx25: 0, msg: Buf::new(), msg_to: Buf::new(), msg_at: 0 };
         let mut dest = [0u8; 6];
         let dc = f.dest.call();
         dest[..dc.len()].copy_from_slice(dc);
@@ -881,6 +891,13 @@ impl AprsLive {
                 rx.changed = true;
             }
             Ok(Packet::Message(m)) => {
+                // APRS-28: the station screen's Message line is the newest message it was heard sending, to anyone
+                // (an ack or a reject isn't one)
+                if m.kind == MessageKind::Message {
+                    d.msg = Buf::from(&m.text[..m.text.len().min(32)]);
+                    d.msg_to = Buf::from(&m.addressee[..m.addressee.len().min(9)]);
+                    d.msg_at = now_s;
+                }
                 rx.row = self.hear(h, d);
                 rx.changed = true;
                 if my.is_some_and(|me| to_me(m.addressee, &me)) {
@@ -2064,6 +2081,38 @@ mod tests {
         assert!(a.receive(&f[..n], 206, me, &cfg).state.is_some());
     }
 
+    /// APRS-28, APRS-4.5: the newest message a station was heard sending, to anyone, stays with its details in RAM:
+    /// a beacon, an ack or a reject after it leaves it; a newer one replaces it whole (the addressee and text never
+    /// mixed with the last's); it goes with the details when the station falls out of the recent [`DET`].
+    #[test]
+    fn last_message_heard_kept_with_the_details() {
+        let a = AprsLive::new();
+        let cfg = AprsCfg::DEFAULT;
+        let me = b"VA7IF-7";
+        let hear = |info: &[u8], t: u32| {
+            let (f, n) = frame(b"VE7GPL-1", b"APRS", &[], info);
+            a.receive(&f[..n], t, me, &cfg);
+        };
+        let msg = |a: &AprsLive| {
+            let s = a.station(0).unwrap();
+            (s.msg_to.as_bytes().to_vec(), s.msg.as_bytes().to_vec(), s.msg_ago_s)
+        };
+        hear(b">status", 100);
+        assert_eq!(msg(&a), (std::vec::Vec::new(), std::vec::Vec::new(), None), "no message heard");
+        hear(b":VE7XYZ   :a long message to someone else, longer than 32{12", 110);
+        assert_eq!(msg(&a), (b"VE7XYZ".to_vec(), b"a long message to someone else, ".to_vec(), Some(0)));
+        hear(b":TEST     :6", 120);
+        hear(b":VE7XYZ   :ack5", 130);
+        hear(b":VE7XYZ   :rej6", 135);
+        hear(b"!4903.50N/07201.75W-Home", 140);
+        assert_eq!(msg(&a), (b"TEST".to_vec(), b"6".to_vec(), Some(20)), "the newest, whole; acks and beacons leave it");
+        for k in 0..DET as u8 {
+            let (f, n) = frame(&[b'V', b'E', b'7', b'A' + k], b"APRS", &[], b">x");
+            a.receive(&f[..n], 150, me, &cfg);
+        }
+        assert_eq!(a.station(DET as u16).unwrap().msg_ago_s, None, "gone with the details (APRS-4.5)");
+    }
+
     /// APRS-6.4: a message to everyone (CQ, QST, ALL; any case) is kept above the inbox: once for its
     /// copies, newest first, at most NOTICES, for NOTICE_S; never acked, never in the inbox.
     #[test]
@@ -3015,6 +3064,7 @@ mod tests {
             msg: Buf::new(),
             msg_min: None,
             msg_to: Default::default(),
+            msg_ago_s: None,
             fx25: None,
             device: None,
         };

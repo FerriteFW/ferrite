@@ -554,7 +554,7 @@ impl Data for Sample {
         let Some(k) = i.checked_sub(self.aprs.stations()) else { return self.aprs.station(i) };
         let (call, sym, pos, ago_s, via, course, alt_m, times, comment, msg, msg_min) = STATIONS[k as usize];
         let ago_s = ago_s + self.aprs.now_s();
-        Some(Station { call: txt(call), sym, pos, ago_s, via: txt(via), course, alt_m, times, comment: txt(comment), msg: txt(msg), msg_min, msg_to: Default::default(), fx25: None, device: None })
+        Some(Station { call: txt(call), sym, pos, ago_s, via: txt(via), course, alt_m, times, comment: txt(comment), msg: txt(msg), msg_min, msg_to: Default::default(), msg_ago_s: None, fx25: None, device: None })
     }
     fn callsign(&self) -> Option<Buf<10>> {
         self.call.get()

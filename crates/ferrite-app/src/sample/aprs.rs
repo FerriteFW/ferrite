@@ -217,6 +217,7 @@ impl AprsSim {
             msg: Buf::new(),
             msg_min: None,
             msg_to: Default::default(),
+            msg_ago_s: None,
             fx25: (k == 1).then_some(3),
             device: (k == 2).then_some(6), // a Yaesu FT5D (APRS-5.2)
         })

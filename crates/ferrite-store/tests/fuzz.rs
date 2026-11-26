@@ -64,6 +64,7 @@ fn station(call: &[u8]) -> Station {
         msg: Buf::new(),
         msg_min: None,
         msg_to: Default::default(),
+        msg_ago_s: None,
         fx25: None,
     }
 }

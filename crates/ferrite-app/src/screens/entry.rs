@@ -336,6 +336,13 @@ impl Entry {
         let decimals = t.len() - p - 1;
         let f = self.freq()?;
         let step = step_at(app, f);
+        // VFO-18.2: on the 8.33 kHz step, an airband channel name typed with three decimals (118.010) is its
+        // channel (118.00833); 118.020 isn't a name and waits
+        if step == 833 && decimals == 3 {
+            if let Some(c) = ferrite_core::freq::channel_freq(f) {
+                return Some(c);
+            }
+        }
         // VFO-18.1: on the 8.33 kHz step, three decimals within 50 Hz of a channel (118.008, 118.017) are that
         // channel; five decimals go in exactly as typed, as on any step
         if step == 833 && (3..5).contains(&decimals) && f.abs_diff(crate::slot::on_833(f)) <= 50 {

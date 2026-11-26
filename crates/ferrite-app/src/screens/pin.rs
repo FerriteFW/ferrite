@@ -218,12 +218,15 @@ fn owner_lines(app: &App, lcd: &mut impl Panel) {
     }
     lcd.fill(10, 186, 220, 1, LINE);
     lcd.text4_aligned(120, 206, Align::Center, b"IF FOUND, PLEASE CONTACT", &UI_12, SUB, BG);
-    let mut y = 226;
-    for line in [s.callsign.as_bytes(), s.owner[0].as_bytes(), s.owner[1].as_bytes(), s.owner[2].as_bytes()] {
-        if !line.is_empty() {
-            lcd.text4_aligned(120, y, Align::Center, w::fit(line, &UI_12B, 220), &UI_12B, TEXT, BG);
-            y += 17;
+    // PIN-2.1: the name first and larger (what a finder reads), then the callsign, phone and e-mail.
+    let mut y = 228;
+    for (k, line) in [s.owner[0].as_bytes(), s.callsign.as_bytes(), s.owner[1].as_bytes(), s.owner[2].as_bytes()].into_iter().enumerate() {
+        if line.is_empty() {
+            continue;
         }
+        let (f, step) = if k == 0 { (&UI_15B, 21) } else { (&UI_12B, 17) };
+        lcd.text4_aligned(120, y, Align::Center, w::fit(line, f, 220), f, TEXT, BG);
+        y += step;
     }
 }
 

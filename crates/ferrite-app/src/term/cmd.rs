@@ -2158,10 +2158,12 @@ fn meter(t: &mut Toks) -> Result<Done, No> {
 /// TERM-43 (decision 305, a bench test): the BK4829's FSK modem. `fsk` shows the counts and the last frame, `fsk off`
 /// ends it, `fsk rx SPEED [nocrc]` receives on the active slot's chip, `fsk tx SPEED N [nocrc]` arms N frames (1 to
 /// 999) for the next PTT key-up. SPEED: `1200`, `2400` (any plain FSK rate 300 to 9600), `ffsk1800`, `ffsk2400`;
-/// `nocrc` turns the chip's CRC off. Anything else is refused here, before anything is sent.
+/// `nocrc` turns the chip's CRC off; the framing words ([`ferrite_core::fskbench::Opts`]: `sync=HEX`, `pre=N`,
+/// `ptype=N`, `inv`, `scr`, `base=fsk|ffsk`) follow in any order. Anything else is refused here, before anything is
+/// sent.
 fn fsk(t: &mut Toks) -> Result<Done, No> {
     use ferrite_core::fskbench::{Ask, Cfg, Speed, COUNT_MAX};
-    const USAGE: Txt = txt!("fsk [off], fsk rx|tx SPEED [N] [nocrc]: SPEED 300-9600, ffsk1800, ffsk2400 or acars; tx N 1-999");
+    const USAGE: Txt = txt!("fsk [off], fsk rx|tx SPEED [N] [nocrc] [sync=HEX pre=N ptype=N inv scr base=fsk|ffsk]: SPEED 300-9600, ffsk1800, ffsk2400 or acars; tx N 1-999");
     fn word<'a>(t: &mut Toks<'a>) -> Result<Option<&'a [u8]>, No> {
         match t.next()? {
             None => Ok(None),
@@ -2176,12 +2178,14 @@ fn fsk(t: &mut Toks) -> Result<Done, No> {
             let tx = same(w, b"tx");
             let speed = word(t)?.and_then(Speed::parse).ok_or_else(|| t.say_t(USAGE))?;
             let n = if tx { Some(word(t)?.and_then(number).filter(|n| (1..=COUNT_MAX as u32).contains(n)).ok_or_else(|| t.say_t(USAGE))? as u16) } else { None };
-            let crc = match word(t)? {
-                None => true,
-                Some(w) if same(w, b"nocrc") => false,
-                Some(_) => return Err(t.say_t(USAGE)),
-            };
-            let cfg = Cfg { speed, crc };
+            let mut cfg = Cfg::new(speed, true);
+            while let Some(w) = word(t)? {
+                if same(w, b"nocrc") {
+                    cfg.crc = false;
+                } else if !cfg.opt.word(w) {
+                    return Err(t.say_t(USAGE));
+                }
+            }
             match n {
                 Some(n) => Ask::Tx(cfg, n),
                 None => Ask::Rx(cfg),

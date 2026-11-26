@@ -1523,19 +1523,26 @@ fn debug_bk_rxaf() {
 #[cfg(feature = "bench")]
 #[test]
 fn debug_fsk() {
-    use ferrite_core::fskbench::{Ask, Cfg, Mode, Speed};
+    use ferrite_core::fskbench::{Ask, Cfg, Mode, Opts, Speed, BASE_FSK};
     let sp = |mode, baud| Speed { mode, baud };
     let mut r = Rig::main();
     r.cmd("fsk");
     assert_eq!(r.serve(4, regs), vec![DebugReq::Fsk(Ask::Show)]);
     assert!(r.raw().contains("fsk: off"), "{}", r.raw());
     for (cmd, want) in [
-        ("fsk rx 2400", Ask::Rx(Cfg { speed: sp(Mode::Fsk, 2400), crc: true })),
-        ("FSK RX ffsk2400 NOCRC", Ask::Rx(Cfg { speed: sp(Mode::Ffsk2400, 1200), crc: false })),
-        ("fsk rx 4800", Ask::Rx(Cfg { speed: sp(Mode::Fsk, 4800), crc: true })),
-        ("fsk tx ffsk1800 20", Ask::Tx(Cfg { speed: sp(Mode::Ffsk1800, 1200), crc: true }, 20)),
-        ("fsk tx 1200 999 nocrc", Ask::Tx(Cfg { speed: sp(Mode::Fsk, 1200), crc: false }, 999)),
+        ("fsk rx 2400", Ask::Rx(Cfg::new(sp(Mode::Fsk, 2400), true))),
+        ("FSK RX ffsk2400 NOCRC", Ask::Rx(Cfg::new(sp(Mode::Ffsk2400, 1200), false))),
+        ("fsk rx 4800", Ask::Rx(Cfg::new(sp(Mode::Fsk, 4800), true))),
+        ("fsk tx ffsk1800 20", Ask::Tx(Cfg::new(sp(Mode::Ffsk1800, 1200), true), 20)),
+        ("fsk tx 1200 999 nocrc", Ask::Tx(Cfg::new(sp(Mode::Fsk, 1200), false), 999)),
         ("fsk off", Ask::Off),
+        (
+            "fsk rx acars nocrc sync=01a3a33f pre=1 ptype=2 inv base=fsk",
+            Ask::Rx(Cfg {
+                opt: Opts { sync: [0x01, 0xA3, 0xA3, 0x3F], pre: 1, ptype: 2, inv: true, base: Some(BASE_FSK), ..Opts::FRAME },
+                ..Cfg::new(sp(Mode::Ffsk2400, 2400), false)
+            }),
+        ),
     ] {
         r.send(b"\r");
         r.cmd(cmd);
@@ -1553,7 +1560,7 @@ fn debug_fsk() {
     r.serve(6, regs);
     assert!(r.raw().contains("fsk tx 2400 (chip CRC on): 0 of 20 frames sent, armed for the next PTT key-up (Dry TX on only)"), "{}", r.raw());
     r.send(b"\r");
-    for bad in ["fsk rx", "fsk rx 299", "fsk rx 9601", "fsk rx ffsk", "fsk tx 2400", "fsk tx 2400 0", "fsk tx 2400 1000", "fsk rx 2400 crc", "fsk on", "fsk off 1"] {
+    for bad in ["fsk rx", "fsk rx 299", "fsk rx 9601", "fsk rx ffsk", "fsk tx 2400", "fsk tx 2400 0", "fsk tx 2400 1000", "fsk rx 2400 crc", "fsk on", "fsk off 1", "fsk rx acars pre=0", "fsk rx acars sync=12"] {
         r.cmd(bad);
         assert!(r.bottom().contains("fsk [off], fsk rx|tx SPEED"), "{bad}: {}", r.bottom());
         assert_eq!(r.term.debug_req(), None, "{bad}: nothing sent");

@@ -1372,7 +1372,7 @@ fn rx_af_override_after_fm_tune() {
 #[test]
 fn fsk_bench_rx_registers() {
     use ferrite_core::fskbench::{Cfg, Speed};
-    let c = Cfg { speed: Speed::parse(b"2400").unwrap(), crc: true };
+    let c = Cfg::new(Speed::parse(b"2400").unwrap(), true);
     let mut b = bk();
     chip::fsk_bench_rx(&mut b, &c);
     let bus = b.release();
@@ -1392,7 +1392,7 @@ fn fsk_bench_rx_registers() {
 #[test]
 fn fsk_bench_tx_registers() {
     use ferrite_core::fskbench::{payload, words, Cfg, Speed};
-    let c = Cfg { speed: Speed::parse(b"ffsk1800").unwrap(), crc: true };
+    let c = Cfg::new(Speed::parse(b"ffsk1800").unwrap(), true);
     let mut b = bk();
     chip::fsk_bench_tx_begin(&mut b, &c, false, 0);
     let bus = b.release();

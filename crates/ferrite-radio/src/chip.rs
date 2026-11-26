@@ -752,21 +752,21 @@ pub fn rx_af_override<B: Bus>(bk: &mut Bk4829<B>, bits: u16) {
 }
 
 /// TERM-43 (decision 305, a bench test): the modem set-up for an `fsk` run (`ferrite_core::fskbench`): REG_58 and the
-/// rate word, tone 2's gain, REG_5C, all from [`ferrite_core::fskbench::Speed`]; [`ferrite_core::fskbench::PREAMBLE`]
-/// bytes of preamble, the 4-byte sync word, [`ferrite_core::fskbench::LEN`] data bytes, no scramble.
+/// rate word, tone 2's gain, REG_5C, all from [`ferrite_core::fskbench::Speed`]; the preamble, sync word, scramble
+/// and inversion from the run's [`ferrite_core::fskbench::Opts`]; [`ferrite_core::fskbench::LEN`] data bytes.
 #[cfg(feature = "bench")]
 pub fn fsk_bench(c: &ferrite_core::fskbench::Cfg) -> Fsk {
     use ferrite_core::fskbench as f;
     Fsk {
-        mode: c.speed.reg58(),
+        mode: c.reg58(),
         tone_word: c.speed.rate_word(),
         tone_gain: c.speed.tone_gain(),
-        preamble: f::PREAMBLE,
-        sync: f::SYNC,
-        sync4: true,
-        crc: c.speed.reg5c(c.crc),
-        scramble: false,
-        rx_invert: false,
+        preamble: c.opt.pre,
+        sync: c.opt.sync,
+        sync4: c.opt.sync4,
+        crc: c.reg5c(),
+        scramble: c.opt.scr,
+        rx_invert: c.opt.inv,
         len: f::LEN as u16,
     }
 }

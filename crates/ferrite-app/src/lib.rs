@@ -83,6 +83,19 @@ pub const POPUP_MS: u32 = 1200;
 /// KEY-13: the Keypad lock's popup offers the wider modes.
 pub const LOCK_ASK: &[u8] = "* all · 0 all but PTT".as_bytes();
 pub const UNDO_MS: u32 = 5000;
+/// BOOT-19 (decision 469): the tools that open again at power on, in MENU 0 3's order; [`Settings::resume_tool`]
+/// is 1 + the index. Crossband comes back at its ready screen, not running (opening it never starts it), so
+/// nothing transmits on its own at power on.
+pub const TOOLS: [Dest; 8] = [
+    Dest::BandScope,
+    Dest::Counter,
+    Dest::HfMode,
+    Dest::Crossband,
+    Dest::ToneSearch,
+    Dest::Satellites,
+    Dest::Sstv,
+    Dest::Acars,
+];
 /// [`App`]'s VOX flags (`vox_bits`).
 const VOX_REFUSED: u8 = 1;
 const VOX_SENT: u8 = 2;
@@ -317,6 +330,8 @@ pub struct App {
     /// Dry TX (TX-48, 0 8 8 5): the PA drive held at 0 on every key-up of a `tx` build. Not a setting: off at
     /// every power-on and never stored, changed only on the radio's own menu (never by the link or terminal).
     dry_tx: bool,
+    /// BOOT-19: the tool to open once the power-on PIN is right ([`Settings::resume_tool`]'s value), 0 none.
+    resume_due: u8,
     /// Low Power Mode's flags ([`lpm`]: in it, Auto held off, the side keys' hold), the battery % Auto looks at
     /// (PWR-24) and when the side keys' hold began.
     lpm: u8,
@@ -512,6 +527,7 @@ impl App {
             alert: 0,
             vox_on: false,
             dry_tx: false,
+            resume_due: 0,
             lpm: 0,
             batt: lpm::BATT_UNKNOWN,
             lpm_at: 0,
@@ -1132,12 +1148,49 @@ impl App {
         self.screen = Screen::Setup(screens::setup::Setup::new(true));
     }
 
-    /// At power on, after the self-test: the PIN, if one is set (PIN-1, BOOT-13).
+    /// At power on, after the self-test: the PIN, if one is set (PIN-1, BOOT-13). Nothing reopens (as after a
+    /// failed check); [`App::power_on`] is the normal start.
     pub fn ask_pin(&mut self) {
+        self.power_on(false);
+    }
+
+    /// At power on, after a self-test that passed (`resume`) or failed: the PIN if one is set (BOOT-13), then the
+    /// tool open at the last power off (BOOT-19), once the PIN is right. The reset (BOOT-14) and first-run setup
+    /// don't come here.
+    pub fn power_on(&mut self, resume: bool) {
+        self.resume_due = if resume { self.set.resume_tool } else { 0 };
         if self.set.pin_len > 0 && self.set.pin_mode > 0 {
             self.go_home();
             self.screen = Screen::Pin(screens::pin::Pin::power_on());
+        } else {
+            self.resume_tool();
         }
+    }
+
+    /// BOOT-19: opens the tool due at power on, once, over home. One that refuses (Low Power Mode, PWR-24.4)
+    /// shows its own toast and home stays.
+    pub(crate) fn resume_tool(&mut self) {
+        let t = core::mem::take(&mut self.resume_due);
+        if let Some(&d) = TOOLS.get((t as usize).wrapping_sub(1)) {
+            self.open(d);
+        }
+    }
+
+    /// BOOT-19: the tool up now (1 + its index in [`TOOLS`]), 0 for any other screen: a menu, list or editor
+    /// opened over a tool isn't one.
+    fn tool_open(&self) -> u8 {
+        let i = match self.screen {
+            Screen::Scope(_) => 0,
+            Screen::Counter(_) => 1,
+            Screen::Hf(_) => 2,
+            Screen::Crossband(_) => 3,
+            Screen::ToneSearch(_) => 4,
+            Screen::Sat(_) => 5,
+            Screen::Sstv(_) => 6,
+            Screen::Acars(_) => 7,
+            _ => return 0,
+        };
+        i + 1
     }
 
     // ---- events the firmware (and the simulator) report: each opens its screen ----
@@ -1145,12 +1198,16 @@ impl App {
     /// The volume knob turned to off (the power switch, PWR-17): "Saving...", modal, while the writes finish;
     /// then the firmware cuts the power. Nothing else happens on screen after this.
     pub fn power_off(&mut self) {
+        // BOOT-19: the tool up now opens again at power on; any other screen, home. Set here only, so the
+        // power-off save carries it and nothing else writes for it.
+        self.set.resume_tool = self.tool_open();
         self.go_home();
         self.screen = Screen::Info(screens::info::Info { page: screens::info::Page::PowerOff });
     }
 
     /// The battery reached empty (PWR-16): the empty-battery screen, modal, before the firmware switches off.
     pub fn battery_empty(&mut self) {
+        self.set.resume_tool = self.tool_open(); // BOOT-19, as at power off
         self.go_home();
         self.screen = Screen::Info(screens::info::Info { page: screens::info::Page::EmptyBattery });
     }

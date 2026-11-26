@@ -543,7 +543,8 @@ pub async fn task() {
     // The slots as they were saved (frequencies, VFO settings, the channel each is on, watch, Battery Save).
     store.restore(&mut app);
     // After the self-test: setup on first boot (BOOT-12); MENU held: the settings reset (PIN-6, BOOT-14), which
-    // asks before the PIN; else the PIN if one is set (BOOT-13).
+    // asks before the PIN; else the PIN if one is set (BOOT-13), then the tool open at power off, unless a check
+    // failed or this start follows a fault or a hang (BOOT-19: a tool that faults doesn't reopen in a loop).
     if cfg!(feature = "bringup") {
         // No setup, reset or PIN: nothing is stored. A key at boot: straight to the key test (hold BACK leaves).
         if key_seen {
@@ -555,7 +556,8 @@ pub async fn task() {
     } else if menu_held {
         app.power_on_reset();
     } else {
-        app.ask_pin();
+        let failed = checks.iter().any(|c| c.state == State::Fail);
+        app.power_on(!failed && crate::restart::RESTARTED.load(Relaxed) == 0);
     }
     app.redraw_all();
     if cfg!(all(feature = "tx", feature = "bench")) {

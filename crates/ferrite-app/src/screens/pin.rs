@@ -194,7 +194,10 @@ impl Pin {
                     app.back();
                     app.show_toast(b"Channel-only mode", b"off", false);
                 }
-                _ => app.go_home(),
+                _ => {
+                    app.go_home();
+                    app.resume_tool(); // BOOT-19: the tool open at power off, after the PIN
+                }
             }
             return;
         }

@@ -364,6 +364,10 @@ pub struct Settings {
     pub tracker: bool,
     /// 0 5 8 (KISS-6.1): the KISS port 0 5 3's KISS uses, 1 cable or 2 Bluetooth ([`KISS_VIA`]); kept while KISS is off.
     pub kiss_via: u8,
+    /// BOOT-19 (decision 469): the tool open at the last power off, 1 + its index in [`crate::TOOLS`], 0 none
+    /// (home). Set only as the radio turns off, so it costs no write of its own. Stored at the record's end: an
+    /// older record reads 0, home.
+    pub resume_tool: u8,
 }
 
 /// 0 7 9's choices, seconds (0 never; MENU-28) and names. 30 s by default.
@@ -613,6 +617,7 @@ impl Settings {
         decode_log: false,
         tracker: false,
         kiss_via: 2,
+        resume_tool: 0,
     };
 
     /// Values a stored or linked record may hold out of range, brought back in (load_settings, the link's

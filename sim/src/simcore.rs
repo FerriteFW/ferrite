@@ -558,13 +558,13 @@ impl SimCore {
         if self.booting && !self.off && now > self.boot_end {
             self.booting = false;
             // As the firmware does: setup on a first boot (BOOT-12); MENU held through the boot screen: the
-            // settings reset (PIN-6, BOOT-14); else the PIN if one is set.
+            // settings reset (PIN-6, BOOT-14); else the PIN if one is set, then the tool open at power off (BOOT-19).
             if self.store.first_boot() {
                 self.app.first_boot();
             } else if self.menu_held() {
                 self.app.power_on_reset();
             } else {
-                self.app.ask_pin();
+                self.app.power_on(true);
             }
         }
         if self.live() {

@@ -1930,14 +1930,14 @@ fn debug_bk_save() {
 
 #[cfg(feature = "bench")]
 /// TERM-40: `lcd` asks the display's bench state; each change is one request; bad words are refused before
-/// anything is sent.
+/// anything is sent. DISP-23.1: `lcd hz` and `lcd dither` set the screen light's PWM, and the answer shows it.
 #[test]
 fn debug_lcd() {
     use ferrite_core::msg::LcdSet;
     let mut r = Rig::main();
     r.cmd("lcd");
     assert_eq!(r.serve(4, regs), vec![DebugReq::Lcd(LcdSet::Ask)]);
-    assert!(r.raw().contains("lcd: idle on, partial off, sleep off, fps normal, bl normal, keys normal"), "{}", r.raw());
+    assert!(r.raw().contains("lcd: idle on, partial off, sleep off, fps normal, bl normal, keys normal, hz 31687, dither 1.0 % (plain)"), "{}", r.raw());
     for (cmd, want) in [
         ("lcd bl 30", LcdSet::Bl(Some(30))),
         ("lcd keys 0", LcdSet::Keys(Some(0))),
@@ -1949,6 +1949,11 @@ fn debug_lcd() {
         ("lcd sleep on", LcdSet::Sleep(true)),
         ("lcd reset", LcdSet::Reset),
         ("lcd bus", LcdSet::Bus),
+        ("lcd hz 25000", LcdSet::Hz(Some(25_000))),
+        ("lcd hz normal", LcdSet::Hz(None)),
+        ("lcd dither 0", LcdSet::Dither(Some(0))),
+        ("lcd dither 50", LcdSet::Dither(Some(50))),
+        ("lcd dither normal", LcdSet::Dither(None)),
     ] {
         r.send(b"\r");
         r.cmd(cmd);
@@ -1959,7 +1964,14 @@ fn debug_lcd() {
     r.serve(4, regs);
     assert!(r.raw().contains("bl 30"), "{}", r.raw());
     r.send(b"\r");
-    for bad in ["lcd bl 101", "lcd fps 21", "lcd idle maybe", "lcd bright 3", "lcd sleep", "lcd bl 3 4", "lcd bus 2"] {
+    r.send(b"\r");
+    r.cmd("lcd dither 25");
+    r.serve(4, regs);
+    assert!(r.raw().contains("hz 31687, dither 2.5 %"), "{}", r.raw());
+    r.send(b"\r");
+    for bad in
+        ["lcd bl 101", "lcd fps 21", "lcd idle maybe", "lcd bright 3", "lcd sleep", "lcd bl 3 4", "lcd bus 2", "lcd hz 1999", "lcd hz 60001", "lcd dither 51", "lcd hz"]
+    {
         r.cmd(bad);
         assert!(r.bottom().contains("lcd [idle"), "{bad}: {}", r.bottom());
         assert_eq!(r.term.debug_req(), None, "{bad}: nothing sent");

@@ -2320,10 +2320,12 @@ fn bk_save(t: &mut Toks) -> Result<Done, No> {
 #[cfg(feature = "bench")]
 /// TERM-40 (a bench test, the power bench): `lcd` shows the display's bench state; `lcd idle|partial|sleep on|off`,
 /// `lcd fps N` (1-20, 0 normal), `lcd bl N|normal`, `lcd keys N|normal` (percent) change one thing; `lcd reset`;
-/// `lcd bus` times a whole-screen fill.
+/// `lcd bus` times a whole-screen fill; `lcd hz N|normal` (2000-60000) and `lcd dither N|normal` (tenths of a
+/// percent, 0-50) set the screen light's PWM (DISP-23.1).
 fn lcd(t: &mut Toks) -> Result<Done, No> {
     use ferrite_core::msg::LcdSet;
-    const USAGE: Txt = txt!("lcd [idle|partial|sleep on|off] [fps 0-20] [bl|keys 0-100|normal] [paint old|new] [bus] [reset]");
+    const USAGE: Txt =
+        txt!("lcd [idle|partial|sleep on|off] [fps 0-20] [bl|keys 0-100|normal] [hz 2000-60000|normal] [dither 0-50|normal] [paint old|new] [bus] [reset]");
     fn word<'a>(t: &mut Toks<'a>) -> Result<Option<&'a [u8]>, No> {
         match t.next()? {
             None => Ok(None),
@@ -2365,6 +2367,15 @@ fn lcd(t: &mut Toks) -> Result<Done, No> {
             _ if same(what, b"fps") => LcdSet::Fps(pct(20).ok_or_else(|| t.say_t(USAGE))?.unwrap_or(0)),
             _ if same(what, b"bl") => LcdSet::Bl(pct(100).ok_or_else(|| t.say_t(USAGE))?),
             _ if same(what, b"keys") => LcdSet::Keys(pct(100).ok_or_else(|| t.say_t(USAGE))?),
+            _ if same(what, b"hz") => {
+                use ferrite_core::screenpwm::{HZ_MAX, HZ_MIN};
+                let hz = if same(arg, b"normal") { Some(None) } else { number(arg).filter(|n| (HZ_MIN..=HZ_MAX).contains(n)).map(|n| Some(n as u16)) };
+                LcdSet::Hz(hz.ok_or_else(|| t.say_t(USAGE))?)
+            }
+            _ if same(what, b"dither") => {
+                let max = ferrite_core::screenpwm::DITHER_MAX as u32;
+                LcdSet::Dither(pct(max).ok_or_else(|| t.say_t(USAGE))?.map(u16::from))
+            }
             _ => return Err(t.say_t(USAGE)),
         }
     };

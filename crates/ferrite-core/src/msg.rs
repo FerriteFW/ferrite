@@ -610,6 +610,10 @@ pub enum LcdSet {
     Keys(Option<u8>),
     /// Time one whole-screen fill (153,600 bytes) on the panel bus, then redraw; the answer carries it.
     Bus,
+    /// The screen light's PWM frequency in Hz (2000 to 60000), or DISP-23.1's (None).
+    Hz(Option<u16>),
+    /// The screen light's dither depth in tenths of a percent (0 to 50), or DISP-23.1's (None).
+    Dither(Option<u16>),
 }
 
 /// TERM-40: the display's bench state.
@@ -624,6 +628,11 @@ pub struct LcdBench {
     pub keys: Option<u8>,
     /// The last `lcd bus` (none yet: `None`): the whole-screen fill's microseconds and the MCU clock in MHz.
     pub bus: Option<(u32, u16)>,
+    /// The screen light's PWM frequency and dither over DISP-23.1's ([`crate::screenpwm`]), or theirs (None).
+    pub hz: Option<u16>,
+    pub dither: Option<u16>,
+    /// The dither runs now (the UI task fills it in: not while the light is dark or full on).
+    pub dithering: bool,
 }
 
 #[cfg(feature = "bench")]
@@ -640,6 +649,8 @@ impl LcdBench {
             LcdSet::Bl(p) => self.bl = p.map(|p| p.min(100)),
             LcdSet::Keys(p) => self.keys = p.map(|p| p.min(100)),
             LcdSet::Bus => {} // the UI task fills in `bus`
+            LcdSet::Hz(h) => self.hz = h.map(|h| h.clamp(crate::screenpwm::HZ_MIN as u16, crate::screenpwm::HZ_MAX as u16)),
+            LcdSet::Dither(d) => self.dither = d.map(|d| d.min(crate::screenpwm::DITHER_MAX)),
         }
         self
     }

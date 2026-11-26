@@ -73,7 +73,8 @@ static MODEL_TAG: [u8; 16] = *b"RT-950      \0\0\0\0";
 #[no_mangle]
 static MODEL_TAG_BOOT: [u8; 16] = *b"RT-950      \0\0\0\0";
 
-/// Spare interrupt lines for the two interrupt executors: DMA2 channels 1 and 2, never clocked.
+/// Spare interrupt lines for the two interrupt executors: DMA2 channels 1 and 2 (channel 1 runs the screen
+/// light's dither, DISP-23.1, with its interrupts off: the hardware never raises the line).
 const IRQ_RADIO: u16 = 56;
 const IRQ_DSP: u16 = 57;
 const IRQ_INPUT: u16 = 59; // DMA2 channels 4 and 5, never clocked

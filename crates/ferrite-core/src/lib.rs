@@ -19,6 +19,7 @@ pub mod battery;
 pub mod chipid;
 pub mod clocktree;
 pub mod cmdq;
+pub mod screenpwm;
 pub mod sha256;
 pub mod ssb;
 pub mod stuck;

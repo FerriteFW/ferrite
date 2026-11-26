@@ -402,6 +402,9 @@ impl Job {
                 let pct = |p: Option<u8>| p.map_or(Num(None), |p| Num(Some(p)));
                 put!(out, "  lcd: idle {}, partial {}, sleep {}, fps {}, bl {}, keys {}", onoff(l.idle), onoff(l.partial), onoff(l.sleep),
                      if l.fps == 0 { Num(None) } else { Num(Some(l.fps)) }, pct(l.bl), pct(l.keys));
+                // DISP-23.1: the screen light's PWM as set (the bench's or the rule's) and whether it dithers now.
+                let (hz, d) = (l.hz.map_or(ferrite_core::screenpwm::SCREEN_HZ, u32::from), l.dither.unwrap_or(ferrite_core::screenpwm::DITHER_TENTHS));
+                put!(out, ", hz {}, dither {}.{} % ({})", hz, d / 10, d % 10, if l.dithering { "running" } else { "plain" });
                 if let Some((us, mhz)) = l.bus {
                     put!(out, "; bus: full-screen fill {} us, {} ns a byte at {} MHz", us, us * 1000 / 153_600, mhz as u32);
                 }

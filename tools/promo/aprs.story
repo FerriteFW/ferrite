@@ -39,8 +39,8 @@ hold: 2
 ---
 title: Beacons, and who heard them
 layout: right
-left: Every 5 minutes (0 5 6 1): the first goes at once, and the card counts down to the next. Beacon now is OK 4 OK.
-right: The card names the digipeater that repeated your last beacon; the Sent page (OK 3) lists your last 20 and who repeated each.
+left: Every 5 minutes (0 5 6 1): the first goes at once, and the card counts down to the next. Beacon now is OK 5 OK.
+right: The card names the digipeater that repeated your last beacon; the Sent page (OK 4) lists your last 20 and who repeated each.
 setup: wait 300ms
 script:
   wait 600ms
@@ -52,7 +52,7 @@ script:
   wait 3500ms
   press OK
   wait 300ms
-  press 3
+  press 4
   wait 2500ms
 hold: 2
 ---

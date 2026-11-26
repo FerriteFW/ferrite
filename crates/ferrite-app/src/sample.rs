@@ -78,19 +78,44 @@ const fn at(lat: i32, lon: i32) -> Option<Pos> {
 }
 
 // call, symbol, position, age s, via, course and speed, altitude, times heard, comment, last message, its minute
-type StationRow = (&'static str, Sym, Option<Pos>, u32, &'static str, Option<(u16, u16)>, Option<i32>, u16, &'static str, &'static str, Option<u16>);
+type StationRow = (&'static str, Sym, Option<Pos>, u32, &'static str, Option<(u16, u16)>, Option<i32>, u16, &'static str);
+/// APRS-59: the Traffic page's made-up packets, oldest first: age s, kind, source, addressee (or a third
+/// party's sender), text (an ack's number, an object's name), times heard in a row. They match the stations above
+/// and the inbox below.
+type TrafficRow = (u32, crate::aprs_traffic::Kind, &'static str, &'static str, &'static str, u8);
+const TRAFFIC: [TrafficRow; 15] = {
+    use crate::aprs_traffic::Kind::*;
+    [
+        (6000, Position, "VA3TCJ", "", "", 1),
+        (4800, Message, "VA3RTX", "VA7FER-9", "Net at 8 tonight?", 1),
+        (4500, Position, "VE3TOS-5", "", "", 1),
+        (3600, Position, "VA3MAR", "", "", 2),
+        (3120, Status, "VE3XK-9", "", "", 1),
+        (2040, Position, "VE3JLH", "", "", 1),
+        (1500, Object, "VE3RSB-1", "", "CLUBNET", 1),
+        (1260, ThirdParty, "VE2GPA-10", "VE3ABC-9", "", 1),
+        (900, Message, "VA3ZZB-7", "VE3JLH", "QSY 446.100", 1),
+        (720, Position, "VA3ZZB-7", "", "", 1),
+        (540, Weather, "VE3OBW", "", "", 3),
+        (300, Telemetry, "VE3RSB-1", "", "", 1),
+        (260, Ack, "VE3KPW-9", "VA7FER-9", "12", 1),
+        (240, Position, "VA3RTX", "", "", 1),
+        (120, Message, "VE3KPW-9", "VA7FER-9", "On my way", 1),
+    ]
+};
+
 const STATIONS: [StationRow; 11] = [
-    ("VE3KPW-9", Sym::Car, at(454_467_741, -756_572_082), 120, "", Some((92, 54)), Some(87), 6, "Mobile, on 146.520", "On my way", Some(14 * 60 + 10)),
-    ("VA3RTX", Sym::Home, at(454_633_076, -758_249_370), 240, "VE3RSB-1*", None, Some(102), 14, "Ron, Kanata. QRV 2 m/70 cm", "Net at 8 tonight?", Some(13 * 60 + 12)),
-    ("VE3RSB-1", Sym::Digi, at(456_158_696, -755_964_076), 300, "", None, Some(212), 31, "Fill-in digi, Gatineau", "", None),
-    ("VE3OBW", Sym::Wx, at(452_778_355, -757_716_987), 540, "VE3RSB-1*", None, Some(95), 9, "270/007g012t072r004h65b10123 Ottawa WX", "", None),
-    ("VA3ZZB-7", Sym::Ht, at(454_243_110, -756_744_871), 720, "", Some((10, 4)), Some(71), 3, "On foot", "", None),
-    ("VE2GPA-10", Sym::IGate, at(455_383_826, -752_396_720), 1260, "WIDE2*", None, None, 22, "RX-only iGate", "", None),
-    ("VE3JLH", Sym::Home, at(454_662_798, -756_436_661), 2040, "", None, Some(78), 5, "", "", None),
-    ("VE3XK-9", Sym::Car, None, 3120, "", None, None, 1, "Status only", "", None),
-    ("VA3MAR", Sym::Boat, at(453_671_612, -756_049_365), 3600, "VE3RSB-1*,WIDE2-1", Some((245, 13)), Some(58), 4, "Rideau canal", "", None),
-    ("VE3TOS-5", Sym::Truck, at(452_277_209, -764_557_333), 4500, "VE3RSB-1,WIDE2*", Some((70, 96)), Some(120), 2, "Hwy 417 east", "", None),
-    ("VA3TCJ", Sym::Home, at(453_969_925, -756_844_914), 6000, "", None, None, 8, "Tim, Glebe", "", None),
+    ("VE3KPW-9", Sym::Car, at(454_467_741, -756_572_082), 120, "", Some((92, 54)), Some(87), 6, "Mobile, on 146.520"),
+    ("VA3RTX", Sym::Home, at(454_633_076, -758_249_370), 240, "VE3RSB-1*", None, Some(102), 14, "Ron, Kanata. QRV 2 m/70 cm"),
+    ("VE3RSB-1", Sym::Digi, at(456_158_696, -755_964_076), 300, "", None, Some(212), 31, "Fill-in digi, Gatineau"),
+    ("VE3OBW", Sym::Wx, at(452_778_355, -757_716_987), 540, "VE3RSB-1*", None, Some(95), 9, "270/007g012t072r004h65b10123 Ottawa WX"),
+    ("VA3ZZB-7", Sym::Ht, at(454_243_110, -756_744_871), 720, "", Some((10, 4)), Some(71), 3, "On foot"),
+    ("VE2GPA-10", Sym::IGate, at(455_383_826, -752_396_720), 1260, "WIDE2*", None, None, 22, "RX-only iGate"),
+    ("VE3JLH", Sym::Home, at(454_662_798, -756_436_661), 2040, "", None, Some(78), 5, ""),
+    ("VE3XK-9", Sym::Car, None, 3120, "", None, None, 1, "Status only"),
+    ("VA3MAR", Sym::Boat, at(453_671_612, -756_049_365), 3600, "VE3RSB-1*,WIDE2-1", Some((245, 13)), Some(58), 4, "Rideau canal"),
+    ("VE3TOS-5", Sym::Truck, at(452_277_209, -764_557_333), 4500, "VE3RSB-1,WIDE2*", Some((70, 96)), Some(120), 2, "Hwy 417 east"),
+    ("VA3TCJ", Sym::Home, at(453_969_925, -756_844_914), 6000, "", None, None, 8, "Tim, Glebe"),
 ];
 
 // source, age s, frequency, slot, unread, id, x, y, position, name, text
@@ -256,6 +281,15 @@ impl Sample {
     pub fn new() -> Self {
         let s = Self::blank();
         crate::acars::sample::feed(&s.acars, usize::MAX, 0, 0);
+        // APRS-59: Traffic's made-up packets, at their ages before the start
+        let t = &s.aprs.traffic;
+        for &(ago_s, kind, src, to, text, times) in &TRAFFIC {
+            t.set_now(0u32.wrapping_sub(ago_s));
+            for k in 0..times {
+                t.push(kind, k % 2 == 1, src.as_bytes(), to.as_bytes(), text.as_bytes());
+            }
+        }
+        t.set_now(0);
         s
     }
 
@@ -524,6 +558,10 @@ impl Data for Sample {
         Some(&self.acars)
     }
 
+    fn traffic(&self) -> Option<&crate::aprs_traffic::Traffic> {
+        Some(&self.aprs.traffic)
+    }
+
     fn events(&self) -> u16 {
         self.logged.get() + if self.events_cleared.get() { 0 } else { EVENTS.len() as u16 }
     }
@@ -552,9 +590,9 @@ impl Data for Sample {
             return None;
         }
         let Some(k) = i.checked_sub(self.aprs.stations()) else { return self.aprs.station(i) };
-        let (call, sym, pos, ago_s, via, course, alt_m, times, comment, msg, msg_min) = STATIONS[k as usize];
+        let (call, sym, pos, ago_s, via, course, alt_m, times, comment) = STATIONS[k as usize];
         let ago_s = ago_s + self.aprs.now_s();
-        Some(Station { call: txt(call), sym, pos, ago_s, via: txt(via), course, alt_m, times, comment: txt(comment), msg: txt(msg), msg_min, msg_to: Default::default(), msg_ago_s: None, fx25: None, device: None })
+        Some(Station { call: txt(call), sym, pos, ago_s, via: txt(via), course, alt_m, times, comment: txt(comment), msg: Buf::new(), msg_min: None, msg_to: Default::default(), fx25: None, device: None })
     }
     fn callsign(&self) -> Option<Buf<10>> {
         self.call.get()

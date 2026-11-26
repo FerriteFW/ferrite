@@ -120,16 +120,12 @@ pub struct Station {
     pub alt_m: Option<i32>,
     pub times: u16,
     pub comment: Buf<40>,
-    /// The last message it sent us and the clock minute it came.
+    /// APRS-28: the newest message it was heard sending, to anyone, still in Traffic (APRS-59), and the clock
+    /// minute it came; empty until the station screen fills it ([`crate::screens::aprs::last_message`]).
     pub msg: Buf<32>,
     pub msg_min: Option<u16>,
-    /// APRS-28.1 (ferrite#184): who that message was addressed to (our callsign with or without the SSID, or CQ,
-    /// QST, ALL); empty when not known (a message stored before 0.9.7).
+    /// APRS-28.1 (ferrite#184): who that message was addressed to.
     pub msg_to: Buf<10>,
-    /// APRS-28: `msg` is the newest message the station was heard sending this power-on (to anyone, kept in RAM
-    /// for the stations heard most recently, APRS-4.5), this many seconds ago; None: `msg` is filled from the
-    /// stored messages ([`crate::screens::aprs::last_message`]) or by the simulators' sample.
-    pub msg_ago_s: Option<u32>,
     /// APRS-44: its last frame came as FX.25, with this many bytes corrected.
     pub fx25: Option<u8>,
     /// APRS-5.2: the radio its Mic-E device codes named, an index into `uaprs::parse::MIC_E_DEVICES`.
@@ -554,6 +550,10 @@ pub trait Data {
     /// The beacon's state, for the APRS card (APRS-17, APRS-20).
     fn beacon(&self) -> Beacon {
         Beacon::default()
+    }
+    /// APRS-59: the packets heard lately, every kind, in RAM (None: not kept here).
+    fn traffic(&self) -> Option<&crate::aprs_traffic::Traffic> {
+        None
     }
     /// APRS-53: our beacons since power-on (the last [`crate::aprs_live::SENT_MAX`], RAM only), newest first.
     fn beacons_sent(&self) -> u16 {

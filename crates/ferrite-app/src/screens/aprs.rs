@@ -5,8 +5,9 @@
 //!
 //! On the station: OK writes it a message, # saves it as a waypoint, ▲▼ step through the list.
 //!
-//! Sent (the APRS list's 3; APRS-53): our beacons since power-on, newest first, each with its age and the
-//! digipeaters heard repeating it (C3a).
+//! Traffic (the APRS list's 3; APRS-59): every packet heard lately, one line each, newest first (C3b). Sent (the
+//! APRS list's 4; APRS-53): our beacons since power-on, newest first, each with its age and the digipeaters heard
+//! repeating it (C3a).
 
 use super::lists::*;
 use super::nav::Dest;
@@ -250,6 +251,127 @@ impl View for Sent {
     }
 }
 
+/// C3b: the packets heard lately, every kind (APRS-59).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Traffic {
+    pub cur: Cursor,
+}
+
+/// The heard list's index of `call` (RAM only, PWR-26.13: the heard list's own fields).
+fn heard_index(d: &dyn Data, call: &[u8]) -> Option<(u16, Station)> {
+    (0..d.stations()).find_map(|i| d.station_ram(i).filter(|s| s.call.as_bytes() == call).map(|s| (i, s)))
+}
+
+/// APRS-59.6: a Traffic line: `VE7GPL-1 > TEST: "6"`, `VE3OCB-7 position 2.1 km NE`, `VE3KPW-9 ack 12`, the
+/// times heard in a row after it (`x3`, `x8+`), and its age. A position's distance and bearing are the heard
+/// list's (its station's last position, from the GPS fix). The screen and the readback say it this way.
+#[inline(never)]
+pub(crate) fn traffic_row(r: &crate::aprs_traffic::Rec, d: &dyn Data) -> (Buf<64>, Buf<12>) {
+    use crate::aprs_traffic::{Kind, COUNT_MAX};
+    let (mut l, mut age) = (Buf::<64>::new(), Buf::<12>::new());
+    l.push(r.src.as_bytes());
+    match r.kind {
+        Kind::Message => {
+            let _ = uwrite!(l, " > {}: \"{}\"", Txt(r.to.as_bytes()), Txt(r.text.as_bytes()));
+        }
+        Kind::Ack | Kind::Rej | Kind::Object | Kind::Item | Kind::ThirdParty => {
+            let _ = uwrite!(l, " {} {}", r.kind.name(), Txt(if r.kind == Kind::ThirdParty { r.to.as_bytes() } else { r.text.as_bytes() }));
+        }
+        Kind::Query if !r.to.is_empty() => {
+            let _ = uwrite!(l, " query > {}", Txt(r.to.as_bytes()));
+        }
+        Kind::Position => {
+            l.push(b" position");
+            if let (Some((_, s)), Some(f)) = (heard_index(d, r.src.as_bytes()), d.fix()) {
+                if let Some(p) = s.pos {
+                    let (m, deg) = dist_bearing(f.pos, p);
+                    let mut t = Buf::<12>::new();
+                    dist_text(m, &mut t);
+                    let _ = uwrite!(l, " {} {}", Txt(t.as_bytes()), compass_name(deg));
+                }
+            }
+        }
+        k => {
+            l.push(b" ");
+            l.push(k.name().as_bytes());
+        }
+    }
+    if r.count > 1 {
+        let _ = uwrite!(l, " x{}{}", r.count, if r.count == COUNT_MAX { "+" } else { "" });
+    }
+    age_text(r.ago_s, &mut age);
+    (l, age)
+}
+
+impl View for Traffic {
+    fn name(self) -> &'static str {
+        "APRS traffic"
+    }
+
+    fn title(self, _: &App, b: &mut Buf<10>) {
+        b.set(b"Traffic");
+    }
+
+    fn key(self, app: &mut App, e: KeyEvent, store: &impl ChannelStore) {
+        use Press::*;
+        let d = store.data();
+        match (e.key, e.press) {
+            (Key::Up | Key::Down, Short | Repeat) => self.knob(app, if e.key == Key::Up { -1 } else { 1 }, store),
+            // APRS-59.7: OK opens the station when it is in the heard list; else a message shows whole in a toast
+            (Key::Menu, Short) => {
+                let Some(r) = d.traffic().and_then(|t| t.get(self.cur.sel)) else { return };
+                if let Some((i, _)) = heard_index(d, r.src.as_bytes()) {
+                    app.open_screen(Screen::Aprs(Aprs { cur: Cursor { sel: i, top: i }, station: true }));
+                } else if !r.text.is_empty() {
+                    let mut b = Buf::<48>::new();
+                    let _ = uwrite!(b, "to {}: {}", Txt(r.to.as_bytes()), Txt(r.text.as_bytes()));
+                    app.show_toast(r.src.as_bytes(), b.as_bytes(), false);
+                } else {
+                    app.show_toast(r.src.as_bytes(), b"is no longer in the heard list", false);
+                }
+            }
+            (Key::Exit, Short) => app.back(),
+            _ => {}
+        }
+    }
+
+    fn knob(self, app: &mut App, d: i32, store: &impl ChannelStore) {
+        let n = store.data().traffic().map_or(0, |t| t.len());
+        let cur = self.cur.step(d, n, ROWS1_FULL, &ALL);
+        app.screen = Screen::AprsTraffic(Traffic { cur });
+    }
+
+    fn render(self, app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
+        let data = cx.store.data();
+        app.page(lcd, ());
+        if !app.gate((self, data.version(), cx.dev.clock_min)) {
+            return;
+        }
+        let t = data.traffic();
+        let n = t.map_or(0, |t| t.len());
+        let mut l = Buf::<16>::new();
+        let _ = uwrite!(l, "{} heard", n);
+        app.list_head(lcd, l.as_bytes(), b"newest first");
+        let rows = self.cur.rows(n, ROWS1_FULL, &ALL, |row, i| {
+            if let Some(r) = t.and_then(|t| t.get(i)) {
+                let (line, age) = traffic_row(&r, data);
+                // a long line is cut to leave its age room (OK shows the whole message)
+                let room = (232 - 8 - 40).min(232 - 8 - 8 - text4_width(age.as_bytes(), &UI_12));
+                app.row1(lcd, row, w::fit(line.as_bytes(), &UI_12, room), age.as_bytes(), false, i == self.cur.sel, false);
+            }
+        });
+        app.rows_end(lcd, rows, ROWS1_FULL, ROW1_H);
+        app.list_cue(lcd, self.cur, n, ROWS1_FULL, ROW1_H, rows, &ALL);
+        if n == 0 {
+            app.empty(lcd, b"Nothing heard yet", b"Every packet shows here, RAM only");
+        }
+    }
+
+    fn hints(self, _: &App) -> Hints {
+        Hints::new(&[(ARROWS_UD, "Move"), ("OK", "Open"), ("BACK", "Back")])
+    }
+}
+
 fn text(b: &mut Buf<40>, s: &[u8]) -> u16 {
     b.set(s);
     TEXT
@@ -348,7 +470,7 @@ const ROWS: [(&str, Val<Station>); 8] = [
     }),
     ("Message", |c, b| {
         let s = c.x;
-        if s.msg.is_empty() && s.msg_to.is_empty() {
+        if s.msg_to.is_empty() {
             return text(b, b"-");
         }
         let mut clock = Buf::<12>::new();
@@ -364,44 +486,16 @@ const ROWS: [(&str, Val<Station>); 8] = [
     }),
 ];
 
-/// The station screen's Message line (APRS-28): the newest message the station was heard sending, to anyone (RAM
-/// keeps it for the stations heard most recently this power-on, APRS-4.5), else the newest it sent us from the
-/// stored messages (the newest [`MSG_LOOK`] only, so the screen never reads the whole ring) or to everyone lately
-/// (APRS-28.1), with the clock time it came.
+/// The station screen's Message line (APRS-28): the newest message the station was heard sending, to anyone, that
+/// Traffic still holds (APRS-59), its addressee and the clock time it came; none ("-") once it has left Traffic.
 pub fn last_message(s: &mut crate::data::Station, data: &dyn crate::data::Data, clock_min: Option<u16>) {
-    let min_of = |ago_s: u32| clock_min.filter(|_| ago_s != crate::data::AGO_UNKNOWN).map(|c| (c as i32 - (ago_s / 60) as i32).rem_euclid(1440) as u16);
-    // RAM's (it heard every message the station sent over the air, to us and to everyone too) is the newest; one
-    // the sample gives is shown as it is
-    if let Some(a) = s.msg_ago_s {
-        s.msg_min = min_of(a);
+    let Some(m) = data.traffic().and_then(|t| t.last_message(s.call.as_bytes())) else {
+        (s.msg, s.msg_to, s.msg_min) = (Buf::new(), Buf::new(), None);
         return;
-    }
-    if !s.msg.is_empty() {
-        return;
-    }
-    // APRS-28.1: a message to everyone it sent lately (APRS-6.4) counts too, when it's newer than its last to us
-    let note = (0..data.notices()).filter_map(|i| data.notice(i)).find(|n| n.from.as_bytes().eq_ignore_ascii_case(s.call.as_bytes()));
-    let n = data.messages().min(MSG_LOOK);
-    let msg = (0..n).filter_map(|i| data.message(i)).find(|m| m.inbound && m.peer.as_bytes().eq_ignore_ascii_case(s.call.as_bytes()));
-    match (msg, note) {
-        (Some(m), n) if n.is_none_or(|n| m.ago_s <= n.ago_s) => {
-            let t = m.text.as_bytes();
-            s.msg = Buf::from(&t[..t.len().min(32)]);
-            s.msg_min = min_of(m.ago_s);
-            s.msg_to = m.to;
-        }
-        (_, Some(n)) => {
-            let t = n.text.as_bytes();
-            s.msg = Buf::from(&t[..t.len().min(32)]);
-            s.msg_min = min_of(n.ago_s);
-            s.msg_to = Buf::from(n.to.as_bytes());
-        }
-        _ => {}
-    }
+    };
+    (s.msg, s.msg_to) = (m.text, m.to);
+    s.msg_min = clock_min.map(|c| (c as i32 - (m.ago_s / 60) as i32).rem_euclid(1440) as u16);
 }
-
-/// How many of the newest messages the station screen looks through.
-const MSG_LOOK: u16 = 32;
 
 /// A speed sent in mph, in the units of 0 6 4 (metric km/h, imperial mph, nautical knots).
 fn speed(units: u8, mph: u16, b: &mut Buf<40>) {

@@ -81,6 +81,8 @@ pub(super) struct AprsSim {
     /// APRS-53: our beacons (three made up from before start), and when the last one is heard back.
     sent: SentLog,
     echo_s: Cell<Option<u32>>,
+    /// APRS-59: the packets heard (made up from the sample's stations at start, then the ones heard here).
+    pub traffic: crate::aprs_traffic::Traffic,
 }
 
 /// A sent beacon heard back through the iGate this long after it went out.
@@ -104,6 +106,7 @@ impl AprsSim {
             last_auto: Cell::new(None),
             sent: sample_sent(),
             echo_s: Cell::new(None),
+            traffic: crate::aprs_traffic::Traffic::new(),
         }
     }
 
@@ -217,7 +220,6 @@ impl AprsSim {
             msg: Buf::new(),
             msg_min: None,
             msg_to: Default::default(),
-            msg_ago_s: None,
             fx25: (k == 1).then_some(3),
             device: (k == 2).then_some(6), // a Yaesu FT5D (APRS-5.2)
         })
@@ -232,6 +234,7 @@ impl AprsSim {
 
     pub fn clear_heard(&self) {
         self.heard_gone.set(self.heard.get());
+        self.traffic.clear(); // APRS-59.5
     }
 
     pub fn heard(&self, call: &[u8]) -> bool {
@@ -252,6 +255,7 @@ impl AprsSim {
     /// for distance and smart beacons (APRS-24).
     pub fn tick(&self, now_s: u32, on: bool, relay_ok: bool, known: &dyn Fn(&[u8]) -> bool, fix: Option<Fix>) -> AprsNews {
         self.now_s.set(now_s);
+        self.traffic.set_now(now_s);
         let mut news = AprsNews::default();
         // APRS-53.1: the last beacon heard back through the iGate
         if self.echo_s.get().is_some_and(|t| now_s >= t) {
@@ -271,12 +275,16 @@ impl AprsSim {
         if (h as usize) < NEW.len() && up >= HEARD_FIRST_S + h as u32 * HEARD_EVERY_S {
             self.heard_at[h as usize].set(now_s);
             self.heard.set(h + 1);
+            let (call, _, pos, _) = NEW[h as usize];
+            let kind = if pos.is_some() { crate::aprs_traffic::Kind::Position } else { crate::aprs_traffic::Kind::Status };
+            self.traffic.push(kind, true, call.as_bytes(), b"", b"");
             news.changed = true;
         }
         // a message for us, acked (APRS-6)
         let k = self.inbound.get();
         if up >= IN_FIRST_S + k as u32 * IN_EVERY_S {
             let (from, text) = INBOUND[k as usize % INBOUND.len()];
+            self.traffic.push(crate::aprs_traffic::Kind::Message, true, from.as_bytes(), b"VA7FER-9", text.as_bytes());
             let msg = Message { inbound: true, peer: Buf::from(from.as_bytes()), text: Buf::from(text.as_bytes()), ago_s: 0, state: MsgState::Unread, to: Buf::new() };
             self.push(Live { msg, at_s: now_s, tries: 0, next_s: 0, ack_s: None });
             self.inbound.set(k + 1);

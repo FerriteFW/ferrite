@@ -533,35 +533,33 @@ fn aprs_flag_decodes_on_its_slot() {
     assert!(!a.app.aprs_flag_decode(), "APRS mode decodes on C instead");
 }
 
-/// APRS-28: the station screen's Message line comes from the newest stored message the station sent us.
-/// APRS-28.1: or a newer message to everyone it sent, and either says who it was addressed to.
+/// APRS-28, APRS-28.1: the station screen's Message line is the newest message the station was heard sending, to
+/// anyone, that Traffic (APRS-59) still holds, with its addressee and the clock time it came; one only stored (the
+/// inbox) or a notice doesn't count; a station with none in Traffic shows none, and none once Traffic is cleared.
 #[test]
 fn station_shows_its_last_message() {
     let a = A::new();
-    // The sample's VE3KPW-9 sent "On my way" 2 minutes ago (and was sent "Where are you?", not shown).
+    // The sample's VE3KPW-9 sent "On my way" to us 2 minutes ago (and acked ours after it).
     let mut s = a.s.station(0).unwrap();
     assert_eq!(s.call.as_bytes(), b"VE3KPW-9");
-    s.msg = Buf::new();
-    s.msg_min = None;
     crate::screens::aprs::last_message(&mut s, &a.s, Some(10 * 60));
-    assert_eq!(s.msg.as_bytes(), b"On my way");
-    assert_eq!(s.msg_min, Some(10 * 60 - 2));
-    assert!(s.msg_to.is_empty(), "APRS-28.1: a message stored without its address shows none");
-    // APRS-28.1 (ferrite#184): a CQ it sent since is the newer one, shown with its addressee
+    assert_eq!((s.msg.as_bytes(), s.msg_to.as_bytes(), s.msg_min), (&b"On my way"[..], &b"VA7FER-9"[..], Some(10 * 60 - 2)));
+    // a notice (APRS-6.4) isn't Traffic: one meaning only
     a.s.add_notice(crate::data::Notice { from: Buf::from(b"VE3KPW-9"), to: Buf::from(b"CQ"), text: Buf::from(b"Net at 8"), ago_s: 30, unread: true });
-    s.msg = Buf::new();
-    crate::screens::aprs::last_message(&mut s, &a.s, Some(10 * 60));
-    assert_eq!((s.msg.as_bytes(), s.msg_to.as_bytes(), s.msg_min), (&b"Net at 8"[..], &b"CQ"[..], Some(10 * 60)));
-    // an older CQ than the message to us: the message
-    let a = A::new();
-    a.s.add_notice(crate::data::Notice { from: Buf::from(b"VE3KPW-9"), to: Buf::from(b"CQ"), text: Buf::from(b"old"), ago_s: 3600, unread: false });
-    let mut s = a.s.station(0).unwrap();
-    s.msg = Buf::new();
     crate::screens::aprs::last_message(&mut s, &a.s, Some(10 * 60));
     assert_eq!(s.msg.as_bytes(), b"On my way");
-    // A station that sent us nothing keeps its dash.
+    // to another station
+    let mut s = (0..a.s.stations()).map(|i| a.s.station(i).unwrap()).find(|s| s.call.as_bytes() == b"VA3ZZB-7").unwrap();
+    crate::screens::aprs::last_message(&mut s, &a.s, None);
+    assert_eq!((s.msg.as_bytes(), s.msg_to.as_bytes(), s.msg_min), (&b"QSY 446.100"[..], &b"VE3JLH"[..], None));
+    // A station that sent nothing has none, whatever was there before.
     let mut s = a.s.station(2).unwrap();
-    s.msg = Buf::new();
+    s.msg = Buf::from(b"stale");
+    crate::screens::aprs::last_message(&mut s, &a.s, Some(600));
+    assert!(s.msg.is_empty() && s.msg_to.is_empty());
+    // the heard list cleared: Traffic with it
+    a.s.request(crate::data::Op::ClearHeard);
+    s.call = Buf::from(b"VE3KPW-9");
     crate::screens::aprs::last_message(&mut s, &a.s, Some(600));
     assert!(s.msg.is_empty());
 }

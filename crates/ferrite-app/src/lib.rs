@@ -26,6 +26,7 @@ pub mod aprs;
 pub mod aprs_card;
 pub mod bcast;
 pub mod aprs_live;
+pub mod aprs_traffic;
 pub mod chan;
 pub mod chanscan;
 pub mod chfield;

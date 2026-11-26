@@ -491,7 +491,6 @@ pub fn heard_decode(b: &[u8; REC as usize], ago_s: u32) -> Station {
         msg: Buf::new(),
         msg_min: None,
         msg_to: Default::default(),
-        msg_ago_s: None,
         fx25: (f & 8 != 0).then_some(b[91]),
         device: (b[92] != 0xFF).then_some(b[92]),
     }

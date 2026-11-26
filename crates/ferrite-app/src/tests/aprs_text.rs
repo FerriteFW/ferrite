@@ -25,7 +25,7 @@ impl Data for D {
 }
 
 fn station(call: &[u8], ago_s: u32) -> Station {
-    Station { call: Buf::from(call), sym: Sym::Car, pos: None, ago_s, via: Buf::new(), course: None, alt_m: None, times: 1, device: None, comment: Buf::new(), msg: Buf::new(), msg_min: None, msg_to: Default::default(), msg_ago_s: None, fx25: None }
+    Station { call: Buf::from(call), sym: Sym::Car, pos: None, ago_s, via: Buf::new(), course: None, alt_m: None, times: 1, device: None, comment: Buf::new(), msg: Buf::new(), msg_min: None, msg_to: Default::default(), fx25: None }
 }
 
 fn beacon_line(t: &T, d: &D) -> String {

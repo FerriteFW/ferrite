@@ -119,6 +119,10 @@ impl Radio {
         if self.sat.is_some() {
             return self.sat_tick().await;
         }
+        // ACARS-11: likewise ACARS, with the VHF chip while its screen is open.
+        if self.acars.is_some() {
+            return self.acars_tick().await;
+        }
         // The crossband repeater owns both chips while it runs (XB-13: no watch, scan or Battery Save); local PTT
         // holds it (XB-14), and that transmission runs as any other.
         #[cfg(feature = "tx")]

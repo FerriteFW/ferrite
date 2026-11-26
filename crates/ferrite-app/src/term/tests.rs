@@ -2919,3 +2919,22 @@ fn command_answers_golden() {
         panic!("line {}: want {:?}, got {:?}", at + 1, want.lines().nth(at), out.lines().nth(at));
     }
 }
+
+/// ACARS-11.1: the bench's `acars tune FREQ` has the ACARS screen listen there instead (RAM only), `acars tune off`
+/// gives it back its own; a bad frequency is refused.
+#[cfg(feature = "bench")]
+#[test]
+fn acars_tune_overrides_the_frequency() {
+    let mut r = Rig::main();
+    let own = r.app.acars_freq();
+    r.cmd("acars tune 446.475");
+    assert!(r.raw().contains("the screen listens on 446475 kHz (bench)"), "{}", r.raw());
+    assert_eq!(r.app.acars_freq(), 44_647_500);
+    r.send(b"\r");
+    r.cmd("acars tune off");
+    assert!(r.raw().contains("back on the screen's frequency"), "{}", r.raw());
+    assert_eq!(r.app.acars_freq(), own);
+    r.send(b"\r");
+    r.cmd("acars tune");
+    assert!(r.bottom().contains("acars tune FREQ"), "{}", r.bottom());
+}

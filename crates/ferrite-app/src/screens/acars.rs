@@ -155,9 +155,15 @@ impl Acars {
         let mut f = Buf::<16>::new();
         freq_text(app, &mut f);
         let _ = uwrite!(l, "{} AM \u{b7} {} {}", Txt(f.as_bytes()), n, if n == 1 { "msg" } else { "msgs" });
-        // TODO(acars-radio): "live" once the radio listens on the frequency
-        if app.dirty(R_TOP, Mix::new().h(&l).h(&y0).get()) {
-            head_at(lcd, y0, l.as_bytes(), b"not tuned");
+        // ACARS-3: what the radio does: listening on the frequency shown (a signal now: "receiving"), or not yet
+        let want = app.acars_freq();
+        let state: &[u8] = match cx.live.mode {
+            ferrite_core::msg::ModeLive::Acars { freq, open: true, .. } if freq == want => b"receiving",
+            ferrite_core::msg::ModeLive::Acars { freq, .. } if freq == want => b"listening",
+            _ => b"not tuned",
+        };
+        if app.dirty(R_TOP, Mix::new().h(&l).h(&y0).h(state).get()) {
+            head_at(lcd, y0, l.as_bytes(), state);
         }
         let top = y0 + 21;
         let rows = self.cur.rows(n, vis, &ALL, |row, i| {
@@ -352,7 +358,7 @@ impl View for Acars {
         let n = count(st);
         match (e.key, e.press, self.detail) {
             (Key::Up | Key::Down, Short | Repeat, _) => self.knob(app, if e.key == Key::Up { -1 } else { 1 }, st),
-            // ACARS-3: ◀▶ step through the frequencies (not tuned yet)
+            // ACARS-3: ◀▶ step through the frequencies (the radio retunes: App::reconcile_mode)
             (Key::Left | Key::Right, Short | Repeat, false) => {
                 let d = if e.key == Key::Left { -1 } else { 1 };
                 app.set.acars_freq = (app.set.acars_freq as i32 + d).rem_euclid(FREQS.len() as i32) as u8;

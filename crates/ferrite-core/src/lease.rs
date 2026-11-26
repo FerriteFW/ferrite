@@ -22,9 +22,11 @@ pub enum Held {
     ToneSearch,
     /// Satellite mode (SAT-1).
     Sat,
+    /// ACARS (ACARS-11).
+    Acars,
 }
 
-const HELD: [Held; 7] = [Held::Scope, Held::Counter, Held::Broadcast, Held::Hf, Held::Crossband, Held::ToneSearch, Held::Sat];
+const HELD: [Held; 8] = [Held::Scope, Held::Counter, Held::Broadcast, Held::Hf, Held::Crossband, Held::ToneSearch, Held::Sat, Held::Acars];
 
 impl Held {
     /// The command that stops it, as the UI would send it.
@@ -37,6 +39,7 @@ impl Held {
             Held::Crossband => RadioCmd::Crossband(None),
             Held::ToneSearch => RadioCmd::ToneSearch { slot: 0, on: false },
             Held::Sat => RadioCmd::SatRx(0),
+            Held::Acars => RadioCmd::AcarsRx(0),
         }
     }
 }
@@ -87,6 +90,8 @@ impl Lease {
             RadioCmd::ToneSearch { on: false, .. } => self.stop(Held::ToneSearch),
             RadioCmd::SatRx(0) => self.stop(Held::Sat),
             RadioCmd::SatRx(_) => self.start(Held::Sat, now),
+            RadioCmd::AcarsRx(0) => self.stop(Held::Acars),
+            RadioCmd::AcarsRx(_) => self.start(Held::Acars, now),
             // The input task's, not the UI's: no sign the UI is running.
             RadioCmd::Accessory(_) => {}
             _ => self.renew(now),

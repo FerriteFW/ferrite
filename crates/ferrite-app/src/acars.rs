@@ -1,11 +1,12 @@
-//! ACARS (chapter 27b, on trial: a receive-only display, not yet connected to the radio): the messages heard,
+//! ACARS's lists (chapter 27b): the messages heard since power-on, joined and kept by [`ferrite_core::acars::Log`] and
 //! kept in RAM only ([`AcarsLive`], held beside the APRS task's lists in the store's `extra`, [`crate::data::Data`]),
 //! the frequencies the screen offers, and the sample traffic the simulator and the bench builds' `acars feed` give
-//! it until the radio's modem feeds it.
+//! (ACARS-8).
 //!
-//! TODO(acars-radio): the Radio task tunes the VHF chip to [`FREQS`]`[set.acars_freq]` in AM while the screen is
-//! open, runs the chip's FSK modem at 2400 bit/s (ferrite#192: `fsk rx acars`), and hands each frame's bytes after
-//! SOH to [`AcarsLive::frame`] with the frequency's index and the time; and calls [`AcarsLive::tick`] once a second.
+//! ACARS-11: while the screen is open the Radio task's ACARS mode has the VHF chip on [`FREQS`]`[set.acars_freq]`
+//! in AM ([`crate::screens::activity::Mode::Acars`]); the DSP task's decoder (`ferrite_core::acarsrx`) runs once the
+//! radio says it listens there ([`App::acars_decoding`]), and the UI task hands each frame to [`App::acars_heard`]
+//! and calls [`App::acars_tick`] each turn.
 
 use core::cell::RefCell;
 use ferrite_core::acars::{self, Frame, Log, Msg};
@@ -84,6 +85,36 @@ impl AcarsLive {
 
     pub fn clear(&self) {
         self.log.borrow_mut().clear();
+    }
+}
+
+impl crate::App {
+    /// ACARS-11: the decoder wanted: the ACARS mode running and the radio listening on the frequency picked.
+    pub fn acars_decoding(&self, live: &ferrite_core::msg::LiveAll) -> bool {
+        let want = self.acars_freq();
+        self.radio.mode == crate::screens::activity::Mode::Acars && matches!(live.mode, ferrite_core::msg::ModeLive::Acars { freq, .. } if freq == want)
+    }
+
+    /// ACARS-11: the frequency the radio is to listen on: the one picked, or ACARS-11.1's bench override.
+    pub fn acars_freq(&self) -> Freq10 {
+        match self.radio.acars_test {
+            0 => FREQS[self.set.acars_freq as usize % FREQS.len()],
+            f => f,
+        }
+    }
+
+    /// ACARS-11: a frame heard (its bytes after SOH, to the CRC), into the list as heard now on the frequency picked.
+    pub fn acars_heard(&self, st: &impl crate::chan::ChannelStore, bytes: &[u8]) {
+        if let Some(live) = st.data().acars() {
+            let _ = live.frame(bytes, self.set.acars_freq, self.now / 1000);
+        }
+    }
+
+    /// ACARS-2.4: time passes for the messages waiting for their next block.
+    pub fn acars_tick(&self, st: &impl crate::chan::ChannelStore) {
+        if let Some(live) = st.data().acars() {
+            live.tick(self.now / 1000);
+        }
     }
 }
 

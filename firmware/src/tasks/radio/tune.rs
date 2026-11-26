@@ -149,6 +149,8 @@ impl Radio {
             }
             // Satellite mode's downlink (SAT-8): wide FM, the default squelch.
             sat::SAT_TUNED => SlotRx { freq: f, ..SlotRx::DEFAULT },
+            // ACARS-11: narrow AM (ACARS's 25 kHz channels; the bench decoded through NAM).
+            acars::ACARS_TUNED => SlotRx { freq: f, am: true, narrow: true, ..SlotRx::DEFAULT },
             // HF mode on chip 1 (18-64 MHz): AM is the mode's own (Param::Mode 2); FM otherwise.
             _ => SlotRx { freq: f, am: self.hf.is_some_and(|h| h.mode == 2), ..SlotRx::DEFAULT },
         };

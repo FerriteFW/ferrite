@@ -24,6 +24,8 @@ pub enum Mode {
     Xb,
     /// Satellite mode (SAT-1): both chips, the downlink tuned.
     Sat,
+    /// ACARS (ACARS-11): the VHF chip on the chosen frequency, for the decoder.
+    Acars,
 }
 
 /// One remembered hit: what (a frequency, or a tone word), when it was last heard and when that stop began
@@ -132,6 +134,9 @@ pub struct RadioUi {
     /// MODE-3: when the lease on the running mode was last renewed, and the Radio task's count of modes it
     /// stopped itself as last seen.
     pub lease_at: u32,
+    /// ACARS-11: the frequency last sent to the Radio task (0: none), and ACARS-11.1's bench override (0: none).
+    pub acars_sent: Freq10,
+    pub acars_test: Freq10,
     pub lease_drops: u8,
     /// BCR-22: the slot playing broadcast FM, and the slots in the broadcast band as last seen (one coming in
     /// takes the broadcast).
@@ -172,6 +177,8 @@ impl RadioUi {
             seen_freq: None,
             freq_at: 0,
             lease_at: 0,
+            acars_sent: 0,
+            acars_test: 0,
             lease_drops: 0,
             zones: 0,
             act: [0; SLOTS],
@@ -286,6 +293,9 @@ impl App {
                 Screen::Hf(_) | Screen::Crossband(_) | Screen::Sat(_) if self.low_power() => continue, // PWR-24.4 (ferrite#133)
                 Screen::Hf(_) => Mode::Hf,
                 Screen::Sat(_) => Mode::Sat,
+                // ACARS-11: receive only; not in Low Power Mode (PWR-24.4: the capture runs throughout)
+                Screen::Acars(_) if self.low_power() => continue,
+                Screen::Acars(_) => Mode::Acars,
                 Screen::Crossband(_) if self.radio.xb_on => Mode::Xb,
                 _ => continue,
             };
@@ -345,6 +355,15 @@ impl App {
             }
             self.radio.lease_at = self.now;
         }
+        // ACARS-3, ACARS-11: ◀▶ picked another frequency: retuned (it renews the lease too)
+        if self.radio.mode == Mode::Acars {
+            let f = self.acars_freq();
+            if f != self.radio.acars_sent {
+                self.radio.acars_sent = f;
+                self.out.push(RadioCmd::AcarsRx(f));
+                self.radio.lease_at = self.now;
+            }
+        }
         if fm && !self.radio.fm_on {
             let f = self.fm_freq();
             (self.radio.fm_on, self.radio.fm_sent, self.radio.fm_seek_at) = (true, f, None);
@@ -382,6 +401,11 @@ impl App {
             Mode::Fm => {} // the broadcast's start is the reconciler's (MODE-5)
             Mode::Hf => super::hf::send(self),
             Mode::Sat => self.sat_start(),
+            Mode::Acars => {
+                let f = self.acars_freq();
+                self.radio.acars_sent = f;
+                self.out.push(RadioCmd::AcarsRx(f));
+            }
             Mode::Xb => {
                 super::xb::send_start(self);
                 self.radio.xb_log = Some(super::xb::XbLog { on: true, by: self.radio.xb_by, why: 0 }); // XB-20.6
@@ -408,6 +432,10 @@ impl App {
             Mode::Fm => {} // the broadcast's stop is the reconciler's (MODE-5)
             Mode::Hf => self.out.push(RadioCmd::Hf { freq: self.set.hf.freq, mode: self.set.hf.mode, on: false }),
             Mode::Sat => self.out.push(RadioCmd::SatRx(0)),
+            Mode::Acars => {
+                self.radio.acars_sent = 0;
+                self.out.push(RadioCmd::AcarsRx(0));
+            }
             Mode::Xb => {
                 self.out.push(RadioCmd::Crossband(None));
                 if self.radio.xb_by & super::xb::LISTEN != 0 {

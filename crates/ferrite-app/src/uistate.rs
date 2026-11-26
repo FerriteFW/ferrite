@@ -341,6 +341,7 @@ fn keyed_remote_mode(app: &App, live: &LiveAll, l: &mut Line) {
         Mode::Hf => b"hf",
         Mode::Xb => b"xb",
         Mode::Sat => b"sat",
+        Mode::Acars => b"acars",
     });
 }
 
@@ -942,8 +943,8 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
     }
 }
 
-/// ACARS (chapter 27b, ACARS-9): `acars page=list n=10 sel=0 freq=131.550 strip=0 airlines=10`; on a message's
-/// page also its fields: ` flight="AC0115" reg="C-FIUA" label="H1" up=0 crc=1 blocks=2 line=0`.
+/// ACARS (chapter 27b, ACARS-9): `acars page=list n=10 sel=0 freq=131.550 strip=0 airlines=10 radio=1` (radio: the
+/// decoder listening on the frequency, ACARS-11); on a message's page also its fields: ` flight="AC0115" reg="C-FIUA" label="H1" up=0 crc=1 blocks=2 line=0`.
 fn acars_lines<S: ChannelStore>(app: &App, cx: &Cx<S>, s: &screens::acars::Acars, d: &mut Desc) {
     let Some(l) = d.ln() else { return };
     let live = cx.store.data().acars();
@@ -958,6 +959,7 @@ fn acars_lines<S: ChannelStore>(app: &App, cx: &Cx<S>, s: &screens::acars::Acars
     if s.air != u16::MAX {
         kn(l, "airlines", s.air as u32);
     }
+    kn(l, "radio", app.acars_decoding(cx.live) as u32);
     if let Some((m, _)) = live.filter(|_| s.detail).and_then(|a| a.get(s.cur.sel, &mut [])) {
         kq(l, "flight", m.flight());
         kq(l, "reg", m.reg());

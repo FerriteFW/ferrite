@@ -1894,10 +1894,12 @@ use super::debug::{BK_REGS, MEM_MAX};
 pub const BENCH_ONLY: [&str; 17] = ["pin", "mem", "mem32", "gpio", "bk", "si", "bt", "rx", "mic", "af", "txtest", "lcd", "fsk", "meter", "synthfsk", "crash", "acars"];
 
 /// ACARS-8: `acars feed [N]` hands the first N sample frames (all without N) to the ACARS list as if just heard on
-/// the frequency picked; `acars clear` empties it; `acars` says how many there are.
+/// the frequency picked; `acars clear` empties it; `acars` says how many there are. ACARS-11.1: `acars tune FREQ`
+/// has the ACARS screen listen there instead of its frequency (RAM only; the bench's bladeRF on 446.475, never on
+/// airband), `acars tune off` ends it.
 #[cfg(feature = "bench")]
 fn acars<S: ChannelStore>(app: &mut App, st: &S, t: &mut Toks) -> Result<Done, No> {
-    const USAGE: Txt = txt!("acars, acars feed [N] (the first N sample frames), acars clear");
+    const USAGE: Txt = txt!("acars, acars feed [N] (the first N sample frames), acars clear, acars tune FREQ|off");
     let Some(live) = st.data().acars() else { return Err(t.say_t(txt!("acars: no ACARS list here"))) };
     match t.next()? {
         None => {
@@ -1916,6 +1918,19 @@ fn acars<S: ChannelStore>(app: &mut App, st: &S, t: &mut Toks) -> Result<Done, N
         Some(Tok::Word(w)) if same(w, b"clear") => {
             live.clear();
             Ok(Done::Said(msg!("ACARS: cleared")))
+        }
+        Some(Tok::Word(w)) if same(w, b"tune") => {
+            let f = match t.next()? {
+                Some(Tok::Word(w)) if same(w, b"off") => 0,
+                Some(Tok::Word(w)) => freq(w, "frequency", t)?,
+                _ => return Err(t.say_t(USAGE)),
+            };
+            app.radio.acars_test = f;
+            if f == 0 {
+                Ok(Done::Said(msg!("ACARS: back on the screen's frequency")))
+            } else {
+                Ok(Done::Said(msg!("ACARS: the screen listens on {} kHz (bench)", f / 100)))
+            }
         }
         _ => Err(t.say_t(USAGE)),
     }

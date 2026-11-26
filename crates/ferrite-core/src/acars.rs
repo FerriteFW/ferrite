@@ -32,7 +32,10 @@ pub const TEXT_MAX: usize = 220;
 /// Mode, registration, ack, label and block ID: the fixed part after SOH.
 const HEAD: usize = 12;
 
-/// CRC-16/KERMIT, bit at a time (a frame is under 250 bytes, a few a minute: no table in the image).
+/// CRC-16/KERMIT, bit at a time (a frame is under 250 bytes, a few a minute: no table in the image). Inlined: this
+/// module is in the firmware's slow flash, and the DSP task's ACARS receiver checks each frame with it
+/// (`acarsrx`, in interrupt context).
+#[inline(always)]
 pub fn crc16(data: &[u8]) -> u16 {
     let mut c = 0u16;
     for &b in data {

@@ -203,3 +203,48 @@ fn an_empty_list_and_no_airline_table() {
     a.render();
     assert!(a.line().contains("airlines=0") && a.line().contains("n=1"));
 }
+
+/// ACARS-11: the screen runs the Radio task's ACARS mode on the frequency picked: AcarsRx(131.550) as it opens, ◀▶
+/// retunes, BACK stops it (AcarsRx(0)). The decoder runs once the radio says it listens there (the header and the
+/// readback say so), and a frame heard goes into the list.
+#[test]
+fn the_screen_tunes_the_radio_and_frames_come_in() {
+    use ferrite_core::msg::{ModeLive, RadioCmd};
+    let mut a = A::new();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    a.wait(200);
+    let mut cmds = Vec::new();
+    while let Some(c) = a.app.pop_cmd() {
+        cmds.push(c);
+    }
+    assert!(cmds.contains(&RadioCmd::AcarsRx(13_155_000)), "{cmds:?}");
+    assert!(!a.app.acars_decoding(&a.live), "not before the radio listens");
+    a.render();
+    assert!(a.line().ends_with("radio=0"), "{}", a.line());
+    a.live.mode = ModeLive::Acars { freq: 13_155_000, rssi: -110, open: false };
+    a.wait(100);
+    assert!(a.app.acars_decoding(&a.live));
+    a.render();
+    assert!(a.line().ends_with("radio=1"), "{}", a.line());
+    let n = a.s.data().acars().unwrap().len();
+    let mut b = [0u8; 64];
+    let k = ferrite_core::acars::encode(
+        &ferrite_core::acars::Fields { mode: b'2', reg: b"C-GKOA", ack: ferrite_core::acars::NAK, label: *b"Q0", block: b'A', ..Default::default() },
+        &mut b,
+    );
+    a.app.acars_heard(&a.s, &b[..k - 1]);
+    assert_eq!(a.s.data().acars().unwrap().len(), n + 1, "the frame is in the list");
+    a.tap(Key::Right);
+    let mut cmds = Vec::new();
+    while let Some(c) = a.app.pop_cmd() {
+        cmds.push(c);
+    }
+    assert!(cmds.contains(&RadioCmd::AcarsRx(13_172_500)), "◀▶ retunes: {cmds:?}");
+    assert!(!a.app.acars_decoding(&a.live), "the radio still on the old frequency");
+    a.tap(Key::Exit);
+    let mut cmds = Vec::new();
+    while let Some(c) = a.app.pop_cmd() {
+        cmds.push(c);
+    }
+    assert!(cmds.contains(&RadioCmd::AcarsRx(0)), "BACK stops it: {cmds:?}");
+}

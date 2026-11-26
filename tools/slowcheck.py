@@ -54,8 +54,9 @@ SLOW_TABLES = [
 # happen to look like one (Oct 24, 2026: two of udsp's sine values read as uaprs::build::message's address, a false
 # "slow call" from the DSP task that came and went with the layout). Oct 27, 2026: stuck::NAMES' bytes "TT", 4, 8
 # (the side PTT bit and its length) read as a .slow_rodata address once the txeq merge grew that part, a false slow
-# table; txtest's pulse-shape taps, a false pointer into .slow_text.
-NUMBER_TABLES = re.compile(r"^(udsp::trig::(SIN|COS)|ferrite_core::stuck::NAMES|ferrite_core::txtest::(RRC|GAUSS))\b")
+# table; txtest's pulse-shape taps, a false pointer into .slow_text. Nov 25, 2026: the SSTV test card's glyph rows,
+# a false 2 KB slow table once ACARS's receiver moved the layout.
+NUMBER_TABLES = re.compile(r"^(udsp::trig::(SIN|COS)|ferrite_core::stuck::NAMES|ferrite_core::txtest::(RRC|GAUSS)|ferrite_core::sstv::GLYPHS)\b")
 
 # The tasks run by the interrupt executors (main.rs).
 IRQ_TASKS = re.compile(r"TaskStorage.*7ferrite5tasks(5radio|3dsp|5input)11___task_task.*4poll")

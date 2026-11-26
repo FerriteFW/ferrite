@@ -278,7 +278,7 @@ fn run_with(evs: &[Ev], auto_tx_paused: bool) -> Result<(), String> {
 }
 
 fn run(evs: &[Ev]) -> Result<(), String> {
-    run_with(evs, false)
+    run_with(evs, true)
 }
 
 #[test]
@@ -291,14 +291,37 @@ fn modes_random_streams_keep_the_rules() {
 
 /// ferrite#131: beacons, KISS frames and digipeats key the radio during HF mode, the band scope, the counter, tone
 /// search and the satellite screen (HF-6, SCOPE-13, SAT-14). E.g. APRS mode on, the band scope open, a beacon due.
+/// TX-51: `data_key` refuses while they run.
 #[test]
-#[ignore = "found: ferrite#131"]
 fn modes_no_automatic_transmission_in_exclusive_modes() {
     let evs = [Ev::Aprs(2), Ev::Open(0), Ev::DataKey(0)];
     if let Err(e) = run_with(&evs, true) {
         panic!("{e}\n{evs:?}");
     }
     check("modes, ferrite#131", 62, 300, gen, |e| run_with(e, true));
+}
+
+/// TX-51, TX-51.4 (HF-6, SCOPE-13, SAT-14): automatic transmissions are paused while each mode's screen is up,
+/// also through a person's key-up under the scope or HF mode, and not on home or the crossband screen.
+#[test]
+fn auto_tx_paused_follows_the_mode_screens() {
+    for (d, paused) in DESTS.iter().zip([true, true, true, true, true, false, false]) {
+        let mut t = app();
+        assert!(!t.app.auto_tx_paused());
+        t.open(*d);
+        t.wait(100);
+        assert_eq!(t.app.auto_tx_paused(), paused, "{d:?}");
+        let s = store();
+        t.app.key_down(Key::PTT, t.t, &s);
+        t.t += 50;
+        t.app.tick(t.t, &t.live, &s);
+        // The scope and HF mode stay up through the key-up (the others' screens give way to the transmit screen).
+        assert_eq!(t.app.auto_tx_paused(), paused && matches!(d, Dest::BandScope | Dest::HfMode), "{d:?}, keyed");
+        t.app.key_up(Key::PTT, t.t, &s);
+        t.hold(Key::Exit);
+        t.wait(100);
+        assert!(!t.app.auto_tx_paused(), "{d:?}, home again");
+    }
 }
 
 /// SCAN-6: SIDE2 stops a scan on home with the slot on the scan's last hit (Return to "Last hit", 0 1 6 4) or where

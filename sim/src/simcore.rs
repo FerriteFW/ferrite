@@ -620,7 +620,8 @@ impl SimCore {
                 for (peer, text, st) in n.states.into_iter().flatten() {
                     store.message_state(peer.as_bytes(), text.as_bytes(), st);
                 }
-                if let Some(what) = n.tx {
+                // TX-51: none while HF mode, the scope, the counter, tone search or the satellite screen runs
+                if let Some(what) = n.tx.filter(|_| !app.auto_tx_paused()) {
                     if ferrite_app::screens::transmit::auto_tx(app, 2, what.as_bytes()) {
                         radio.burst(2);
                     }

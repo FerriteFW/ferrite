@@ -272,19 +272,12 @@ impl App {
         self.radio.ssb_patch = dev.selftest.ssb_patch;
     }
 
-    /// MODE-1: the exclusive mode the radio should be in now, from the screen, what BACK returns to and the
-    /// settings: the nearest mode screen up or under the screen up (a scope's typed centre, HF mode's recent list or
-    /// save keep their mode), else home's scope strip (single + scope layout) once the active frequency has
-    /// rested for [`STRIP_REST_MS`] (MODE-4) and the strip can run beside a broadcast (MODE-5:
-    /// [`App::strip_blocked`]), else FM broadcast while a slot is in the broadcast band (BCR-22), else none.
-    /// The strip with a broadcast slot keeps the broadcast playing beside it ([`RadioUi::fm_on`]). While keyed only HF mode (HF-23, it transmits in place)
-    /// and the crossband repeater (XB-14, held through local PTT) keep running; the others stop before the
-    /// key-up (BCR-16, SCOPE-12). Screens never start or stop a mode themselves: [`App::reconcile_mode`] does.
-    pub(crate) fn wanted_mode(&self) -> Mode {
-        let keyed = self.radio.keyed.is_some() || self.radio.data_keyed; // TX-24.1: a data key-up too
+    /// MODE-1: the nearest mode screen's mode, up or under the screen up, keyed or not (PWR-24.4: none of
+    /// Low Power Mode's).
+    fn screen_mode(&self) -> Option<Mode> {
         let under = self.back.iter().rev().flatten().copied();
         for s in core::iter::once(self.screen).chain(under) {
-            let m = match s {
+            return Some(match s {
                 // PWR-24.4: no scope, counter, tone search, broadcast, HF mode or crossband in Low Power Mode
                 Screen::Scope(_) | Screen::Counter(_) | Screen::ToneSearch(_) if self.low_power() => continue,
                 Screen::Scope(_) => Mode::Scope,
@@ -298,7 +291,42 @@ impl App {
                 Screen::Acars(_) => Mode::Acars,
                 Screen::Crossband(_) if self.radio.xb_on => Mode::Xb,
                 _ => continue,
-            };
+            });
+        }
+        None
+    }
+
+    /// TX-51 (HF-6, SCOPE-13, SAT-14; ferrite#131): automatic transmissions (APRS frames, KISS) wait while HF
+    /// mode, the band scope, the counter, tone search or the satellite screen runs, also through a person's
+    /// key-up (which stops the mode meanwhile). Home's scope strip doesn't hold them (it stops for the key-up).
+    pub fn auto_tx_paused(&self) -> bool {
+        self.auto_tx_pause().is_some()
+    }
+
+    /// [`App::auto_tx_paused`]'s mode, named for a toast (TX-51.3: "KISS not sent: HF mode").
+    pub fn auto_tx_pause(&self) -> Option<&'static str> {
+        let name = |m| match m {
+            Mode::Hf => Some("HF mode"),
+            Mode::Scope => Some("band scope"),
+            Mode::Counter => Some("counter"),
+            Mode::Tone => Some("tone search"),
+            Mode::Sat => Some("satellites"),
+            _ => None,
+        };
+        name(self.radio.mode).or_else(|| self.screen_mode().and_then(name)).or_else(|| self.sat_open().then_some("satellites"))
+    }
+
+    /// MODE-1: the exclusive mode the radio should be in now, from the screen, what BACK returns to and the
+    /// settings: the nearest mode screen up or under the screen up (a scope's typed centre, HF mode's recent list or
+    /// save keep their mode), else home's scope strip (single + scope layout) once the active frequency has
+    /// rested for [`STRIP_REST_MS`] (MODE-4) and the strip can run beside a broadcast (MODE-5:
+    /// [`App::strip_blocked`]), else FM broadcast while a slot is in the broadcast band (BCR-22), else none.
+    /// The strip with a broadcast slot keeps the broadcast playing beside it ([`RadioUi::fm_on`]). While keyed only HF mode (HF-23, it transmits in place)
+    /// and the crossband repeater (XB-14, held through local PTT) keep running; the others stop before the
+    /// key-up (BCR-16, SCOPE-12). Screens never start or stop a mode themselves: [`App::reconcile_mode`] does.
+    pub(crate) fn wanted_mode(&self) -> Mode {
+        let keyed = self.radio.keyed.is_some() || self.radio.data_keyed; // TX-24.1: a data key-up too
+        if let Some(m) = self.screen_mode() {
             return if keyed && !matches!(m, Mode::Hf | Mode::Xb | Mode::Sat) { Mode::Off } else { m };
         }
         if keyed || self.low_power() {

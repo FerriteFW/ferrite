@@ -205,7 +205,9 @@ pub const AX25_CALL: usize = 6;
 pub fn data_key(app: &mut App, slot: u8, power: u8, what: &[u8]) -> bool {
     // APRS-10.1: a data frame keys only while APRS mode, KISS or beacons hold C, so it goes on the APRS frequency,
     // never on C's own channel given back meanwhile (refused quietly: the frame was dropped as it was let go).
-    if slot == crate::aprs::APRS_SLOT && !app.aprs_c() {
+    // TX-51 (HF-6, SCOPE-13, SAT-14): none while HF mode, the scope, the counter, tone search or the satellite
+    // screen runs (refused quietly: the APRS task holds its frames until the mode ends).
+    if (slot == crate::aprs::APRS_SLOT && !app.aprs_c()) || app.auto_tx_paused() {
         return false;
     }
     if app.remote_tx_refused() || !auto_tx(app, slot, what) {

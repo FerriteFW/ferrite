@@ -61,10 +61,13 @@ impl App {
         if self.dirty(R_TOP, Mix::new().h(&a).h(&head).h(&m).h(&f).get()) {
             w::badge(lcd, 8, 23, a, true, BG);
             w::field(lcd, 22, 4, 21, 39, 35, b"", const { &w::st(&UI_12, SUB, BG, Align::Left) });
-            w::field(lcd, 26, 66, 21, 39, 35, head.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Left) });
+            // the frequency right after the head, whose width varies: "VFO · Airband" is 91 px (ferrite#144: a
+            // fixed 66 cut it); "1300.000 00" still fits before the mode
+            let fx = 26 + text4_width(head.as_bytes(), &UI_12).clamp(66, 94);
+            w::field(lcd, 26, fx - 26, 21, 39, 35, head.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Left) });
             let mut fb = [0u8; 16];
             let n = ferrite_core::freq::format(f, &mut fb);
-            w::field(lcd, 92, 108, 21, 39, 35, &fb[..n], const { &w::st(&UI_12B, TEXT, BG, Align::Left) });
+            w::field(lcd, fx, 200 - fx, 21, 39, 35, &fb[..n], const { &w::st(&UI_12B, TEXT, BG, Align::Left) });
             w::field(lcd, 200, 32, 21, 39, 35, m.as_bytes(), const { &w::st(&UI_12, SUB, BG, Align::Right) });
             lcd.fill(0, 40, 240, 1, LINE);
         }

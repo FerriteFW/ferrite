@@ -191,10 +191,7 @@ pub fn auto_tx(app: &mut App, slot: u8, what: &[u8]) -> bool {
     } else {
         return true;
     };
-    let mut h = Buf::<20>::new();
-    h.push(what);
-    h.push(b" not sent:");
-    app.show_toast(h.as_bytes(), why, false);
+    not_sent(app, what, why);
     false
 }
 
@@ -234,12 +231,32 @@ pub fn sstv_key(app: &mut App, slot: u8, power: u8) -> bool {
     true
 }
 
-/// An automatic transmission that couldn't be built, in a toast: e.g. a beacon with no position.
+/// An automatic transmission refused or that couldn't be built, in a toast (TX-35): "Beacon not sent: no position".
+/// Where the reason doesn't fit after that head, the head is the transmission alone ("Beacon: outside the band
+/// plan"), then "Not sent:" ("Query reply" is long); the reason is cut to the line only if it fits after none of
+/// them (WFM's after some: never an automatic transmission's slot but SSTV's, which fits).
+#[inline(never)]
 pub fn not_sent(app: &mut App, what: &[u8], why: &[u8]) {
-    let mut h = Buf::<20>::new();
-    h.push(what);
-    h.push(b" not sent:");
-    app.show_toast(h.as_bytes(), why, false);
+    use ferrite_ui::widgets as w;
+    let mut h = Buf::<24>::new();
+    for i in 0..3 {
+        h.clear();
+        match i {
+            0 => {
+                h.push(what);
+                h.push(b" not sent:");
+            }
+            1 => {
+                h.push(what);
+                h.push(b":");
+            }
+            _ => h.push(b"Not sent:"),
+        }
+        if h.as_bytes().len() <= 20 && w::toast_fits(h.as_bytes(), why, false) {
+            break;
+        }
+    }
+    app.show_toast(h.as_bytes(), w::fit(why, &ferrite_ui::assets::UI_12, w::toast_room(h.as_bytes(), false)), false);
 }
 
 /// The data transmission's end (after [`data_key`]).

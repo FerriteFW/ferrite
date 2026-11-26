@@ -2055,6 +2055,36 @@ fn raw_data_shapes_ranges_and_ports() {
     assert_eq!(bt.ask(msg::DATA_READ, &[READ, 0, 0, 0, 0, 16]).0, Status::NotFound as u8, "reads go on over Bluetooth");
 }
 
+/// LINK-73, LINK-8, HF-18: `SSB_WRITE`'s shapes are checked before the store is asked: only the known stock patch's
+/// hash (the radio's question for another, D15, isn't asked over the link), a length the region takes, pieces only
+/// after a `BEGIN` and only whole records inside its length; `CHECK` says what is held. Bluetooth past the PIN only.
+#[test]
+fn ssb_write_shapes() {
+    use ferrite_core::link::ssb::{begin, CHECK, FINISH, PROGRAM};
+    use ferrite_core::ssb::KNOWN_SHA256;
+    let mut pc = Pc::new(true);
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[CHECK]), (Status::Ok as u8, std::vec![0]), "none held");
+    let (st, why) = pc.ask(msg::SSB_WRITE, &begin(15_832, &[0x5A; 32]));
+    assert_eq!((st, &why[..]), (Status::Invalid as u8, &b"ssb: not the stock patch Ferrite knows"[..]));
+    assert_eq!(pc.ask(msg::SSB_WRITE, &begin(15_830, &KNOWN_SHA256)).0, Status::BadArg as u8, "not whole records");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &begin(16_384, &KNOWN_SHA256)).0, Status::BadArg as u8, "past the region");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &begin(15_832, &KNOWN_SHA256)[..36]).0, Status::BadArg as u8);
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[PROGRAM, 0, 0, 0x15, 0, 0, 0, 0, 0, 0, 0]).0, Status::BadArg as u8, "no BEGIN");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[FINISH]).0, Status::BadArg as u8, "no BEGIN");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &begin(15_832, &KNOWN_SHA256)).0, Status::Busy as u8, "no store to queue it");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[9]).0, Status::BadArg as u8);
+    // Past a BEGIN (the session's own), a piece is checked against its length and the records' framing.
+    pc.link.ssb = Some(ferrite_core::ssb::Patch { len: 800, sha: KNOWN_SHA256 });
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[PROGRAM, 0, 0, 0x16, 0, 0, 0, 0, 0, 0, 0]).0, Status::BadArg as u8, "a 0x15 first");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[PROGRAM, 0x20, 0x03, 0x16, 0, 0, 0, 0, 0, 0, 0]).0, Status::BadArg as u8, "past 800");
+    assert_eq!(pc.ask(msg::SSB_WRITE, &[PROGRAM, 8, 0, 0x16, 0, 0, 0, 0, 0, 0, 0]).0, Status::Busy as u8, "shape ok: no store");
+    let mut bt = Pc::new(false);
+    (bt.app.set.pin, bt.app.set.pin_len, bt.app.set.pin_mode) = (1234, 4, 1);
+    assert_eq!(bt.ask(msg::SSB_WRITE, &[CHECK]).0, Status::NotAuthorised as u8, "Bluetooth: the PIN first");
+    assert_eq!(bt.ask(msg::AUTH, b"1234").0, Status::Ok as u8);
+    assert_eq!(bt.ask(msg::SSB_WRITE, &[CHECK]).0, Status::Ok as u8);
+}
+
 /// UPD-16.2: `DATA_WRITE` `PART` names the part the installer writes now, for the Updating page; nothing is written.
 #[test]
 fn raw_data_part_mark() {

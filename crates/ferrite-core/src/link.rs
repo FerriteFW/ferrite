@@ -224,6 +224,9 @@ pub mod msg {
     /// now (u32, 0 while the radio has no time), then its source (u8: 0 none, 1 GPS, 2 set by hand or the link).
     /// Only from
     pub const CLOCK: u8 = 0x63;
+    /// The SI4732's SSB patch into a radio already on Ferrite (HF-18, LINK-8, LINK-73; [`super::ssb`]): Console takes
+    /// it from the owner's stock .BTF and sends it in records; only the Storage task writes it, to its own region.
+    pub const SSB_WRITE: u8 = 0x64;
 }
 
 /// `DATA_READ` and `DATA_WRITE` (LINK-59 – LINK-62, decision 333): their ops and limits. Both refuse calibration
@@ -260,6 +263,53 @@ pub mod data {
     pub fn allowed(addr: u32, len: u32) -> bool {
         let end = addr as u64 + len as u64;
         len > 0 && end <= DATA.end as u64 && (end <= CALIBRATION.start as u64 || addr >= CALIBRATION.end)
+    }
+}
+
+/// `SSB_WRITE` (HF-18, LINK-73, decision 457): the SSB patch sent over the link, in records, to the store's SSB region
+/// (`layout::SSB_PATCH`); the same checks as the flasher's bundle at boot ([`crate::ssb`]).
+pub mod ssb {
+    /// Length (u32) and SHA-256 (32 bytes) of the patch to come. The answer's byte: 1 the same patch is stored and
+    /// verified (nothing written, nothing more to send), 0 the region is erased for it.
+    pub const BEGIN: u8 = 0;
+    /// Offset in the patch (u16, a multiple of 8), then 8 to [`PROGRAM_MAX`] bytes: whole 8-byte records, each led
+    /// by 0x15 or 0x16 (0x15 at offset 0), inside the length `BEGIN` gave.
+    pub const PROGRAM: u8 = 1;
+    /// Nothing: the store hashes what it holds and writes the header only if it matches `BEGIN`'s length and hash.
+    pub const FINISH: u8 = 2;
+    /// Nothing: `busy` while the store still has writes to make; else stored (u8: 0 none, 1 a verified patch), then
+    /// its SHA-256 (32 bytes) when 1.
+    pub const CHECK: u8 = 3;
+    /// The most patch bytes one `PROGRAM` carries (the store's queue holds a raw write's 64 bytes per job).
+    pub const PROGRAM_MAX: usize = 64;
+
+    /// `BEGIN`'s payload.
+    pub fn begin(len: u32, sha: &[u8; 32]) -> [u8; 37] {
+        let mut b = [0u8; 37];
+        b[0] = BEGIN;
+        b[1..5].copy_from_slice(&len.to_le_bytes());
+        b[5..].copy_from_slice(sha);
+        b
+    }
+
+    /// `PROGRAM`'s payload for `bytes` at `off` into `out` (at least 3 + `bytes.len()` long): its length.
+    pub fn program(off: u16, bytes: &[u8], out: &mut [u8]) -> usize {
+        out[0] = PROGRAM;
+        out[1..3].copy_from_slice(&off.to_le_bytes());
+        out[3..3 + bytes.len()].copy_from_slice(bytes);
+        3 + bytes.len()
+    }
+
+    /// A `PROGRAM`'s piece is whole records, each a patch download's (0x15 a block's first, 0x16 the rest), the
+    /// patch's first a 0x15, and it ends within `len`.
+    pub fn piece_ok(off: u32, bytes: &[u8], len: u32) -> bool {
+        let n = bytes.len();
+        off.is_multiple_of(8)
+            && n.is_multiple_of(8)
+            && (8..=PROGRAM_MAX).contains(&n)
+            && off + n as u32 <= len
+            && (off != 0 || bytes[0] == 0x15)
+            && bytes.chunks(8).all(|r| r[0] == 0x15 || r[0] == 0x16)
     }
 }
 
@@ -1020,6 +1070,28 @@ mod tests {
         assert!(build(1, 0, &[0; MAX_PAYLOAD + 1], &mut wire).is_none());
         let n = build(1, 0, &[0; MAX_PAYLOAD], &mut wire).unwrap();
         assert!(n <= MAX_WIRE);
+    }
+
+    /// LINK-73: `SSB_WRITE`'s payloads as Appendix G lays them out; a piece is whole patch records inside the length.
+    #[test]
+    fn ssb_write_payloads() {
+        let b = ssb::begin(15_832, &[7; 32]);
+        assert_eq!((b[0], &b[1..5], b[5], b.len()), (ssb::BEGIN, &15_832u32.to_le_bytes()[..], 7, 37));
+        let rec = [0x16, 1, 2, 3, 4, 5, 6, 7];
+        let mut out = [0u8; 3 + ssb::PROGRAM_MAX];
+        assert_eq!(ssb::program(0x0140, &rec, &mut out), 11);
+        assert_eq!(&out[..11], &[ssb::PROGRAM, 0x40, 0x01, 0x16, 1, 2, 3, 4, 5, 6, 7]);
+        let mut first = rec;
+        first[0] = 0x15;
+        assert!(ssb::piece_ok(0, &first, 800));
+        assert!(!ssb::piece_ok(0, &rec, 800), "the patch starts with a 0x15");
+        assert!(ssb::piece_ok(8, &rec, 800));
+        assert!(!ssb::piece_ok(4, &rec, 800), "whole records");
+        assert!(!ssb::piece_ok(8, &rec[..4], 800));
+        assert!(!ssb::piece_ok(800, &rec, 800), "past the length");
+        assert!(!ssb::piece_ok(8, &[0x17; 8], 800), "not a download record");
+        assert!(!ssb::piece_ok(8, &[0x16; 72], 800), "at most 64 bytes");
+        assert!(ssb::piece_ok(8, &[0x16; 64], 800));
     }
 
     /// LINK-20.1: remote PTT's `KEY` payloads encode and decode, framed too; malformed ones don't decode.

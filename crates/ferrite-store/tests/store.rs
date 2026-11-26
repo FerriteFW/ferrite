@@ -733,6 +733,63 @@ fn ssb_patch_install_and_check() {
     assert_eq!(s.ssb_check(), Ok(Some(p)), "a format keeps the patch");
 }
 
+/// The link's steps for `patch` (LINK-73): begin, 64-byte pieces, finish.
+fn ssb_send(s: &Store, p: ferrite_core::ssb::Patch, patch: &[u8]) -> bool {
+    use ferrite_app::data::SsbWrite;
+    let mut ok = s.ssb_write(SsbWrite::Begin);
+    for (k, c) in patch.chunks(64).enumerate() {
+        let mut bytes = [0xFF; 64];
+        bytes[..c.len()].copy_from_slice(c);
+        ok &= s.ssb_write(SsbWrite::Program { off: (k * 64) as u16, len: c.len() as u8, bytes });
+    }
+    ok && s.ssb_write(SsbWrite::Finish(p))
+}
+
+/// HF-18, LINK-73: the link's `SSB_WRITE` steps store the patch as the boot install does (the same header, bar its
+/// source byte, and bytes), and the store holds it at once (HF mode needs no restart); a piece spoiled on the way
+/// leaves no header, so nothing checks, and nothing outside SSB_PATCH changes. Erases: the region's 4 sectors.
+#[test]
+fn ssb_patch_over_the_link() {
+    use ferrite_core::layout::SSB_PATCH;
+    let (p, patch) = fake_patch();
+    let s = mount(SimFlash::new());
+    assert_eq!(s.ssb(), None);
+    let before = s.nor().mem.clone();
+    let erases = || s.nor().erases.iter().sum::<u32>();
+    let e0 = erases();
+    assert!(ssb_send(&s, p, &patch));
+    assert_eq!(erases() - e0, 0, "a blank region needs no erase");
+    assert_eq!(s.ssb(), Some(p), "held at once");
+    assert_eq!(s.ssb_check(), Ok(Some(p)));
+    for (a, (&x, &y)) in before.iter().zip(&s.nor().mem).enumerate() {
+        if !SSB_PATCH.contains(&(a as u32)) {
+            assert_eq!(x, y, "byte {a:#x} outside SSB_PATCH changed");
+        }
+    }
+    let r = SSB_PATCH.start as usize;
+    assert_eq!(s.nor().mem[r + 12], ferrite_core::ssb::SOURCE_LINK);
+    // The boot install's copy is the same bar the source byte.
+    let b = mount(SimFlash::new());
+    ferrite_store::block(b.ssb_install(p, &patch, ferrite_core::ssb::SOURCE_FLASHER)).unwrap();
+    let (x, y) = (s.nor().mem[r..SSB_PATCH.end as usize].to_vec(), b.nor().mem[r..SSB_PATCH.end as usize].to_vec());
+    assert_eq!(x.iter().zip(&y).filter(|(a, b)| a != b).count(), 1);
+    // Sent again over a held patch: 4 sectors erased, then the same patch.
+    let e0 = erases();
+    assert!(ssb_send(&s, p, &patch));
+    assert_eq!(erases() - e0, 4);
+    assert_eq!(s.ssb_check(), Ok(Some(p)));
+    // A spoiled piece: the finish refuses, no header, nothing held, and a restart finds none.
+    let mut bad = patch.clone();
+    bad[1000] ^= 0x40;
+    assert!(!ssb_send(&s, p, &bad));
+    assert_eq!(s.ssb(), None);
+    assert_eq!(s.nor().mem[r..r + 64], [0xFF; 64], "no header");
+    let s = mount(unmount(s));
+    assert_eq!(s.ssb_check(), Ok(None));
+    assert!(ssb_send(&s, p, &patch), "sent again, it stores");
+    assert_eq!(s.ssb(), Some(p));
+}
+
 /// HF-18: the power cut at any point of an install never leaves a patch that checks unless it's the whole one,
 /// and the next install completes.
 #[test]

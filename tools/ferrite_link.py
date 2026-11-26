@@ -99,6 +99,7 @@ CONTACT = 6  # APRS-42
 POSITION = 7  # LINK-53: a channel's position by number, <ii lat, lon in 1e-7 degree; b"" clears it
 DATA_READ, DATA_WRITE = 0x61, 0x62  # LINK-59, LINK-60 (decision 333): the SPI data range raw (writes: the cable only)
 CLOCK = 0x63  # LINK-65 (decision 340): set or read the radio's clock
+SSB_WRITE = 0x64  # LINK-73 (decision 457): the SSB patch into a radio on Ferrite (Console sends it)
 STATE, TUNE = 0x34, 0x35  # LINK-67, LINK-68 (decision 373): the radio state record, a slot tuned by command
 BEACON = 0x36  # LINK-69: a beacon now, as the radio's own
 PHONE_POS = 0x37  # LINK-72: the phone's position (GPS-3.1: used locally, never beaconed)
@@ -631,6 +632,11 @@ class Link:
     def data_stamp(self, layout=3):
         """LINK-62: the layout header written last; the radio restarts on it."""
         self.ok(DATA_WRITE, struct.pack("<BH", 2, layout))
+
+    def ssb_held(self):
+        """LINK-73: the SHA-256 (hex) of the SSB patch the radio holds, verified, or None."""
+        a = self.ok(SSB_WRITE, bytes([3]))
+        return a[1:33].hex() if a[:1] == b"\x01" else None
 
     def used(self, what):
         """LINK-39: the indexes of `what` that hold a record (protocol 3: in parts from a first index)."""

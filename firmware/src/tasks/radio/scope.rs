@@ -104,27 +104,27 @@ impl Radio {
         let chip = sc.chip;
         // SQL-9.4: a latched or held monitor on the strip's slot holds it there, open, as on home without the strip
         // (it was ignored: monitor worked only once a menu stopped the strip). Not while the slot is muted or off.
-        let monitored = sc.home.is_some_and(|s| self.monitor & !(self.user_mute | self.user_off) & 1 << s != 0);
+        // SQL-13.2: level 0 likewise (always open: the strip stays on the slot, as on home without it).
+        let silenced = |s: u8| (self.user_mute | self.user_off) & 1 << s != 0;
+        let monitored = sc.home.is_some_and(|s| self.monitor & 1 << s != 0 && !silenced(s));
+        let held = sc.home.is_some_and(|s| ferrite_core::softsq::strip_held(self.monitor & 1 << s != 0, self.slots[s as usize % SLOTS].sq, silenced(s)));
         if sc.listen != 0 {
             let mut bk = self.chip(chip);
             let (st, rssi) = (bk.status(), bk.rssi_dbm());
-            let open = st.squelch_open || monitored;
+            let open = st.squelch_open || held;
             let mut heard = open;
             if let Some(s) = sc.home {
                 // MODE-5: the strip held on its slot's frequency: that slot's tone and quick mute (HOME-15) decide
                 // the audio, its card shows it; HOLD_CLOSED closed polls and the sweep goes on where it was.
                 let i = s as usize % SLOTS;
-                // SQL-13 on the strip: level 0 is heard while the strip is on its slot's frequency; holding the strip
-                // there still goes by a carrier (or monitor), or level 0 would stop the sweep for good
-                let level0 = self.slots[i].sq == 0;
-                heard = monitored || self.slots[i].toned(open || level0, &st) && self.user_mute & 1 << s == 0;
+                // SQL-13.2: level 0 holds the strip here (in `held`), open, its tone still deciding the audio
+                heard = monitored || self.slots[i].toned(open, &st) && self.user_mute & 1 << s == 0;
                 sc.closed = if open { 0 } else { sc.closed + 1 };
                 if sc.closed >= HOLD_CLOSED {
                     sc.listen = 0;
                 }
                 let l = &mut self.live.slots[i];
-                let shown = open || level0;
-                (l.squelch_open, l.rssi, l.rssi_raw) = (shown, if shown { rssi } else { rssi.min(-121) }, rssi);
+                (l.squelch_open, l.rssi, l.rssi_raw) = (open, if open { rssi } else { rssi.min(-121) }, rssi);
                 l.carrier = st.squelch_open; // SQL-13.1: the chip's own decision
             }
             self.chip(chip).af_out(if heard { AfOut::Normal } else { AfOut::Mute });
@@ -147,7 +147,7 @@ impl Radio {
         if sc.look > 0 {
             // MODE-5: the strip on its slot's own frequency: a carrier there holds the sweep.
             sc.look -= 1;
-            let back = if monitored || self.chip(chip).status().squelch_open {
+            let back = if held || self.chip(chip).status().squelch_open {
                 (sc.listen, sc.closed, sc.look) = (self.slots[sc.home.unwrap_or(0) as usize % SLOTS].rx_freq(), 0, 0);
                 self.open_delay(chip, false); // SQL-17: held on the call, ordinary receive
                 false
@@ -185,7 +185,7 @@ impl Radio {
         }
         if let Some(s) = sc.home {
             sc.since += 1;
-            if sc.since >= LOOK_EVERY || monitored {
+            if sc.since >= LOOK_EVERY || held {
                 // MODE-5: back to the slot's own frequency for a look, then on from the next point.
                 (sc.since, sc.look) = (0, LOOK_WAITS);
                 let f = self.slots[s as usize % SLOTS].rx_freq();

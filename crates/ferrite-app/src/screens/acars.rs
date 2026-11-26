@@ -11,7 +11,7 @@ use crate::acars::FREQS;
 use crate::chan::ChannelStore;
 use crate::keys::{KeyEvent, Press};
 use crate::{App, Screen};
-use ferrite_core::acars::{label, label_text, Msg, CUT, GAP, JOIN_MAX, NAK};
+use ferrite_core::acars::{data_kind, label, label_text, DataKind, Msg, CUT, GAP, JOIN_MAX, NAK};
 use ferrite_core::airlines::{self, Airline};
 use ferrite_core::keys::Key;
 use ferrite_ui::assets::*;
@@ -52,7 +52,20 @@ fn count(st: &impl ChannelStore) -> u16 {
 
 /// ACARS-4.2: the messages the list shows: all, or with `only` those with text.
 fn kept(st: &impl ChannelStore, only: bool) -> impl Fn(u16) -> bool + '_ {
-    move |i| !only || st.data().acars().and_then(|a| a.get(i, &mut [])).is_some_and(|(m, _)| m.has_text())
+    move |i| !only || st.data().acars().and_then(|a| a.get(i, &mut [])).is_some_and(|(m, _)| m.has_text() && !m.is_data())
+}
+
+/// ACARS-4.3: a data report's kind, "Aircraft data report" or "data (#T1B)", from its label and text's start.
+fn data_text(m: &Msg, text: &[u8], b: &mut Buf<32>) -> bool {
+    match data_kind(m.label, text) {
+        Some(DataKind::Named(n)) => b.set(n.as_bytes()),
+        Some(DataKind::Sub(c)) => {
+            let _ = uwrite!(b, "data (#{})", Txt(&c));
+        }
+        None if m.is_data() => b.set(b"data"),
+        None => return false,
+    }
+    true
 }
 
 /// ACARS-3: what the radio does, for the list's header: 2 a signal on the frequency shown, 1 listening there,
@@ -185,7 +198,10 @@ impl Acars {
                 sub.push("CRC bad \u{b7} ".as_bytes());
             }
             let lab = label(m.label);
-            if len > 0 {
+            if m.is_data() && data_text(&m, &start[..len], &mut name) {
+                // ACARS-4.3: a data report: its kind and size, not its hex
+                let _ = uwrite!(sub, "{} \u{b7} {} chars", Txt(name.as_bytes()), m.text_len());
+            } else if len > 0 {
                 // ACARS-4: the text's start, on one line (the airline and the aircraft are on its page)
                 let t = start[..len].trim_ascii_start();
                 for &c in t.iter().take(48) {
@@ -270,7 +286,9 @@ impl Acars {
             who.push(m.reg());
         }
         let mut chip = Buf::<40>::new();
-        let _ = uwrite!(chip, "{} \u{b7} {}", Txt(&label_text(m.label)), lab.meaning);
+        let mut kind = Buf::<32>::new();
+        let meaning = if m.is_data() && data_text(&m, text, &mut kind) { kind.as_bytes() } else { lab.meaning.as_bytes() };
+        let _ = uwrite!(chip, "{} \u{b7} {}", Txt(&label_text(m.label)), Txt(meaning));
         if app.dirty(R_TOP, Mix::new().h(&title).h(&who).h(&chip).get()) {
             ferrite_ui::canvas::banded(lcd, 0, 20, 240, 70, BG, |lcd| {
                 lcd.text4(8, 42, title, &UI_15B, if m.crc_ok() { TEXT } else { RED }, BG);

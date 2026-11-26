@@ -297,3 +297,36 @@ fn the_header_redraws_when_the_radio_listens() {
     a.live.mode = ModeLive::Acars { freq: 13_155_000, rssi: -110, open: false };
     assert!(head(&a.render()) > 0, "the header drawn again");
 }
+
+/// ACARS-4.3: a data report (an H1 #DFB from the aircraft's data unit, as the black radio heard WS1057 send) is
+/// in the list as its kind and size, its page names the kind and keeps the raw text; * hides it with the messages
+/// without text (ACARS-4.2).
+#[test]
+fn a_data_report_shows_its_kind_not_its_hex() {
+    let mut a = A::new();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    let mut b = [0u8; 256];
+    let f = ferrite_core::acars::Fields {
+        mode: b'2',
+        reg: b"C-FKWJ",
+        ack: ferrite_core::acars::NAK,
+        label: *b"H1",
+        block: b'5',
+        msgno: b"D01A",
+        flight: b"WS1057",
+        text: b"#DFB50101C-FKWJB737-800261125WS1057KLASCYVR0710WJX79B",
+        more: false,
+    };
+    let k = ferrite_core::acars::encode(&f, &mut b);
+    a.app.acars_heard(&a.s, &b[..k - 1]);
+    let (m, _) = a.s.data().acars().unwrap().get(0, &mut []).unwrap();
+    assert!(m.is_data() && m.has_text());
+    a.render();
+    a.tap(Key::Menu);
+    a.render();
+    assert!(a.line().contains("flight=\"WS1057\"") && a.line().contains("data=1"), "{}", a.line());
+    a.tap(Key::Exit);
+    a.tap(Key::Star);
+    a.render();
+    assert_ne!(a.acars().cur.sel, 0, "hidden under *: {}", a.line());
+}

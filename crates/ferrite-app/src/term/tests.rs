@@ -775,11 +775,11 @@ fn command_line_set_and_get() {
     r.cmd("set 0 5 9 7 APRS first");
     assert_eq!(r.app.settings().aprs_share, 0, "{}", r.bottom());
     // Typed values: the pager capcode (DEC-4), the custom APRS path (APRS-26), Popups (DEC-7).
-    r.cmd("set 0 4 2 3 1234567");
+    r.cmd("set 0 4 2 4 1234567");
     assert_eq!(r.app.set.pocsag_cap, 1_234_567);
-    r.cmd("set 0 4 2 3 none");
+    r.cmd("set 0 4 2 4 none");
     assert_eq!(r.app.set.pocsag_cap, 0);
-    r.cmd("set 0 4 2 3 9999999");
+    r.cmd("set 0 4 2 4 9999999");
     assert!(r.bottom().contains("a capcode up to 2097151"), "{}", r.bottom());
     r.cmd("set 0 5 9 2 wide2-2");
     assert_eq!(r.app.aprs_cfg().custom_text(), b"WIDE2-2");
@@ -2247,12 +2247,12 @@ fn debug_no_answer_and_stop() {
 #[test]
 fn user_build_refuses_bench_commands() {
     let mut r = Rig::main();
-    for c in ["mem 20000000 16", "mem32 40010808", "gpio", "bk 0 30", "bk 1 47 6142", "bk 0 dump", "bk settle 2", "si 10 00", "bt AT+VERS?", "rx both", "rx", "mic", "af", "meter", "meter on", "synthfsk cal 1000 0 0", "pin pa15 0", "pin pc9 u", "txtest suite", "txtest", "TXTEST 4fsk", "gps query 1", "gps nmea off", "gps standby 60 quiet", "lcd bl 30", "bk rxaf 700", "fsk", "fsk rx 2400", "fsk tx ffsk1800 5", "crash fault", "crash hang"] {
+    for c in ["mem 20000000 16", "mem32 40010808", "gpio", "bk 0 30", "bk 1 47 6142", "bk 0 dump", "bk settle 2", "si 10 00", "bt AT+VERS?", "rx both", "rx", "mic", "af", "meter", "meter on", "synthfsk cal 1000 0 0", "pin pa15 0", "pin pc9 u", "txtest suite", "txtest", "TXTEST 4fsk", "gps query 1", "gps nmea off", "gps standby 60 quiet", "lcd bl 30", "bk rxaf 700", "fsk", "fsk rx 2400", "fsk tx ffsk1800 5", "crash fault", "crash hang", "acars feed 3"] {
         r.cmd(c);
         assert!(r.bottom().contains("not in this build: a bench build has it"), "{c}: {}", r.bottom());
         assert_eq!(r.term.debug_req(), None, "{c}: nothing sent");
     }
-    assert_eq!(super::cmd::BENCH_ONLY.len(), 16);
+    assert_eq!(super::cmd::BENCH_ONLY.len(), 17);
     r.cmd("gps");
     assert_eq!(r.serve(4, regs), vec![DebugReq::Gga], "gps alone is every build's");
     r.send(b"\r");
@@ -2716,10 +2716,10 @@ fn set_frequency_settings() {
     r.cmd("set 0 5 4 446.000");
     assert!(r.bottom().contains("APRS takes 64-300 MHz"), "{}", r.bottom());
     assert_eq!(r.app.aprs_freq(), ferrite_core::freq::mhz(145) + 49_500, "a refusal changes nothing");
-    r.cmd("set 0 4 2 2 439.9875");
-    assert!(r.bottom().contains("0 4 2 2 Frequency: 439.987"), "{}", r.bottom());
+    r.cmd("set 0 4 2 3 439.9875");
+    assert!(r.bottom().contains("0 4 2 3 Frequency: 439.987"), "{}", r.bottom());
     assert_eq!(r.app.set.pocsag_freq, ferrite_core::freq::mhz(439) + 98_750);
-    r.cmd("set 0 4 2 2 439.987"); // as `get` and `dump` show it: kept, not cut to 439.98700
+    r.cmd("set 0 4 2 3 439.987"); // as `get` and `dump` show it: kept, not cut to 439.98700
     assert_eq!(r.app.set.pocsag_freq, ferrite_core::freq::mhz(439) + 98_750);
 }
 
@@ -2809,11 +2809,11 @@ fn quick_messages_in_the_terminal() {
 fn command_answers_golden() {
     const LINES: &[&str] = &[
         "", "# a note", "\"quoted\"", "frob", "help", "?", "HELP", "Get 0 7 1",
-        "get", "get 0 7 1", "get 0 5 1", "get 0 4 2 3", "get 0 5 4", "get 0 6 9", "get 9 9 9", "get x", "get 0", "get 0 7 1 1 1",
+        "get", "get 0 7 1", "get 0 5 1", "get 0 4 2 4", "get 0 5 4", "get 0 6 9", "get 9 9 9", "get x", "get 0", "get 0 7 1 1 1",
         "set 0 7 1 Daylight", "set 0 7 1 night", "set 0 7 1 purple", "set 0 7 1", "set 7 1 Dark", "set 0 9 4 EU",
-        "set 0 9 3 1 Off", "set 0 8 8 5 off", "set 0 8 8 5 on", "set 0 4 2 3 1234", "set 0 4 2 3 99999999",
-        "set 0 4 2 3 none", "set 0 5 5 3 Hello there", "set 0 5 5 3 none", "set 0 5 4 144.390", "set 0 5 4 abc",
-        "set 0 4 2 2 439.9875", "set 0 5 9 2 wide1-1,wide2-1", "set 0 5 9 2 bad,,bad,,", "set 0 5 9 2 none",
+        "set 0 9 3 1 Off", "set 0 8 8 5 off", "set 0 8 8 5 on", "set 0 4 2 4 1234", "set 0 4 2 4 99999999",
+        "set 0 4 2 4 none", "set 0 5 5 3 Hello there", "set 0 5 5 3 none", "set 0 5 4 144.390", "set 0 5 4 abc",
+        "set 0 4 2 3 439.9875", "set 0 5 9 2 wide1-1,wide2-1", "set 0 5 9 2 bad,,bad,,", "set 0 5 9 2 none",
         "set 0 6 9 FN25", "set 0 6 9 45.5 -75.6", "set 0 6 9 north", "set 0 6 9 none", "set 0 7 7 1", "set 0 7 7 x",
         "set 0 7 2 10", "set 0 1 1 Off", "set", "set x",
         "ch", "ch 12", "ch 999", "ch 4001", "ch x", "ch 12 power high", "ch 12 power ultra", "ch 12 tone 100.0",

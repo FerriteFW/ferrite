@@ -590,3 +590,23 @@ fn hold_abc_on_the_aprs_slot_opens_its_quick_page() {
     assert!(matches!(a.app.screen(), Screen::QGrid(g) if g.page == Page::Aprs), "{}", a.app.screen().name());
     assert_eq!(a.app.active(), APRS_SLOT, "the slot stays");
 }
+
+/// DEC-20.1, DEC-20.2: Pager mode's card: "Pager", the pages since power-on, the newest page's capcode, the capcode
+/// filter at the bottom, no power; the readback says `holder=pager` and `pages=`.
+#[test]
+fn aprs_card_pager() {
+    let mut a = A::new();
+    a.app.set_pager(true);
+    a.tick();
+    let k = a.app.aprs_card(&a.s).expect("Pager holds C");
+    assert_eq!((k.holder, k.right.as_bytes(), k.line.as_bytes()), (Holder::Pager, &b"No pages yet"[..], &b"Listening for pages"[..]));
+    let mut p = ferrite_core::decoders::Page { capcode: 1_234_570, baud: 512, function: 0, numeric: true, len: 7, text: [0; ferrite_core::decoders::PAGE_TEXT] };
+    p.text[..7].copy_from_slice(b"5551234");
+    a.app.pager_hit(&p, &ferrite_core::msg::LiveAll::default());
+    let k = a.app.aprs_card_as(&a.s, false).unwrap();
+    assert_eq!(k.right.as_bytes(), b"1 page");
+    assert!(k.line.as_bytes().starts_with(b"1234570 \xc2\xb7 "), "{:?}", core::str::from_utf8(k.line.as_bytes()));
+    assert_eq!((k.bottom.as_bytes(), k.power), (&b"Every capcode"[..], ""));
+    let l = a.card_line();
+    assert!(l.contains("holder=pager") && l.contains("pages=1"), "{l}");
+}

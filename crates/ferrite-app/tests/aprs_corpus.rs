@@ -1,5 +1,5 @@
-//! The radio's APRS receive path on recorded audio: the WA8LMF TNC Test CD (fetched into udigimodes with its
-//! `../testdata/tools/fetch-wa8lmf.sh`; never redistributed, so this test is ignored when it isn't there). The audio
+//! The radio's APRS receive path on recorded audio: the WA8LMF TNC Test CD (the testdata repo's `fetch/wa8lmf.sh`,
+//! found by `ferrite_fuzzkit::testdata_dir`'s rule; never redistributed, so this test is ignored and skips without it). The audio
 //! goes the way PA2's does on the radio: 48 kHz, 12-bit ADC counts around mid-scale (`audio::Decim`), the 2:1
 //! step, the decoder slot's AFSK demodulator at 24 kHz (decision 240), then the APRS task's parser and heard list. Run with
 //! `cargo test --release -p ferrite-app --test aprs_corpus -- --ignored --nocapture`.
@@ -9,9 +9,6 @@ use ferrite_app::aprs_live::AprsLive;
 use ferrite_core::audio::{Decim, ADC_HZ};
 use ferrite_core::decoders::{Decoder, Found};
 
-fn testdata(rel: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata").join(rel)
-}
 
 fn read_wav(path: &std::path::Path) -> Option<(Vec<i16>, u32)> {
     let d = std::fs::read(path).ok()?;
@@ -51,8 +48,7 @@ fn as_adc(s: &[i16], rate: u32, peak: i32) -> Vec<u16> {
 fn wa8lmf_through_the_radio_path() {
     println!("\nWA8LMF TNC Test CD through the radio's path (48 kHz ADC, Decim, AFSK at 24 kHz, APRS task)");
     for (track, peak) in [("track01", 1500), ("track01", 400), ("track02", 1500), ("track02", 400)] {
-        let Some((s, rate)) = read_wav(&testdata(&format!("wa8lmf/{track}.wav"))) else {
-            println!("{track}: not fetched, skipped");
+        let Some((s, rate)) = ferrite_fuzzkit::testdata_file(&format!("wa8lmf/{track}.wav")).and_then(|p| read_wav(&p)) else {
             continue;
         };
         let adc = as_adc(&s, rate, peak);

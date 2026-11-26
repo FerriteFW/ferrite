@@ -997,6 +997,9 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
         // INBOX-3.1: the mail badge counts unread messages to us; the log keeps its own unread count.
         let mail = (0..self.messages()).filter(|&i| self.message(i).is_some_and(|m| m.inbound && m.state == MsgState::Unread)).count();
         app.set_inbox(mail as u16, (0..self.events.len()).filter(|&i| self.event(i).is_some_and(|e| e.unread)).count() as u16);
+        // DEC-22: unread pages count in the badge too
+        let pages = (0..self.events.len()).filter(|&i| self.event(i).is_some_and(|e| e.unread && e.src == ferrite_app::data::Src::Pocsag)).count();
+        app.set_pages_unread(pages as u16);
         self.mark_saved(app);
         found
     }
@@ -1723,6 +1726,14 @@ impl<N: Nor, D: Data> FlashStore<N, D> {
                         self.events.mark(&self.f, seq, 10, 0).await?;
                     }
                 }
+                // DEC-22: the pages shown among the messages are read with them
+                for j in 0..self.events.len() {
+                    if self.event(j).is_some_and(|e| e.unread && e.src == Src::Pocsag) {
+                        if let Some(seq) = self.events.seq(j) {
+                            self.events.mark(&self.f, seq, 10, 0).await?;
+                        }
+                    }
+                }
                 Ok(())
             }
             Op::ClearMessages => {
@@ -2336,6 +2347,9 @@ impl<N: Nor, D: Data> Data for FlashStore<N, D> {
     }
     fn event_seq(&self, i: u16) -> Option<u32> {
         self.events.seq(i)
+    }
+    fn acars(&self) -> Option<&ferrite_app::acars::AcarsLive> {
+        self.extra.acars()
     }
     fn stations(&self) -> u16 {
         self.extra.stations()

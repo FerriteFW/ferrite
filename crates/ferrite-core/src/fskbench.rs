@@ -44,11 +44,12 @@ pub enum Mode {
     Fsk,
     /// FFSK 1200 baud on 1200/1800 Hz audio tones (MDC-1200's).
     Ffsk1800,
-    /// FFSK 1200 baud on 1200/2400 Hz audio tones.
+    /// FFSK on 1200/2400 Hz audio tones: 1200 baud as documented, or 2400 baud (`acars`, ACARS's tones and rate,
+    /// ferrite#192: the same mode with REG_72 at 2400, a bench question).
     Ffsk2400,
 }
 
-/// A speed: the mode and its bit rate (FFSK is always 1200).
+/// A speed: the mode and its bit rate (FFSK is 1200 but for `acars`, FFSK 1200/2400 at 2400).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Speed {
     pub mode: Mode,
@@ -56,9 +57,12 @@ pub struct Speed {
 }
 
 impl Speed {
-    /// `1200`, `2400` or any rate from [`BAUD_MIN`] to [`BAUD_MAX`] (plain FSK); `ffsk1800`, `ffsk2400`.
+    /// `1200`, `2400` or any rate from [`BAUD_MIN`] to [`BAUD_MAX`] (plain FSK); `ffsk1800`, `ffsk2400`; `acars`.
     pub fn parse(w: &[u8]) -> Option<Speed> {
         let is = |s: &[u8]| w.eq_ignore_ascii_case(s);
+        if is(b"acars") {
+            return Some(Speed { mode: Mode::Ffsk2400, baud: 2400 });
+        }
         if is(b"ffsk1800") {
             return Some(Speed { mode: Mode::Ffsk1800, baud: 1200 });
         }
@@ -74,7 +78,10 @@ impl Speed {
 
     /// The modes the documents name: FSK 1200 and 2400, both FFSKs. Other plain FSK rates are the bench's guesses.
     pub fn documented(self) -> bool {
-        self.mode != Mode::Fsk || self.baud == 1200 || self.baud == 2400
+        if self.mode != Mode::Fsk {
+            return self.baud == 1200; // `acars` (FFSK at 2400) is the bench's guess
+        }
+        self.baud == 1200 || self.baud == 2400
     }
 
     /// REG_58 without its enable bit (the driver sets bit 0): transmit mode 15:13, receive mode 12:10, receive gain
@@ -355,6 +362,9 @@ mod tests {
         let ffsk = s("FFSK1800").unwrap();
         assert_eq!((ffsk.reg58() | 1, ffsk.rate_word(), ffsk.tone_gain(), ffsk.reg5c(false)), (0x3FC3, 0x3065, 0x6C, 0xA730));
         assert_eq!(s("ffsk2400").unwrap().reg58(), 0x73C8);
+        // ferrite#192: `acars` is FFSK 1200/2400's mode and filter at 2400 baud (stock's FSK 2400 rate word)
+        let acars = s("ACARS").unwrap();
+        assert_eq!((acars.reg58(), acars.rate_word(), acars.tone_gain(), acars.documented()), (0x73C8, 0x60CA, 0x6C, false));
         assert_eq!(s("1200").unwrap().reg58(), 0x00C0);
         assert_eq!(s("4800").map(|s| (s.reg58(), s.documented())), Some((0x00C8, false)));
         assert!(fsk2400.documented() && ffsk.documented());

@@ -1,9 +1,9 @@
 //! The other decoders the radio runs on what it hears, fuzzed in the normal tests (ferrite-fuzzkit): POCSAG
 //! (codewords, and audio through the decoder slot), DSC (bits through the framer, symbols through the message
 //! reader, audio), SSTV (audio), SAME headers (the BK4829's FIFO words through the assembler, then the parser) and
-//! the DTMF digit tracker. Seeds come from the decoders' own encoders and, when present, the testdata recordings
-//! (`../testdata/pocsag`, `../testdata/dsc`). Invariant: no panic, nothing slower than the limit, results inside
-//! their buffers.
+//! the DTMF digit tracker. Seeds come from the decoders' own encoders and, when present, the test data's
+//! recordings (`pocsag/`, `dsc/`, found by `testdata_dir`'s rule). Invariant: no panic, nothing slower than the
+//! limit, results inside their buffers.
 
 use ferrite_core::decoders::{Decoder, Found, RATE_HZ};
 use ferrite_core::dtmfrx::{Track, MAX as DTMF_MAX};
@@ -43,24 +43,6 @@ fn recordings(dir: &str, max: usize) -> Vec<Vec<u8>> {
             samples_to_bytes(&s[start..(start + max).min(s.len())])
         })
         .collect()
-}
-
-/// POCSAG codewords as FSK audio at 24 kHz: two levels, as the discriminator gives them.
-fn pocsag_audio(baud: u32, words: &[u32]) -> Vec<i16> {
-    let mut bits: Vec<bool> = (0..upocsag::encode::PREAMBLE_BITS).map(|i| i.is_multiple_of(2)).collect();
-    for w in words {
-        bits.extend((0..32).rev().map(|k| w >> k & 1 != 0));
-    }
-    let spb = RATE_HZ as f64 / baud as f64;
-    let mut out = vec![0i16; 1200];
-    let mut y = 0.0;
-    for k in 0..(bits.len() as f64 * spb) as usize {
-        let target = if bits[(k as f64 / spb) as usize] { -8000.0 } else { 8000.0 };
-        y += (target - y) * 0.3;
-        out.push(y as i16);
-    }
-    out.extend([0i16; 1200]);
-    out
 }
 
 fn pocsag_words(address: u32, text: &[u8], alpha: bool) -> Vec<u32> {
@@ -142,10 +124,6 @@ fn through(mut d: Decoder, audio: &[u8]) {
     for block in s.chunks(96) {
         d.push(block, |f| match f {
             Found::Frame(f) => assert!(f.len() <= uafsk::hdlc::MAX_FRAME),
-            Found::Page(m) => {
-                let p = ferrite_core::decoders::Page::from(m);
-                let _ = (p.text(), m.numeric().count(), m.alpha().count());
-            }
             Found::Call(c) => {
                 assert!(c.symbols.len() <= udsc::framer::MAX_SYMBOLS);
                 let _ = udsc::message::Message::parse(c.symbols);
@@ -188,15 +166,6 @@ fn fuzz_pocsag_words() {
 }
 
 #[test]
-fn fuzz_pocsag_audio() {
-    let mut corpus = recordings("pocsag", 48_000);
-    for baud in [512, 1200, 2400] {
-        corpus.push(samples_to_bytes(&pocsag_audio(baud, &pocsag_words(1_234_567, b"Fuzz 73", true))));
-    }
-    Fuzz::new("pocsag_audio", 0x9C5B, 400).slow_ms(5_000).run(|r| mutated(r, &corpus, 200_000), |a| through(Decoder::pocsag(), a));
-}
-
-#[test]
 fn fuzz_dsc_framer() {
     let corpus: Vec<Vec<u8>> = dsc_calls().iter().map(|c| dsc_bits(c)).collect();
     Fuzz::new("dsc_framer", 0xD5C1, 20_000).run(
@@ -236,7 +205,7 @@ fn fuzz_dsc_message() {
 fn fuzz_dsc_audio() {
     let corpus = recordings("dsc", 48_000);
     if corpus.is_empty() {
-        eprintln!("fuzz_dsc_audio: no ../testdata/dsc recordings, random audio only");
+        eprintln!("fuzz_dsc_audio: no dsc recordings in the test data, random audio only");
     }
     Fuzz::new("dsc_audio", 0xD5C3, 300).slow_ms(5_000).run(|r| mutated(r, &corpus, 120_000), |a| through(Decoder::dsc(), a));
 }

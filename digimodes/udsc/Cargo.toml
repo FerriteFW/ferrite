@@ -13,6 +13,7 @@ categories = ["embedded", "no-std"]
 uafsk = { path = "../uafsk", version = "0.1" }
 
 [dev-dependencies]
+ferrite-fuzzkit.workspace = true # testdata_dir: where the test data is
 serde_json = "1"
 
 [lints]

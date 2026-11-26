@@ -261,7 +261,7 @@ pub static WX: core::ops::RangeInclusive<Freq10> = mhz(162) + 40_000..=mhz(162) 
 /// every value is bench-confirm, roadmap 6b): REG_58 receive mode 000 with bandwidth 010 and receive gain 3 (bits
 /// 7:6 set as in both of stock's modem modes), the rate in Tone 2's word (520.83 baud x 10.32444), the four sync
 /// bytes `ZCZC`, no CRC (stock's REG_5C with bit 6 clear), and the longest header's length.
-pub const SAME_FSK: Fsk = Fsk {
+pub static SAME_FSK: Fsk = Fsk {
     mode: 0x03C4,
     tone_word: ((same_rx::BAUD_MILLI as u64 * 1_032_444 + 50_000_000) / 100_000_000) as u16,
     tone_gain: 0,
@@ -270,10 +270,49 @@ pub const SAME_FSK: Fsk = Fsk {
     sync4: true,
     crc: 0xA730 & !(1 << 6),
     scramble: false,
+    rx_invert: false,
     len: same_rx::MAX_LEN as u16,
 };
 
 /// The SAME modem listening for a burst's sync word.
+/// DEC-23: the FSK modem for POCSAG at `baud` (1200 or 2400): FSK 1.2K or 2.4K receive (stock's REG_58 and REG_5C
+/// for FSK, the chip's CRC off), POCSAG's sync codeword as the 4-byte sync word, up to 30 batches a frame.
+pub fn pager_fsk(baud: u16) -> Fsk {
+    use ferrite_core::pagerrx as p;
+    Fsk {
+        mode: if baud <= 1200 { 0x00C0 } else { 0x00C8 }, // receive gain 0: 1 and 2 decoded less near the floor
+        tone_word: (baud as u32 * 1_032_444 / 100_000) as u16,
+        tone_gain: 0x2C,
+        preamble: 16, // the preamble the modem wants before a sync: with 8 about half the first syncs stalled (bench, Nov 24, 2026)
+        sync: p::SYNC_BYTES,
+        sync4: true,
+        crc: 0x5665 & !(1 << 6),
+        scramble: false,
+        rx_invert: false,
+        len: p::FRAME_BYTES,
+    }
+}
+
+/// DEC-23: the modem set up and listening for POCSAG's sync (FIFO cleared, receive on, its interrupts); again
+/// after each batch.
+pub fn pager_arm<B: Bus>(bk: &mut Bk4829<B>, baud: u16) {
+    let f = pager_fsk(baud);
+    bk.fsk_setup(&f);
+    bk.fsk_rx(&f);
+}
+
+/// DEC-23: between transmissions, the receive FIFO emptied with receive left on: a frame that runs on past the
+/// transmission's end keeps filling it with noise, and a frame that starts on a full FIFO gets nothing until the
+/// next sync (bench, Nov 24, 2026).
+pub fn pager_clear<B: Bus>(bk: &mut Bk4829<B>, baud: u16) {
+    bk.fsk_rx_clear(&pager_fsk(baud));
+}
+
+/// DEC-23: listening for the next batch's sync (FIFO cleared, receive on again).
+pub fn pager_rearm<B: Bus>(bk: &mut Bk4829<B>, baud: u16) {
+    bk.fsk_rx(&pager_fsk(baud));
+}
+
 pub fn same_arm<B: Bus>(bk: &mut Bk4829<B>) {
     bk.fsk_setup(&SAME_FSK);
     bk.fsk_rx(&SAME_FSK);
@@ -727,6 +766,7 @@ pub fn fsk_bench(c: &ferrite_core::fskbench::Cfg) -> Fsk {
         sync4: true,
         crc: c.speed.reg5c(c.crc),
         scramble: false,
+        rx_invert: false,
         len: f::LEN as u16,
     }
 }

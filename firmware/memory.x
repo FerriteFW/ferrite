@@ -158,6 +158,9 @@ SECTIONS
     *(.text.*4core3str8converts9from_utf8*);
     *(.text.*12ferrite_core4freq6format*);
     *(.text.*12ferrite_core4freq8put_uint*);
+    /* ACARS (chapter 27b): a few frames a minute parsed and joined, the airline table searched when a screen draws. */
+    *(.text.*12ferrite_core5acars*);
+    *(.text.*12ferrite_core8airlines*);
     /* Live View's compact form and deltas (LINK-47): the link sessions', in the UI task. */
     *(.text.*12ferrite_core8liveview*);
     *(.text.*4chip10heard_tone*);

@@ -168,8 +168,10 @@ fn ram_is_small() {
     // refusal count seen and as at the key-up (TX-50: 2 bytes, an old refusal no longer ends a key-up), 8, to 2168;
     // SSTV's state (chapter 27a: the picture coming in and going out, the one shown, 48 bytes), 56 with padding, to 2224;
     // the beacon mode to put back when 0 5 3 leaves Tracker (APRS-29.2: 2 bytes), 8 with padding, to 2232;
-    // the end of the satellite screen's keep-lit window (SAT-24: 4 bytes), 8 with padding, to 2240
-    assert!(n <= 2240, "App is {n} bytes");
+    // the end of the satellite screen's keep-lit window (SAT-24: 4 bytes), 8 with padding, to 2240; Pager mode's
+    // (DEC-20, DEC-22: the APRS mode to put back, the unread pages, the pages since power-on and the newest one's
+    // capcode and time, 15 bytes), 16 with padding, to 2256
+    assert!(n <= 2256, "App is {n} bytes");
     let s = core::mem::size_of::<crate::settings::Settings>();
     std::println!("Settings: {s} bytes");
     assert!(s <= 512, "Settings is {s} bytes");
@@ -691,7 +693,7 @@ fn every_destination_draws() {
         }
     }
     let ids: std::collections::BTreeSet<_> = ALL.iter().map(|d| d.info().2).collect();
-    assert_eq!(ids.len(), 66, "one inventory ID per destination (B25 SSTV: decision 403; B11 FM broadcast: decision 352; groups and lists share D3; B16 weather radio removed: decision 63; C7 sensor reader: decision 75; D18-D20 approvals: decision 104; C5a contacts: decision 226; C3a sent beacons: APRS-53; C19 FM presets: decision 258; D25 finish the update: decision 333; B22 satellites: chapter 28a; A16b auto reply: APRS-57)");
+    assert_eq!(ids.len(), 67, "one inventory ID per destination (B26 ACARS: decision 454; B25 SSTV: decision 403; B11 FM broadcast: decision 352; groups and lists share D3; B16 weather radio removed: decision 63; C7 sensor reader: decision 75; D18-D20 approvals: decision 104; C5a contacts: decision 226; C3a sent beacons: APRS-53; C19 FM presets: decision 258; D25 finish the update: decision 333; B22 satellites: chapter 28a; A16b auto reply: APRS-57)");
 }
 
 mod group_a;
@@ -1105,6 +1107,8 @@ mod remote_edges;
 mod aprs_text;
 /// Satellite mode's radio commands, alarm and mark (chapter 28a).
 mod sat;
+/// ACARS's screen (chapter 27b, on trial).
+mod acars;
 /// Property tests: random streams over the exclusive modes, monitors and scans (MODE-1, PWR-24.4, SQL-14.1, SCAN-6).
 mod props_modes;
 

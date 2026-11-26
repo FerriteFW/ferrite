@@ -374,13 +374,18 @@ impl SimCore {
     /// A radio switched on now with the flash holding `stored` (see [`Stored`]).
     pub fn with_flash(scale: usize, owner_card: bool, stored: Stored) -> Self {
         let scale = scale.clamp(1, MAX_SCALE);
-        let nor = match &stored {
+        let mut nor = match &stored {
             Stored::Image(img) if img.len() == ferrite_store::sim::IMAGE_LEN => SimFlash::from_image(img),
             _ => SimFlash::new(),
         };
         // a kept image from another layout (its length): the sample, as if none was kept
         let sample = matches!(&stored, Stored::Sample) || matches!(&stored, Stored::Image(img) if !img.is_empty() && img.len() != ferrite_store::sim::IMAGE_LEN);
         let stored = if sample { Stored::Sample } else { stored };
+        // ACARS-6: the airline table's test fixture, as Console would write it (the kept image doesn't hold it)
+        let mut air = [0u8; ferrite_core::airlines::HEADER + ferrite_core::airlines::FIXTURE.len() * ferrite_core::airlines::ROW];
+        ferrite_core::airlines::fixture(&mut air);
+        let at = SimFlash::at(ferrite_core::layout::AIRLINES.start);
+        nor.mem[at..at + air.len()].copy_from_slice(&air);
         let store = Box::new(FlashStore::mount(nor, Sample::new()));
         if matches!(stored, Stored::Sample) && store.first_boot() {
             seed(&store);

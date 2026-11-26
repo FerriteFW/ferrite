@@ -1563,11 +1563,11 @@ fn transmit_tones_reach_the_radio() {
     assert_eq!(t.app.slot_tones(1), (1, 2), "a VFO follows the radio's");
 }
 
-/// DEC-4: 0 4 2 3 types the capcode (digits only, 21 bits at most); empty keeps every capcode.
+/// DEC-4: 0 4 2 4 types the capcode (digits only, 21 bits at most); empty keeps every capcode.
 #[test]
-fn capcode_typed_at_0_4_2_3() {
+fn capcode_typed_at_0_4_2_4() {
     let mut t = T::new();
-    menu0(&mut t, &[4, 2, 3]);
+    menu0(&mut t, &[4, 2, 4]);
     assert!(matches!(t.app.screen(), Screen::Text(_)));
     for d in [1, 2, 3, 4, 5, 6, 7] {
         t.tap(Key::Digit(d));
@@ -1575,14 +1575,14 @@ fn capcode_typed_at_0_4_2_3() {
     t.tap(Key::Menu);
     assert_eq!(t.app.set.pocsag_cap, 1_234_567);
     t.app.screen = Screen::Home;
-    menu0(&mut t, &[4, 2, 3]);
+    menu0(&mut t, &[4, 2, 4]);
     for _ in 0..7 {
         t.tap(Key::Exit); // delete the digits
     }
     t.tap(Key::Menu);
     assert_eq!(t.app.set.pocsag_cap, 0, "empty: every capcode");
     t.app.screen = Screen::Home;
-    menu0(&mut t, &[4, 2, 3]);
+    menu0(&mut t, &[4, 2, 4]);
     for d in [9, 9, 9, 9, 9, 9, 9] {
         t.tap(Key::Digit(d));
     }
@@ -2330,7 +2330,7 @@ fn bar_callsign_without_a_clock() {
 
 /// MENU-31: OK (or its digit) on a frequency setting opens the frequency entry box; the digits as on home, OK or a
 /// whole frequency keeps it and BACK returns to the list; a frequency outside the setting's range is refused with the
-/// digits left to fix. 0 5 4 (APRS) and 0 4 2 2 (pager); a range preset's edges the same way.
+/// digits left to fix. 0 5 4 (APRS) and 0 4 2 3 (pager); a range preset's edges the same way.
 #[test]
 fn frequency_settings_open_the_entry_box() {
     use crate::screens::entry::{EntryFor, FreqSet};
@@ -2365,7 +2365,7 @@ fn frequency_settings_open_the_entry_box() {
     assert_eq!(t.app.aprs_freq(), mhz(145) + 49_500, "144.391 is off the grid");
     // the pager
     t.hold(Key::Exit);
-    menu0(&mut t, &[4, 2, 2]);
+    menu0(&mut t, &[4, 2, 3]);
     assert!(matches!(t.app.screen(), Screen::Entry(e) if e.to == EntryFor::Setting(FreqSet::Pager)));
     for d in [4, 3, 9, 9, 8, 7, 5] {
         t.tap(Key::Digit(d));
@@ -2376,7 +2376,7 @@ fn frequency_settings_open_the_entry_box() {
     assert_eq!(t.app.set.pocsag_freq, mhz(439) + 98_750);
     // BACK on an empty box leaves without a change
     t.hold(Key::Exit);
-    menu0(&mut t, &[4, 2, 2]);
+    menu0(&mut t, &[4, 2, 3]);
     t.tap(Key::Exit);
     assert!(matches!(t.app.screen(), Screen::Group(_)));
     assert_eq!(t.app.set.pocsag_freq, mhz(439) + 98_750);

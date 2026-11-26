@@ -372,3 +372,52 @@ fn wfm_mode_and_refusal_match_their_goldens() {
     failures.extend(check("wfm-ptt-released", &r.sim.screen_rgb()));
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// DEC-20.1: C's pager card, small (A active) and large (C active), after the fake system's first page; DEC-21's
+/// hint bar says "OK Pages".
+#[test]
+fn pager_card_matches_its_goldens() {
+    use ferrite_core::keys::Key;
+    let mut r = Radio::new();
+    r.run("menu 0 4 2 2; press OK; home");
+    r.wait(26_000);
+    let mut failures: Vec<String> = check("pager-card-small", &r.sim.screen_rgb()).into_iter().collect();
+    while r.sim.app().active() != 2 {
+        r.press(Key::Slot).wait(300);
+    }
+    r.wait(4000); // the page's toast gone
+    failures.extend(check("pager-card-large", &r.sim.screen_rgb()));
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}
+
+/// ACARS-4, ACARS-5, ACARS-7: the ACARS list with slot B's strip (#), and one message's page: the two-block message
+/// from Air Canada (its airline from the fixture table), then the uplink, and the one with a bad CRC.
+#[test]
+fn acars_matches_its_goldens() {
+    use ferrite_core::keys::Key;
+    let at = jump_names().position(|n| n.ends_with("ACARS")).expect("ACARS in the jump list");
+    let mut failures = Vec::new();
+    let mut r = Radio::new();
+    r.sim.jump(at);
+    r.wait(200);
+    r.press(Key::Hash);
+    r.wait(1000);
+    failures.extend(check("acars-strip", &r.sim.screen_rgb()));
+    r.press(Key::Hash);
+    for _ in 0..7 {
+        r.press(Key::Down);
+    }
+    r.press(Key::Menu);
+    r.wait(1000);
+    failures.extend(check("acars-message", &r.sim.screen_rgb()));
+    r.press(Key::Left);
+    r.press(Key::Left);
+    r.wait(1000);
+    failures.extend(check("acars-uplink", &r.sim.screen_rgb()));
+    for _ in 0..3 {
+        r.press(Key::Left);
+    }
+    r.wait(1000);
+    failures.extend(check("acars-crc-bad", &r.sim.screen_rgb()));
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
+}

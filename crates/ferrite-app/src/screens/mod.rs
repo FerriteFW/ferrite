@@ -46,6 +46,7 @@ macro_rules! redraw_box {
     }};
 }
 
+pub mod acars;
 pub mod activity;
 pub mod advanced;
 pub mod alert;
@@ -182,6 +183,8 @@ pub enum Screen {
     Sat(sat::SatScr),
     /// SSTV pictures (chapter 27a).
     Sstv(sstv::Sstv),
+    /// ACARS messages (chapter 27b, on trial).
+    Acars(acars::Acars),
 }
 
 /// Runs `$e` with `$s` bound to the screen's state: the one place that lists every variant.
@@ -243,6 +246,7 @@ macro_rules! each {
             Screen::Dtmf($s) => $e,
             Screen::Sat($s) => $e,
             Screen::Sstv($s) => $e,
+            Screen::Acars($s) => $e,
         }
     };
 }

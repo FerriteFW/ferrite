@@ -335,7 +335,7 @@ impl App {
             watch: if self.watch == 0 || n < 2 { 0 } else { n },
             vox: self.set.vox, // SBAR-25
             spk: dev.spkmic, // SBAR-26
-            inbox: self.inbox,
+            inbox: self.badge(), // INBOX-3.1, DEC-22
             alert: self.alert & crate::ALERT_UNREAD != 0,
             clock: dev.clock_min,
             utc: dev.utc,
@@ -462,6 +462,7 @@ impl App {
                 crate::aprs::Holder::Mode => b"APRS Mode".as_slice(),
                 crate::aprs::Holder::Kiss => b"APRS KISS",
                 crate::aprs::Holder::Beacon => b"APRS Tracker",
+                crate::aprs::Holder::Pager => b"Pager", // DEC-20.1
             });
         } else if lv.scanning {
             b.push(b"SCAN");

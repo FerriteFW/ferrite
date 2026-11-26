@@ -226,10 +226,10 @@ fn aprs_heard_list() {
 #[test]
 fn message_and_led_double_flash() {
     let mut r = Radio::new();
-    r.run("menu 0 0; expect text \"Inbox 1 unread\"; home");
+    r.run("menu 0 0; expect text \"Inbox 2 unread\"; home"); // a message and a page (DEC-22)
     r.event(Event::Message);
     r.expect_text("VE3KPW-9");
-    r.run("menu 0 0; expect text \"Inbox 2 unread\"; home");
+    r.run("menu 0 0; expect text \"Inbox 3 unread\"; home");
     r.event(Event::ScreenOff).wait(500);
     assert!(r.sim.dark());
     // Over 2 s: two short green flashes 250 ms apart.
@@ -410,28 +410,50 @@ fn power_cycle_keeps_settings() {
     assert_eq!(r.sim.app().slot(0).freq(), mhz(446) + 10_000);
 }
 
-/// POCSAG on: a slot on the pager frequency decodes the fake system's pages into a toast and the inbox (DEC-4,
-/// DEC-7, DEC-18).
+/// POCSAG on: Decode (0 4 2 2) is Pager mode, slot C on the pager frequency with nothing to retune; the fake
+/// system's pages come as a toast, into the mail badge, onto C's pager card and into Messages (DEC-4, DEC-7, DEC-18,
+/// DEC-20, DEC-22).
 #[test]
 fn pocsag_page_with_popups() {
     let mut r = Radio::new();
-    r.run("menu 0 4 2 1; press OK; expect text \"Decode On\"");
-    r.run("home; press SLOT; press VM; type 439987; press OK; wait 1s");
-    r.run("wait 21s; expect text \"Pager\"");
-    r.run("menu 0 0; expect text \"Inbox 1 unread\""); // INBOX-3.1: a page is the log's, not the mail badge's
+    r.run("menu 0 4 2 2; press OK; expect text \"Decode On\"");
+    r.run("home; wait 1s; expect text \"No pages yet\"");
+    let toast = (0..44).any(|_| {
+        r.wait(500);
+        r.has("Pager 12345")
+    });
+    assert!(toast, "the page's toast (Popups on)");
+    r.run("wait 1s; expect text \"1 page\"");
+    r.run("menu 0 0; expect text \"Inbox 3 unread\""); // DEC-22: the sample's message and page, and this page
+    r.run("menu 0 5 2; expect text \"Page\"");
 }
 
 /// Popups off: a page still goes to the inbox, but no toast shows (DEC-7).
 #[test]
 fn pocsag_page_without_popups() {
     let mut r = Radio::new();
-    r.run("menu 0 4 2 1; press OK; menu 0 4 4; press OK; expect text \"Popups Off\"");
-    r.run("home; press SLOT; press VM; type 439987; press OK; wait 1s");
+    r.run("menu 0 4 2 2; press OK; menu 0 4 4; press OK; expect text \"Popups Off\"");
+    r.run("home; wait 1s");
     for _ in 0..21 {
         r.wait(1000);
-        r.expect_no_text("Pager");
+        r.expect_no_text("Pager 12345");
     }
-    r.run("menu 0 0; expect text \"Inbox 1 unread\""); // INBOX-3.1
+    r.run("menu 0 0; expect text \"Inbox 3 unread\""); // DEC-22
+}
+
+/// DEC-21: in Pager mode OK on C opens the pager list on Pages, and PTT there opens Pages; nothing keys.
+#[test]
+fn pager_card_ok_and_ptt_open_pages() {
+    let mut r = Radio::new();
+    r.run("menu 0 5 3; press LEFT; expect text \"Pager\"; home; wait 1s");
+    while r.sim.app().active() != 2 {
+        r.press(Key::Slot).wait(300);
+    }
+    r.expect_text("OK Pages");
+    r.run("press OK; expect text \"Pager slot\"; press OK; expect screen \"Event log\"; expect text \"STN 4\"");
+    r.run("home; wait 500ms");
+    r.run("down PTT; wait 300ms; expect screen \"Event log\"; up PTT");
+    assert!(!r.sim.radio().live.tx.keyed, "no key-up on the pager slot");
 }
 
 /// The crossband repeater refuses to start with both sides on one chip, and says why (XB-2).
@@ -515,7 +537,7 @@ fn strip_beside_broadcast() {
 #[test]
 fn messages_mark_all_read_and_delete_all() {
     let mut r = Radio::new();
-    r.run("menu 0 0; expect text \"Inbox 1 unread\"");
+    r.run("menu 0 0; expect text \"Inbox 2 unread\""); // a message and a page (DEC-22)
     r.run("menu 0 5 2; hold OK; expect text \"Mark all read\"; press DOWN; press DOWN; press DOWN; press DOWN; press OK; wait 300ms");
     r.run("menu 0 0; expect text \"Inbox Empty\"");
     r.run("menu 0 5 2; wait 300ms; expect text \"VE3KPW-9\"");

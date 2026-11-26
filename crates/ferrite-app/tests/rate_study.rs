@@ -1,13 +1,15 @@
 //! The decoder rate study (Oct 22, 2026; decision 240): the radio's APRS receive path at 12, 16 and 24 kHz on recorded audio.
 //! The audio goes as PA2's does (48 kHz, 12-bit counts around mid-scale, `Decim`'s DC removal), then a low-pass
 //! designed for each step (Kaiser beta 6, 31 taps, Q15, as `audio::TAPS`) and the AFSK demodulator at the lower
-//! rate. Frames with a good CRC are counted. Ignored: it needs udigimodes' test audio (never redistributed). Run
+//! rate. Frames with a good CRC are counted. Ignored: it needs the test data's recordings (the off-air ones private, never redistributed). Run
 //! with `cargo test --release -p ferrite-app --test rate_study -- --ignored --nocapture`.
 
 use ferrite_core::audio::ADC_HZ;
 
-fn testdata(rel: &str) -> std::path::PathBuf {
-    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../../testdata").join(rel)
+/// A recording of the test data (`ferrite_fuzzkit::testdata_dir`'s rule), when present, else a skip note: the
+/// off-air APRS recordings (`aprs/`) are private, the WA8LMF CD comes from the testdata repo's `fetch/all.sh`.
+fn testdata(rel: &str) -> Option<std::path::PathBuf> {
+    if rel.starts_with("aprs/") { ferrite_fuzzkit::testdata_private_file(rel) } else { ferrite_fuzzkit::testdata_file(rel) }
 }
 
 fn read_wav(path: &std::path::Path) -> Option<(Vec<i16>, u32)> {
@@ -102,8 +104,8 @@ fn decoder_rate_study() {
     ];
     println!("\n{:<20} {:>8} {:>8} {:>8} {:>8} {:>8}", "audio", "12k/5k", "16k/5k", "16k/6.5k", "24k/5k", "24k/9k");
     for (name, rel) in audio {
-        let Some((s, rate)) = read_wav(&testdata(rel)) else {
-            println!("{name}: not fetched, skipped");
+        let Some((s, rate)) = testdata(rel).and_then(|p| read_wav(&p)) else {
+            println!("{name}: skipped");
             continue;
         };
         let adc = as_adc(&s, rate, 1500);

@@ -44,6 +44,7 @@ pub mod remote;
 pub mod sample;
 pub mod sat;
 pub mod sstv;
+pub mod acars;
 pub mod screens;
 pub mod slotctl;
 pub mod settings;
@@ -299,6 +300,12 @@ pub struct App {
     /// this visit to the menu: going home forgets them, so the menu starts on row 1 again.
     pub(crate) group_rows: [u8; screens::groups::MEMO_BYTES],
     inbox: u8,
+    /// DEC-22, INBOX-3.1: unread pages, which count in the mail badge beside the messages ([`App::badge`]).
+    pub(crate) pages_unread: u8,
+    /// DEC-20.1: the pages heard since power-on and the newest one's capcode and time (ms), for C's pager card
+    /// (RAM: the small card is drawn every frame and never reads the store, PWR-26.13).
+    pub(crate) pages_boot: u16,
+    pub(crate) last_page: (u32, u32),
     /// The event log's unread entries (INBOX-7): the log's own count, not the mail badge's (INBOX-3.1).
     pub(crate) log_unread: u8,
     /// An unread alert (the bar's alert mark); [`ALERT_WAIT`]: one came in while the crossband repeater ran,
@@ -390,6 +397,8 @@ pub struct App {
     /// APRS-29.2: 0 5 6 1's mode before Tracker started its own beacons (it was off or manual), put back when 0 5 3
     /// leaves Tracker unless 0 5 6 1 changed meanwhile, so stepping through Tracker to On leaves no beacons behind.
     tracker_was: Option<u8>,
+    /// DEC-20: the 0 5 3 value Pager replaced when 0 4 2 2 turned it on (RAM only: Off after a restart).
+    pager_was: Option<u8>,
     /// MODE-5.1: # paused home's scope strip (single + scope), so the watch and APRS have the receiver (RAM only).
     pub(crate) strip_paused: bool,
     /// The armed reset's # was held 3 s ([`screens::confirm`]): done at the next tick, which has the store.
@@ -495,6 +504,9 @@ impl App {
             lock_ask: 0,
             group_rows: [0; screens::groups::MEMO_BYTES],
             inbox: 0,
+            pages_unread: 0,
+            pages_boot: 0,
+            last_page: (0, 0),
             log_unread: 0,
             alert: 0,
             vox_on: false,
@@ -541,6 +553,7 @@ impl App {
             aprs: aprs::AprsCfg::DEFAULT,
             aprs_st: 0,
             tracker_was: None,
+            pager_was: None,
             strip_paused: false,
             want_reset: false,
             clock_set: None,
@@ -966,6 +979,26 @@ impl App {
         self.clock_set.take()
     }
 
+    /// The mail badge's count (INBOX-3.1): unread messages to us and unread pages (DEC-22).
+    pub fn badge(&self) -> u8 {
+        self.inbox.saturating_add(self.pages_unread)
+    }
+
+    /// The unread pages at power on (DEC-22), after [`App::set_inbox`].
+    pub fn set_pages_unread(&mut self, n: u16) {
+        self.pages_unread = n.min(255) as u8;
+    }
+
+    /// An event read (INBOX-7): the log's count, and the badge's when it was a page (DEC-22).
+    pub(crate) fn event_read(&mut self, e: &crate::data::Event) {
+        if e.unread {
+            self.log_unread = self.log_unread.saturating_sub(1);
+            if e.src == crate::data::Src::Pocsag {
+                self.pages_unread = self.pages_unread.saturating_sub(1);
+            }
+        }
+    }
+
     /// A decoder's hit (DEC-7): the inbox count, and a toast only while Popups (0 4 4) is on.
     pub fn notify_decode(&mut self, head: &[u8], body: &[u8]) {
         if self.set.popups {
@@ -1042,6 +1075,7 @@ impl App {
     /// (INBOX-7).
     pub fn set_inbox(&mut self, messages: u16, log: u16) {
         self.inbox = messages.min(255) as u8;
+        self.pages_unread = 0;
         self.log_unread = log.min(255) as u8;
     }
 
@@ -1263,6 +1297,9 @@ impl App {
             // Neither keys voice.
             if matches!(self.screen, Screen::Compose(c) if !c.quick_edit_on()) {
                 return screens::msgs::send(self, store);
+            }
+            if self.pager_on() && self.aprs_slot(s) {
+                return self.open(Dest::Pages); // DEC-21: PTT on the pager slot opens Pages, never transmits
             }
             if self.aprs_slot(s) {
                 return self.open(Dest::Compose);

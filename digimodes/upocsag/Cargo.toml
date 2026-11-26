@@ -11,5 +11,8 @@ categories = ["embedded", "no-std"]
 
 [dependencies]
 
+[dev-dependencies]
+ferrite-fuzzkit.workspace = true # testdata_dir: where the test data is
+
 [lints]
 workspace = true

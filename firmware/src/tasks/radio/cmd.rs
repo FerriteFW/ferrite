@@ -213,6 +213,7 @@ impl Radio {
             RadioCmd::Counter(on) => self.counter(on).await,
             RadioCmd::Lease => {} // MODE-3: renewed above (`Lease::note`)
             RadioCmd::Same(on) => self.same_on = on,
+            RadioCmd::Pager(baud) => self.pager.baud = baud, // DEC-23
             RadioCmd::DtmfRx(on) => self.dtmf_on = on,
             RadioCmd::Beep { hz, ms } => self.beep(hz, ms).await,
             RadioCmd::Chime { sound, level } => self.chime(sound, level).await,

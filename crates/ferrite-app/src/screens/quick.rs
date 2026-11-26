@@ -115,7 +115,10 @@ impl View for Quick {
         let mut m = Buf::<16>::new();
         mode_chip(sl.cfg(), &mut m);
         let f = sl.freq();
-        if app.dirty(R_TOP, Mix::new().h(&a).h(&head).h(&m).h(&f).get()) {
+        if let Some(clear) = app.dirty_shape(R_TOP, Mix::new().h(&a).h(&head).h(&m).h(&f).get(), false) {
+            if clear {
+                body_relayout(app, lcd);
+            }
             // MENU-13: whose settings these are.
             w::badge(lcd, 8, 23, a, true, BG);
             w::field(lcd, 22, 4, 21, 39, 35, b"", const { &w::st(&UI_12, SUB, BG, Align::Left) });
@@ -211,7 +214,10 @@ fn render_fm(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>, ro
     let mut fb = Buf::<16>::new();
     fm::fm_mhz(f, &mut fb);
     fb.push(b" MHz");
-    if app.dirty(R_TOP, Mix::new().h(&a).h(&fb).h(&2u8).get()) {
+    if let Some(clear) = app.dirty_shape(R_TOP, Mix::new().h(&a).h(&fb).get(), true) {
+        if clear {
+            body_relayout(app, lcd);
+        }
         w::badge(lcd, 8, 23, a, true, BG);
         w::field(lcd, 22, 4, 21, 39, 35, b"", const { &w::st(&UI_12, SUB, BG, Align::Left) });
         w::field(lcd, 26, 66, 21, 39, 35, fb.as_bytes(), const { &w::st(&UI_12B, TEXT, BG, Align::Left) });
@@ -239,6 +245,14 @@ fn render_fm(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>, ro
     let mut p = Buf::<16>::new();
     let _ = uwrite!(p, "MENU {}", if i <= FM_ROWS { i + 1 } else { 0 });
     app.help_txt(lcd, 265, 33, help, p.as_bytes());
+}
+
+/// DISP-31: the slot moved into or out of the broadcast band with the screen open, so the rows' pitch changed (22 px
+/// for the ten settings, 25 px for FM's six): blank the rows' area and redraw every row, or the old layout's rows
+/// stay where the new one draws none (the monkey's seed 1001: Quick, then an FM station retunes the slot).
+fn body_relayout(app: &mut App, lcd: &mut impl Panel) {
+    lcd.fill(0, 41, 240, 265 - 41, BG);
+    app.forget(R_ROW, QUICK.len());
 }
 
 /// The active slot's tone hint (TSRCH-16), 0 none.

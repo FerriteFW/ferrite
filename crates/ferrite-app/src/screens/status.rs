@@ -63,10 +63,10 @@ const ROWS: [(&str, Val<()>); 20] = [
     }),
     ("Extend TX", |c, b| on_off(b, c.app.set.extend_tx)),
     ("Inbox", |c, b| {
-        if c.app.inbox == 0 {
+        if c.app.badge() == 0 {
             b.set(b"Empty");
         } else {
-            let _ = uwrite!(b, "{} unread", c.app.inbox);
+            let _ = uwrite!(b, "{} unread", c.app.badge());
         }
         TEXT
     }),

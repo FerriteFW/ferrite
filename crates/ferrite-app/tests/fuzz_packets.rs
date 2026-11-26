@@ -1,6 +1,6 @@
 //! The packet decoders' fuzz targets (`fuzz/`, tools/fuzz.sh; digimodes/FUZZING.md) run deterministically in the
 //! normal tests: the same harness functions (`fuzz/src/harness.rs`), fed the TNC2 test packets
-//! (`digimodes/uaprs/tests/spec_packets.txt`, and when present `../testdata/aprs/*.hex`) turned into each target's
+//! (`digimodes/uaprs/tests/spec_packets.txt`, and when present the test data's `aprs/*.hex`) turned into each target's
 //! format as `fuzz/src/bin/seeds.rs` does, then mutated (ferrite-fuzzkit). No panic, no broken round trip, no
 //! case slower than the limit. `FERRITE_FUZZ_SCALE` runs more cases.
 
@@ -200,4 +200,21 @@ fn fuzz_afsk_audio() {
 fn fuzz_aprs_live() {
     let s = seeds();
     Fuzz::new("aprs_live", 0xA11E, 60_000).run(|r| from(r, &s.live, 1200), harness::aprs_live);
+}
+
+/// ACARS-2.1: any bytes through the ACARS parser and log never panic; seeds are the sample traffic's frames, alone
+/// and in a row.
+#[test]
+fn fuzz_acars() {
+    let mut corpus = Vec::new();
+    let mut all = Vec::new();
+    for (_, f, _) in ferrite_app::acars::sample::FRAMES.iter() {
+        let mut b = [0u8; 256];
+        let n = ferrite_core::acars::encode(f, &mut b);
+        corpus.push(b[..n].to_vec());
+        all.push(ferrite_core::acars::SOH);
+        all.extend_from_slice(&b[..n]);
+    }
+    corpus.push(all);
+    Fuzz::new("acars", 0xACA5, 40_000).run(|r| from(r, &corpus, 1200), harness::acars);
 }

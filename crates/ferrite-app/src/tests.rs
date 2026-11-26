@@ -1109,6 +1109,8 @@ mod aprs_text;
 mod sat;
 /// ACARS's screen (chapter 27b, on trial).
 mod acars;
+/// Power on reopens the tool open at power off (BOOT-19).
+mod resume;
 /// Property tests: random streams over the exclusive modes, monitors and scans (MODE-1, PWR-24.4, SQL-14.1, SCAN-6).
 mod props_modes;
 

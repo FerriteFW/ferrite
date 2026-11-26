@@ -124,7 +124,10 @@ impl Radio {
                     sc.listen = 0;
                 }
                 let l = &mut self.live.slots[i];
-                (l.squelch_open, l.rssi, l.rssi_raw) = (open, rssi, rssi); // the level, open or closed (level 0 is in `open`)
+                // SQL-12.4: home's meter shows the level while open or monitored, else empty; the squelch screen
+                // reads `rssi_raw`, the level as read (SQL-12.1). Level 0 is in `open`.
+                let shown = if open || monitored { rssi } else { rssi.min(-121) };
+                (l.squelch_open, l.rssi, l.rssi_raw) = (open, shown, rssi);
                 l.carrier = st.squelch_open; // SQL-13.1: the chip's own decision
             }
             self.chip(chip).af_out(if heard { AfOut::Normal } else { AfOut::Mute });

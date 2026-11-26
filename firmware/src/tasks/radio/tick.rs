@@ -278,7 +278,9 @@ impl Radio {
             let matched = self.slots[s as usize].toned(open, &st);
             toned[n as usize] = !probing && self.tone_hold[n as usize].step(matched, open, dt); // SQL-18.8
             let sl = &mut self.live.slots[s as usize];
-            sl.rssi = rssi;
+            // SQL-12.4: home's and the watch's meters show the level while the squelch is open or the slot is
+            // monitored, else empty (as stock); the squelch screen reads `rssi_raw`, the level as read (SQL-12.1).
+            sl.rssi = if open || self.monitor & 1 << s != 0 { rssi } else { rssi.min(-121) };
             sl.rssi_raw = rssi; // SQL-12.1
             scan_open[s as usize] = match self.scans[s as usize].check() {
                 Check::Rssi => rssi > *fl + FAST_MARGIN_DB,

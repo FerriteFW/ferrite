@@ -5,3 +5,4 @@ Everyone below agreed to the contributor agreement in [CLA.md](CLA.md), which co
 | Name | GitHub | Agreed on | Version | Where |
 | --- | --- | --- | --- | --- |
 | Daria Juniper | [juniberry](https://github.com/juniberry) | Nov 21, 2026 | 1 | [ferrite#34](https://github.com/FerriteFW/ferrite/issues/34#issuecomment-7067007060) |
+| doccodyblue (DG7LAN) | [doccodyblue](https://github.com/doccodyblue) | Nov 25, 2026 | 1 | [ferrite#237](https://github.com/FerriteFW/ferrite/pull/237) |

@@ -179,6 +179,9 @@ class FakeRadio:
             self.ops.append(("program", a))
         elif ty == ffw.DATA_WRITE and p[0] == 2:
             self.stamped = True
+        elif ty == ffw.DATA_READ and p[0] == 0:
+            a, n = struct.unpack("<I", p[1:5])[0], p[5]
+            return ffw.OK, bytes(self.chip[a:a + n])
         elif ty == ffw.DATA_READ and p[0] == 1:
             a, n = struct.unpack("<II", p[1:9])
             return ffw.OK, struct.pack("<I", zlib.crc32(bytes(self.chip[a:a + n])))
@@ -220,6 +223,31 @@ class Write(unittest.TestCase):
         with self.assertRaises(ffw.Refused):
             ffw.write_parts(r.ask, r.hello, ffw.spi_parts(m, entries), say=lambda s: None, clock=Clock())
         self.assertEqual(r.ops, [])
+
+    def mark(self, r, frm):
+        rec = struct.pack("<IHHI", ffw.MARK_MAGIC, frm, 0, 0)
+        r.chip[0x00E000:0x00E010] = rec + struct.pack("<I", zlib.crc32(rec))
+
+    def test_parts_cut_before_their_stamp_are_written_again(self):
+        """UPD-16: 255 with a mark that began from this layout: only the parts were cut; writing them finishes it."""
+        b, pub = make()
+        m, entries, _ = ffw.check(b, pubkey_text=pub)
+        r = FakeRadio(layouts=(3, 255))
+        self.mark(r, 3)
+        ffw.write_parts(r.ask, r.hello, ffw.spi_parts(m, entries), say=lambda s: None, clock=Clock())
+        self.assertTrue(r.stamped)
+
+    def test_a_half_moved_radio_gets_nothing(self):
+        """UPD-16: 255 with no mark, or a mark from another layout (a real move cut): Console's copy finishes it."""
+        b, pub = make()
+        m, entries, _ = ffw.check(b, pubkey_text=pub)
+        for frm in (None, 2):
+            r = FakeRadio(layouts=(3, 255))
+            if frm is not None:
+                self.mark(r, frm)
+            with self.assertRaises(ffw.Refused):
+                ffw.write_parts(r.ask, r.hello, ffw.spi_parts(m, entries), say=lambda s: None, clock=Clock())
+            self.assertEqual([op for op in r.ops if op[0] != "read"], [])
 
 
 if __name__ == "__main__":

@@ -134,6 +134,8 @@ pub enum Dest {
     AprsStation,
     /// C3a: our beacons and who repeated them (the APRS list's Sent, APRS-53).
     AprsSent,
+    /// C3b: every packet heard lately (the APRS list's Traffic, APRS-59).
+    AprsTraffic,
     /// C5: APRS messages (MENU 0 5 2).
     AprsMessages,
     /// C6: one APRS message.
@@ -244,6 +246,7 @@ impl Dest {
             AprsHeard => ("APRS heard", "25", "C3"),
             AprsStation => ("APRS station", "25", "C4"),
             AprsSent => ("APRS sent", "25", "C3a"),
+            AprsTraffic => ("APRS traffic", "25", "C3b"),
             AprsMessages => ("APRS messages", "25", "C5"),
             AprsMessage => ("APRS message", "25", "C6"),
             Browse => ("Channel browser", "10", "C8"),
@@ -311,7 +314,7 @@ impl Dest {
 }
 
 /// Every destination once (groups and lists by one example each), for tests and the screen inventory.
-pub const ALL: [Dest; 71] = {
+pub const ALL: [Dest; 72] = {
     use Dest::*;
     [
         Entry(1), ChannelEdit, Value(Item::Squelch), Tones, Text(super::text::TextFor::Callsign), PositionEntry, SaveChannel, AddRepeater, RangePreset,
@@ -321,7 +324,7 @@ pub const ALL: [Dest; 71] = {
         Browse, Zones, RangePresets, SkipList, Waypoints, WaypointGo, GpsPosition, HfRecent, Quick,
         Advanced, Group(5), Sub(9, 1), Status, About, Calibration, KeyTest, AdvSquelch, SsbConfirm, SsbPatch,
         LinkStatus, WriteProgress, PowerOff, EmptyBattery, Mailbox,
-        Group(1), Sub(4, 2), Value(Item::Power), FinishUpdate, Satellites, AutoReply, Sstv, Acars,
+        Group(1), Sub(4, 2), Value(Item::Power), FinishUpdate, Satellites, AutoReply, Sstv, Acars, AprsTraffic,
     ]
 };
 
@@ -433,6 +436,7 @@ pub fn enter(dest: Dest, app: &mut App) -> Screen {
         Dest::AprsHeard => Screen::Aprs(super::aprs::Aprs { cur: Default::default(), station: false }),
         Dest::AprsStation => Screen::Aprs(super::aprs::Aprs { cur: Default::default(), station: true }),
         Dest::AprsSent => Screen::AprsSent(super::aprs::Sent { cur: Default::default() }),
+        Dest::AprsTraffic => Screen::AprsTraffic(super::aprs::Traffic { cur: Default::default() }),
         Dest::AprsMessages => Screen::Msgs(super::msgs::Msgs { cur: Default::default(), open: false }),
         Dest::AprsMessage => Screen::Msgs(super::msgs::Msgs { cur: Default::default(), open: true }),
         Dest::Compose => {

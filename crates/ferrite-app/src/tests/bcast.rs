@@ -80,7 +80,7 @@ fn japan_band() {
     assert_eq!(t.app.bcast_slot(), None, "80 MHz outside Japan");
 }
 
-/// BCR-22: a second slot tuned in takes the broadcast; the first shows "FM on B" until it is tuned out; when the
+/// BCR-22: a second slot tuned in takes the broadcast; the first shows "WFM on B" until it is tuned out; when the
 /// broadcast slot leaves, a slot still in the band takes it back.
 #[test]
 fn handover_between_slots() {
@@ -90,7 +90,7 @@ fn handover_between_slots() {
     assert_eq!(t.app.bcast_slot(), Some(1));
     assert!(c.contains(&RadioCmd::BcastSlot(Some(1))) && c.contains(&RadioCmd::Broadcast(BroadcastCmd::Fm(9_910))), "{c:?}");
     assert!(!c.contains(&RadioCmd::Broadcast(BroadcastCmd::Off)), "one receiver, retuned: {c:?}");
-    assert_eq!(t.app.state(0, &t.live).0, "FM on B");
+    assert_eq!(t.app.state(0, &t.live).0, "WFM on B");
     tune(&mut t, 0, mhz(101)); // A moves within the band: B keeps it
     assert_eq!(t.app.bcast_slot(), Some(1));
     let c = tune(&mut t, 1, TWO_M);
@@ -105,7 +105,7 @@ fn card_states() {
     let mut t = ready();
     tune(&mut t, 0, FM1005);
     live_fm(&mut t, 10_050, true);
-    assert_eq!(t.app.state(0, &t.live).0, "FM");
+    assert_eq!(t.app.state(0, &t.live).0, "WFM");
     live_fm(&mut t, 10_050, false);
     assert_eq!(t.app.state(0, &t.live).0, "muted");
     tune(&mut t, 1, mhz(50) + 12_500);
@@ -318,7 +318,7 @@ fn strip_sweeps_beside_the_broadcast() {
     // the slot heard while the strip sweeps (the strip's report has the mode): B says FM, then muted
     t.live.mode = ModeLive::Scope { centre: TWO_M, bars: [0; ferrite_core::msg::SCOPE_BARS], n: 56, sweeps: 1, listen: 0, open: false };
     t.live.bcast_heard = true;
-    assert_eq!(t.app.state(1, &t.live).0, "FM");
+    assert_eq!(t.app.state(1, &t.live).0, "WFM");
     t.live.bcast_heard = false;
     assert_eq!(t.app.state(1, &t.live).0, "muted");
     // the broadcast slot active: HOME-14, the strip off, the broadcast on

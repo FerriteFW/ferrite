@@ -17,7 +17,10 @@
 //!    black's recordings of the bladeRF (`bench-results/20261125-acars-rx/msklab5.py`, Nov 25, 2026): 0 bursts of
 //!    30 with an error, against 13 for tone decisions and NRZI with the gentle clock alone.
 //! 4. **Sync:** `*`, SYN, SYN as 24 data bits (each character 7 bits and odd parity, least significant first), either
-//!    polarity; then SOH, or the hunt goes on.
+//!    polarity; then SOH, or the hunt goes on. A reader reading a body keeps watching too (ACARS-11.2): the sync
+//!    within [`SYNC_AFTER`] bits of a pre-key (at least [`PREKEY_BITS`] of the sync's polarity's ones) means the body
+//!    was cut short and a new burst starts. A body can't hold that run: 7 bits and odd parity allow at most 14 equal
+//!    bits in a row, and the CRC's two free bytes come last.
 //! 5. **The frame:** characters after SOH up to ETX or ETB and the two CRC bytes ([`crate::acars`]'s shape: STX
 //!    or the end straight after the 12-character head); anything longer than [`FRAME_MAX`] is dropped.
 //! 6. **One copy:** every chain that gets the frame finishes within a few bits of the others; the first copy waits
@@ -50,6 +53,11 @@ pub const FRAME_MAX: usize = HEAD + 1 + TEXT_MAX + 1 + 2;
 /// `*`, SYN, SYN as received, the first character in the low byte.
 const SYNC: u32 = 0x2A | 0x16 << 8 | 0x16 << 16;
 const SOH: u8 = 0x01;
+/// The pre-key a reader needs before a sync mid-body: equal data bits in a row (the pre-key is 16 or more characters
+/// of ones; a body has at most 14 in a row).
+const PREKEY_BITS: u8 = 32;
+/// How soon after the pre-key's run the sync must end, bits: the run ends two bits into `+`, the sync 30 bits later.
+const SYNC_AFTER: u8 = 40;
 /// How long the first copy of a frame waits for a slicer's copy with a good CRC, in bits.
 pub const HOLD_BITS: u32 = 48;
 
@@ -63,8 +71,14 @@ enum State {
 /// One slicer's frame reader.
 #[derive(Clone, Copy)]
 struct Deframer {
-    /// The last 24 data bits, the newest in bit 23.
+    /// The last 24 data bits, the newest in bit 23 (kept in every state).
     shift: u32,
+    /// The run of equal data bits: its length (saturating) and its bit.
+    run: u8,
+    run_bit: bool,
+    /// Bits since the last run of [`PREKEY_BITS`] or more, and that run's bit (saturating).
+    since_pk: u8,
+    pk_bit: bool,
     /// The stream's data is inverted (the sync came inverted).
     inv: bool,
     state: State,
@@ -78,18 +92,33 @@ struct Deframer {
 }
 
 impl Deframer {
-    const NEW: Deframer = Deframer { shift: 0, inv: false, state: State::Hunt, nbit: 0, cur: 0, n: 0, end: 0, buf: [0; FRAME_MAX] };
+    const NEW: Deframer = Deframer { shift: 0, run: 0, run_bit: false, since_pk: u8::MAX, pk_bit: false, inv: false, state: State::Hunt, nbit: 0, cur: 0, n: 0, end: 0, buf: [0; FRAME_MAX] };
 
     /// A data bit (either polarity: the sync says which); true when a frame is complete in `buf[..n]`.
     fn bit(&mut self, d: bool) -> bool {
-        match self.state {
-            State::Hunt => {
-                self.shift = (self.shift >> 1) | (d as u32) << 23;
-                if self.shift == SYNC || self.shift == SYNC ^ 0xFF_FFFF {
-                    (self.inv, self.state, self.nbit, self.cur) = (self.shift != SYNC, State::Soh, 0, 0);
-                }
-                false
+        self.shift = (self.shift >> 1) | (d as u32) << 23;
+        if d == self.run_bit {
+            self.run = self.run.saturating_add(1);
+        } else {
+            (self.run, self.run_bit) = (1, d);
+        }
+        if self.run >= PREKEY_BITS {
+            (self.since_pk, self.pk_bit) = (0, d);
+        } else {
+            self.since_pk = self.since_pk.saturating_add(1);
+        }
+        let inv = self.shift != SYNC;
+        if inv && self.shift != SYNC ^ 0xFF_FFFF {
+            if self.state == State::Hunt {
+                return false;
             }
+        } else if self.state == State::Hunt || self.since_pk <= SYNC_AFTER && self.pk_bit != inv {
+            // a sync: in the hunt, or after a pre-key of its polarity mid-body (the body was cut: a new burst)
+            (self.inv, self.state, self.nbit, self.cur) = (inv, State::Soh, 0, 0);
+            return false;
+        }
+        match self.state {
+            State::Hunt => false,
             State::Soh | State::Body => {
                 self.cur |= ((d ^ self.inv) as u8) << self.nbit;
                 self.nbit += 1;
@@ -138,7 +167,7 @@ impl Deframer {
     }
 
     fn hunt(&mut self) {
-        (self.state, self.shift) = (State::Hunt, 0);
+        self.state = State::Hunt;
     }
 
     /// The complete frame's bytes (after `bit` said so: `n` and `end` stay until the next SOH).
@@ -519,12 +548,10 @@ mod tests {
         );
     }
 
-    /// ACARS-11, found by fuzz_recovers_after_garbage: a burst cut short (a fade, a collision) leaves each reader
-    /// reading its body until FRAME_MAX characters (about 0.8 s), and a burst starting inside that time is lost on
-    /// every slicer (its sync isn't looked for while a body is read). Bounded, not stuck; ignored until the
-    /// readers also watch for a sync mid-body (a decoder change, left for a decision).
+    /// ACARS-11.2, found by fuzz_recovers_after_garbage: a burst cut short (a fade, a collision) leaves each reader
+    /// reading its body until FRAME_MAX characters (about 0.8 s); a burst starting inside that time decodes, its
+    /// pre-key and sync seen mid-body, wherever the first was cut.
     #[test]
-    #[ignore = "a burst within 0.8 s of one cut short is lost: the readers don't hunt mid-body"]
     fn burst_right_after_a_cut_one() {
         let mut b = [0u8; FRAME_MAX + 1];
         let n = sample(b"FERRITE AFTER GARBAGE", &mut b);
@@ -538,5 +565,47 @@ mod tests {
             }
         }
         assert!(lost.is_empty(), "the second burst lost after the first cut at these bits: {lost:?}");
+    }
+
+    /// ACARS-11.2: a body is never abandoned for a sync inside its own text: bodies with the longest runs of equal
+    /// bits the characters allow (DEL, SOH, 0x7E and 0x01 pairs) and `+*` SYN SYN SOH in the text, and 200 bodies of
+    /// random characters (but ETX and ETB), all decode, alone and back to back.
+    #[test]
+    fn no_false_sync_mid_body() {
+        let mut texts: Vec<Vec<u8>> = std::vec![
+            b"\x7f\x7f\x7f\x7f+*\x16\x16\x01FAKE".to_vec(),
+            b"\x01\x01\x01\x01+*\x16\x16\x01FAKE".to_vec(),
+            b"\x7e\x7f\x7e\x7f\x7f+*\x16\x16\x01\x7f\x7f".to_vec(),
+            [b'+', b'*', SYN, SYN, 1].repeat(40),
+            std::vec![0x7F; TEXT_MAX - 10],
+        ];
+        let mut rng = 0xACA5u32;
+        for _ in 0..200 {
+            rng = rng.wrapping_mul(1_103_515_245).wrapping_add(12345);
+            let len = (rng >> 16) as usize % (TEXT_MAX - 10);
+            texts.push(
+                (0..len)
+                    .map(|_| {
+                        rng = rng.wrapping_mul(1_103_515_245).wrapping_add(12345);
+                        match (rng >> 16) as u8 & 0x7F {
+                            ETX | ETB => b'.', // the frame's end
+                            c => c,
+                        }
+                    })
+                    .collect(),
+            );
+        }
+        let (mut all, mut want) = (Vec::new(), Vec::new());
+        for (i, text) in texts.iter().enumerate() {
+            let mut b = [0u8; FRAME_MAX + 1];
+            let n = sample(text, &mut b);
+            let t = tones(&b[..n], 16);
+            let got = decode(&audio(&t, 24_000, 12_000.0, 1500.0), 24_000);
+            assert_eq!(got, [&b[..n - 1]], "text {i} alone");
+            all.extend(t);
+            want.push(b[..n - 1].to_vec());
+        }
+        let got = decode(&audio(&all, 24_000, 12_000.0, 1500.0), 24_000);
+        assert_eq!(got, want, "back to back");
     }
 }

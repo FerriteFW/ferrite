@@ -341,6 +341,9 @@ pub struct Settings {
     /// ACARS-3 (on trial): the ACARS frequency, an index into [`crate::acars::FREQS`] (◀▶ on the ACARS screen).
     /// Stored at the record's end: an older record reads the default, 131.550.
     pub acars_freq: u8,
+    /// ACARS-4.2 (on trial): the ACARS list shows only messages with text (* on the list). A bit of its own after
+    /// scan_tx's: an older record reads all shown.
+    pub acars_text: bool,
     /// 0.9.4's 0 9 5 (`sq_chip`, true = the chip), kept in its stored place so the fields after it stay put; read
     /// and ignored.
     pub sq_chip_old: bool,
@@ -600,6 +603,7 @@ impl Settings {
         sq_soft: false,
         mic_v2: true,
         acars_freq: 0,
+        acars_text: false,
         sq_chip_old: false,
         aprs_mute: true,
         dtmf_rx: true,

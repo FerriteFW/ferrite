@@ -248,3 +248,52 @@ fn the_screen_tunes_the_radio_and_frames_come_in() {
     }
     assert!(cmds.contains(&RadioCmd::AcarsRx(0)), "BACK stops it: {cmds:?}");
 }
+
+/// ACARS-4.2: * shows only the messages with text (the samples' link test and ack hidden), the header counting
+/// them; * again shows all. The choice is kept in the settings; OK and ▲▼ skip the hidden ones.
+#[test]
+fn star_hides_the_messages_without_text() {
+    let mut a = A::new();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    a.render();
+    assert!(a.line().contains("n=10 sel=0") && a.line().contains("text=0"), "{}", a.line());
+    a.tap(Key::Star);
+    assert!(a.app.set.acars_text);
+    a.render();
+    // the newest (C-FJZS's link test) is hidden: the first shown is selected
+    let s = a.acars();
+    assert_eq!(s.cur.sel, 1, "{}", a.line());
+    assert!(a.line().contains("text=1"), "{}", a.line());
+    let mut seen = std::vec::Vec::new();
+    for _ in 0..12 {
+        let i = a.acars().cur.sel;
+        seen.push(i);
+        assert!(a.s.data().acars().unwrap().get(i, &mut [0u8; 1]).unwrap().1 > 0, "message {i} has text");
+        a.tap(Key::Down);
+    }
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(seen.len(), 8, "eight of the ten have text: {seen:?}");
+    a.tap(Key::Star);
+    assert!(!a.app.set.acars_text);
+    assert_eq!(a.acars().cur.sel, 0);
+}
+
+/// ACARS-3: the header follows the radio: opened before the radio listens it says so, and it redraws as soon as
+/// the radio reports (it waited for the next message or minute before).
+#[test]
+fn the_header_redraws_when_the_radio_listens() {
+    use ferrite_core::msg::ModeLive;
+    let mut a = A::new();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    a.wait(200);
+    a.render();
+    a.render();
+    let head = |fb: &FrameBuffer| {
+        let y = crate::screens::lists::HEAD_Y as usize;
+        fb.writes[y * 240..(y + 20) * 240].iter().filter(|&&w| w > 0).count()
+    };
+    assert_eq!(head(&a.render()), 0, "nothing changed: nothing drawn");
+    a.live.mode = ModeLive::Acars { freq: 13_155_000, rssi: -110, open: false };
+    assert!(head(&a.render()) > 0, "the header drawn again");
+}

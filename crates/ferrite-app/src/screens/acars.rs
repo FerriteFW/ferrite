@@ -1,8 +1,8 @@
 //! ACARS (MENU 0 3 8; chapter 27b, on trial; B26): the messages heard, newest first, a two-line row each (its
 //! kind, the flight, the time; the airline, the aircraft and the label under it), and one message's page (every
 //! field, the label's meaning, the airline's name, the text wrapped and scrolled). # puts the other slot (B) in a
-//! one-line strip over the list. A receive-only display: the radio doesn't feed it yet (TODO(acars-radio) in
-//! [`crate::acars`]); the simulator and `acars feed` give it sample traffic.
+//! one-line strip over the list; * shows only the messages with text (ACARS-4.2). While it is open the radio
+//! listens (ACARS-11); the simulator and `acars feed` give it sample traffic.
 
 use super::lists::*;
 use super::shared::*;
@@ -46,10 +46,22 @@ pub fn open(_app: &mut App) -> Screen {
     Screen::Acars(Acars { cur: Cursor::default(), detail: false, strip: false, line: 0, air: UNCHECKED })
 }
 
-const ALL: fn(u16) -> bool = |_| true;
-
 fn count(st: &impl ChannelStore) -> u16 {
     st.data().acars().map_or(0, |a| a.len())
+}
+
+/// ACARS-4.2: the messages the list shows: all, or with `only` those with text.
+fn kept(st: &impl ChannelStore, only: bool) -> impl Fn(u16) -> bool + '_ {
+    move |i| !only || st.data().acars().and_then(|a| a.get(i, &mut [])).is_some_and(|(m, _)| m.has_text())
+}
+
+/// ACARS-3: what the radio does, for the list's header: 2 a signal on the frequency shown, 1 listening there,
+/// 0 not (yet) listening.
+fn radio_state(app: &App, live: &ferrite_core::msg::LiveAll) -> u8 {
+    match live.mode {
+        ferrite_core::msg::ModeLive::Acars { freq, open, .. } if freq == app.acars_freq() => 1 + open as u8,
+        _ => 0,
+    }
 }
 
 /// Message `i` and its text, made safe to draw: line feeds kept, other control characters as spaces.
@@ -149,32 +161,37 @@ impl Acars {
     fn render_list(self, app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
         let st = cx.store;
         let n = count(st);
+        let only = app.set.acars_text;
+        let keep = kept(st, only);
+        let shown = (0..n).filter(|&i| keep(i)).count();
         let now_s = app.now / 1000;
         let (y0, vis) = (self.list_y(), self.rows());
         let mut l = Buf::<32>::new();
         let mut f = Buf::<16>::new();
         freq_text(app, &mut f);
-        let _ = uwrite!(l, "{} AM \u{b7} {} {}", Txt(f.as_bytes()), n, if n == 1 { "msg" } else { "msgs" });
-        // ACARS-3: what the radio does: listening on the frequency shown (a signal now: "receiving"), or not yet
-        let want = app.acars_freq();
-        let state: &[u8] = match cx.live.mode {
-            ferrite_core::msg::ModeLive::Acars { freq, open: true, .. } if freq == want => b"receiving",
-            ferrite_core::msg::ModeLive::Acars { freq, .. } if freq == want => b"listening",
-            _ => b"not tuned",
-        };
+        let _ = uwrite!(l, "{} AM \u{b7} {} {}", Txt(f.as_bytes()), shown, if only { "with text" } else if shown == 1 { "msg" } else { "msgs" });
+        // ACARS-3: what the radio does: listening on the frequency shown (a signal now: "receiving"), or not
+        let state: &[u8] = [&b"not listening"[..], b"listening", b"receiving"][radio_state(app, cx.live) as usize];
         if app.dirty(R_TOP, Mix::new().h(&l).h(&y0).h(state).get()) {
             head_at(lcd, y0, l.as_bytes(), state);
         }
         let top = y0 + 21;
-        let rows = self.cur.rows(n, vis, &ALL, |row, i| {
-            let Some((m, _)) = st.data().acars().and_then(|a| a.get(i, &mut [])) else { return };
+        let rows = self.cur.rows(n, vis, &keep, |row, i| {
+            let mut start = [0u8; 48];
+            let Some((m, len)) = st.data().acars().and_then(|a| a.get(i, &mut start)) else { return };
             let age = now_s.wrapping_sub(m.at_s);
             let (mut sub, mut name, mut when) = (Buf::<48>::new(), Buf::<32>::new(), Buf::<12>::new());
             if !m.crc_ok() {
                 sub.push("CRC bad \u{b7} ".as_bytes());
             }
             let lab = label(m.label);
-            if m.flight().is_empty() {
+            if len > 0 {
+                // ACARS-4: the text's start, on one line (the airline and the aircraft are on its page)
+                let t = start[..len].trim_ascii_start();
+                for &c in t.iter().take(48) {
+                    sub.push(&[if (0x20..0x7F).contains(&c) { c } else { b' ' }]);
+                }
+            } else if m.flight().is_empty() {
                 // no flight: the aircraft is the title, what the message is under it
                 if m.up() {
                     sub.push("from ground \u{b7} ".as_bytes());
@@ -191,13 +208,19 @@ impl Acars {
                 age_text(age, &mut when);
             }
             let title = if m.flight().is_empty() { m.reg() } else { m.flight() };
+            // ACARS-4.1: a repeat's count before its label
+            let mut lab_r = Buf::<8>::new();
+            if m.repeats > 0 {
+                let _ = uwrite!(lab_r, "{}x ", m.repeats as u16 + 1);
+            }
+            lab_r.push(&label_text(m.label));
             let r = Row2 {
                 tag: lab.tag.as_bytes(),
                 title,
                 big: true,
                 right: when.as_bytes(),
                 sub: sub.as_bytes(),
-                sub_right: &label_text(m.label),
+                sub_right: lab_r.as_bytes(),
                 sub_c: if m.crc_ok() { 0 } else { RED },
                 selected: i == self.cur.sel,
                 ..Row2::default()
@@ -211,10 +234,12 @@ impl Acars {
                 lcd.fill(0, top + i as i32 * ROW2_H, 240, ROW2_H, BG);
             }
         }
-        let more = self.cur.more(n, vis, rows, &ALL);
-        app.scroll_cue(lcd, (0, vis as usize), top, vis as i32 * ROW2_H, more, self.cur.top as u32, vis as u32, n as u32);
+        let more = self.cur.more(n, vis, rows, &keep);
+        app.scroll_cue(lcd, (0, vis as usize), top, vis as i32 * ROW2_H, more, self.cur.top as u32, vis as u32, shown as u32);
         if n == 0 {
-            app.empty(lcd, b"No messages yet", b"The radio doesn't receive ACARS yet");
+            app.empty(lcd, b"No messages yet", b"They show here as they're heard");
+        } else if shown == 0 {
+            app.empty(lcd, b"No messages with text", b"* shows them all");
         }
     }
 
@@ -286,6 +311,10 @@ impl Acars {
         }
         mhz_text(FREQS[m.freq as usize % FREQS.len()], &mut f);
         let _ = uwrite!(rows[3].1, "{} \u{b7} {}", Txt(when.as_bytes()), Txt(f.as_bytes()));
+        if m.repeats > 0 {
+            // ACARS-4.1: a repeat, the last time
+            let _ = uwrite!(rows[3].1, " \u{b7} {}x", m.repeats as u16 + 1);
+        }
         // Check: the CRC, blocks missing, parity; the mode and the acknowledgement
         let b = &mut rows[4].1;
         rows[4].2 = if !m.crc_ok() {
@@ -356,22 +385,28 @@ impl View for Acars {
     fn key(self, app: &mut App, e: KeyEvent, st: &impl ChannelStore) {
         use Press::*;
         let n = count(st);
+        let keep = kept(st, app.set.acars_text);
         match (e.key, e.press, self.detail) {
             (Key::Up | Key::Down, Short | Repeat, _) => self.knob(app, if e.key == Key::Up { -1 } else { 1 }, st),
             // ACARS-3: ◀▶ step through the frequencies (the radio retunes: App::reconcile_mode)
             (Key::Left | Key::Right, Short | Repeat, false) => {
                 let d = if e.key == Key::Left { -1 } else { 1 };
                 app.set.acars_freq = (app.set.acars_freq as i32 + d).rem_euclid(FREQS.len() as i32) as u8;
-                // TODO(acars-radio): retune the VHF chip
             }
             // ACARS-7: ◀▶ the newer and older message
             (Key::Left | Key::Right, Short | Repeat, true) if n > 0 => {
                 let d = if e.key == Key::Left { -1 } else { 1 };
-                let cur = self.cur.step(d, n, self.rows(), &ALL);
+                let cur = self.cur.step(d, n, self.rows(), &keep);
                 app.screen = Screen::Acars(Acars { cur, line: 0, ..self });
             }
-            (Key::Menu, Short, false) if self.cur.sel < n => app.screen = Screen::Acars(Acars { detail: true, line: 0, ..self }),
-            (Key::Hash, Short, false) => app.screen = Screen::Acars(Acars { strip: !self.strip, cur: self.cur.shown(n, if self.strip { ROWS2 } else { ROWS2 - 1 }, &ALL), ..self }),
+            (Key::Menu, Short, false) if self.cur.sel < n && keep(self.cur.sel) => app.screen = Screen::Acars(Acars { detail: true, line: 0, ..self }),
+            (Key::Hash, Short, false) => app.screen = Screen::Acars(Acars { strip: !self.strip, cur: self.cur.shown(n, if self.strip { ROWS2 } else { ROWS2 - 1 }, &keep), ..self }),
+            // ACARS-4.2: * shows only the messages with text, or all again (kept in the settings)
+            (Key::Star, Short, false) => {
+                app.set.acars_text = !app.set.acars_text;
+                let cur = Cursor::first(n, &kept(st, app.set.acars_text));
+                app.screen = Screen::Acars(Acars { cur, ..self });
+            }
             (Key::Exit, Short, true) => app.screen = Screen::Acars(Acars { detail: false, ..self }),
             (Key::Exit, Short, false) => app.back(),
             _ => {}
@@ -383,7 +418,7 @@ impl View for Acars {
             // ACARS-7: the text scrolls a line a click (held at its end when drawn)
             app.screen = Screen::Acars(Acars { line: (self.line as i32 + d).clamp(0, 255) as u8, ..self });
         } else {
-            let cur = self.cur.step(d, count(st), self.rows(), &ALL);
+            let cur = self.cur.step(d, count(st), self.rows(), &kept(st, app.set.acars_text));
             app.screen = Screen::Acars(Acars { cur, ..self });
         }
     }
@@ -412,7 +447,18 @@ impl View for Acars {
         } else {
             now_s / 60
         };
-        if !app.gate((self, ver, app.set.acars_freq, cx.dev.clock_min, tick)) {
+        // ACARS-4.2: a selection on a message the filter hides (the list moved under it) goes to the next shown
+        if !self.detail && app.set.acars_text {
+            let (n, k) = (count(st), kept(st, true));
+            if self.cur.sel < n && !k(self.cur.sel) {
+                let me = Acars { cur: self.cur.step(1, n, self.rows(), &k), ..self };
+                app.screen = Screen::Acars(me);
+                return me.render(app, lcd, cx);
+            }
+        }
+        // the header's radio state (ACARS-3) redraws as it changes
+        let radio = radio_state(app, cx.live);
+        if !app.gate((self, ver, (app.set.acars_freq, app.set.acars_text, radio), cx.dev.clock_min, tick)) {
             return;
         }
         if self.detail {
@@ -422,11 +468,11 @@ impl View for Acars {
         }
     }
 
-    fn hints(self, _: &App) -> Hints {
+    fn hints(self, app: &App) -> Hints {
         if self.detail {
             Hints::new(&[(ARROWS_LR, "Prev/next"), (ARROWS_UD, "Scroll"), ("BACK", "List")])
         } else {
-            Hints::new(&[(ARROWS_UD, "Move"), ("OK", "Open"), (ARROWS_LR, "Freq")])
+            Hints::new(&[("OK", "Open"), (ARROWS_LR, "Freq"), ("*", if app.set.acars_text { "All" } else { "Text only" })])
         }
     }
 }

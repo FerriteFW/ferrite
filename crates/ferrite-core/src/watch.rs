@@ -570,6 +570,13 @@ impl TurnClock {
     }
 }
 
+/// SQL-12.4: the slots whose level is read (a bit per slot): the active one, the watched ones, and any a chip is
+/// tuned to now (a scan's or the APRS slot's). A slot outside it keeps no reading, so its S-meter shows empty rather
+/// than frozen at its last level.
+pub fn listened(watch_set: u8, active: u8, tuned: &[Option<u8>; 2]) -> u8 {
+    tuned.iter().flatten().filter(|&&s| s < 8).fold(watch_set | 1 << (active & 7), |m, &s| m | 1 << s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1400,5 +1407,13 @@ mod sim {
         set_aprs_first(true);
         assert!(aprs_first());
     }
-}
 
+    /// SQL-12.4: the active, watched and tuned slots are read; the rest show an empty meter.
+    #[test]
+    fn listened_slots_are_the_active_watched_and_tuned() {
+        assert_eq!(listened(0, 0, &[Some(0), None]), 0b001, "watch off: only A");
+        assert_eq!(listened(0, 1, &[Some(1), Some(2)]), 0b110, "B active, C on the other chip (a scan)");
+        assert_eq!(listened(0b101, 0, &[Some(0), Some(2)]), 0b101, "A and C watched: B unread");
+        assert_eq!(listened(0, 2, &[None, Some(9)]), 0b100, "a chip off the slots counts for none");
+    }
+}

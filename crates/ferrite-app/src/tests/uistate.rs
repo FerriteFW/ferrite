@@ -390,6 +390,20 @@ fn keyed_hf_and_strip() {
     assert!(s.contains(" keyed=SAT"), "{s}");
 }
 
+/// LINK-19.8: the state line names the theme the screen is drawn in, so Live View paints in the radio's colours
+/// (a daylight radio's dark text on Console's dark background was unreadable).
+#[test]
+fn state_names_the_theme() {
+    let t = T::new();
+    let was = ferrite_ui::theme::get();
+    for theme in [ferrite_ui::theme::DARK, ferrite_ui::theme::DAYLIGHT, ferrite_ui::theme::NIGHT_RED, ferrite_ui::theme::CYBERPUNK] {
+        ferrite_ui::theme::set(theme);
+        let s = find(&ui(&t), "state").to_owned();
+        assert!(s.ends_with(&std::format!(" theme={theme}")), "{s}");
+    }
+    ferrite_ui::theme::set(was);
+}
+
 /// GPS (LINK-19): the position page with a fix reads back the position, its tiles and the nearest waypoint.
 #[test]
 fn gps_position_with_a_fix() {

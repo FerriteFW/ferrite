@@ -6,7 +6,7 @@
 //! it costs no RAM, and a page of an answer is the next lines. The lines, in this order:
 //!
 //! - `screen ID "Name" title="..."`: the screen (ID is stable: its variant), its name and the status bar's title.
-//! - `state frame=N ago=MS dark=0 locked=0 active=A keyed=- remote=0 mode=off fm=0`: redraws that changed
+//! - `state frame=N ago=MS dark=0 locked=0 active=A keyed=- remote=0 mode=off fm=0 leave=0 theme=0`: redraws that changed
 //!   something, the time since the last, the backlight off, the key lock, the active slot, the slot transmitting,
 //!   remote PTT, the exclusive mode running (MODE-1: off, scope, strip, tone, counter, fm, hf, xb) and whether
 //!   broadcast FM plays.
@@ -398,6 +398,9 @@ fn describe<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
         keyed_remote_mode(app, cx.live, l);
         kn(l, "fm", app.radio.fm_on as u32);
         kn(l, "leave", app.lpm_leave_progress().unwrap_or(0) as u32); // PWR-24.4: the SIDE1 + SIDE2 hold, thousandths
+        // LINK-19.8: the theme the screen is drawn in (0 7 1: 0 dark, 1 daylight, 2 night red, 3 cyberpunk), so Live
+        // View paints a `t` line's `-` (the screen's own background) and its own parts in the radio's colours
+        kn(l, "theme", ferrite_ui::theme::get() as u32);
     }
     // LINK-13.4: receive audio's blocks made, dropped in the radio's queue, and the times one waited for room in the
     // cable's ring (decision 290; once any).

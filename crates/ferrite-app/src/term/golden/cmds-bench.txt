@@ -68,6 +68,7 @@
   |   synthfsk 3000 4 2400 1290 10 40 70 100   bench test while keyed: 4FSK from tone 1's gain
   |   fsk rx 2400 [nocrc]    bench test: the BK4829's FSK modem on the active slot; fsk, fsk off
   |   fsk tx 2400 20         20 test frames at the next PTT key-up (Dry TX only; ffsk1800 ...)
+  |   acars feed [N]         the ACARS list: N sample messages heard now; acars clear; acars
   |   The radio's own logic may rewrite a register you set (a tune, Battery Save).
 > ?
   writes false
@@ -127,6 +128,7 @@
   |   synthfsk 3000 4 2400 1290 10 40 70 100   bench test while keyed: 4FSK from tone 1's gain
   |   fsk rx 2400 [nocrc]    bench test: the BK4829's FSK modem on the active slot; fsk, fsk off
   |   fsk tx 2400 20         20 test frames at the next PTT key-up (Dry TX only; ffsk1800 ...)
+  |   acars feed [N]         the ACARS list: N sample messages heard now; acars clear; acars
   |   The radio's own logic may rewrite a register you set (a tune, Battery Save).
 > HELP
   writes false
@@ -186,6 +188,7 @@
   |   synthfsk 3000 4 2400 1290 10 40 70 100   bench test while keyed: 4FSK from tone 1's gain
   |   fsk rx 2400 [nocrc]    bench test: the BK4829's FSK modem on the active slot; fsk, fsk off
   |   fsk tx 2400 20         20 test frames at the next PTT key-up (Dry TX only; ffsk1800 ...)
+  |   acars feed [N]         the ACARS list: N sample messages heard now; acars clear; acars
   |   The radio's own logic may rewrite a register you set (a tune, Battery Save).
 > Get 0 7 1
   writes false

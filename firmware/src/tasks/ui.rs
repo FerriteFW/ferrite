@@ -983,6 +983,12 @@ pub async fn task() {
                         if new.partial != lcdb.partial {
                             lcd.0.partial(new.partial.then_some(ferrite_core::msg::LCD_PARTIAL));
                         }
+                        if (new.hz, new.dither) != (lcdb.hz, lcdb.dither) {
+                            // DISP-23.1 on the fly: the screen light's PWM frequency and dither.
+                            use ferrite_core::screenpwm::{DITHER_TENTHS, SCREEN_HZ};
+                            backlight::tune(new.hz.map_or(SCREEN_HZ, u32::from), new.dither.unwrap_or(DITHER_TENTHS));
+                        }
+                        new.dithering = backlight::dithering();
                         lcdb = new;
                         ports.debug_answer(ferrite_core::msg::DebugAns::Lcd(lcdb));
                     }

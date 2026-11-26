@@ -15,7 +15,7 @@
 use super::shared::*;
 use super::{Cx, View};
 use crate::chan::ChannelStore;
-use crate::settings::NIGHT_RED;
+use crate::settings::{DAYLIGHT, NIGHT_RED};
 use crate::slot::Item;
 use crate::{App, Screen};
 use ferrite_core::keys::{Key, PTT_A, PTT_B};
@@ -127,16 +127,22 @@ pub(crate) fn knob(app: &mut App, d: i32) -> bool {
     true
 }
 
-/// PTT B: night red, or back to the theme in use before it (0 7 1; dark when that isn't known: night red was
-/// already on at power-on).
+/// PTT B (HOME-17): the theme in use, then night red, then daylight, then back to the theme in use (0 7 1; dark
+/// when that isn't known: night red was already on at power-on). Daylight is skipped when it is the theme in use.
 fn night_red(app: &mut App) {
+    let theme = app.day_theme & !DAY_STEP;
     if app.set.theme == NIGHT_RED {
-        app.set.theme = app.day_theme;
+        app.day_theme = if theme == DAYLIGHT { theme } else { theme | DAY_STEP };
+        app.set.theme = DAYLIGHT;
+    } else if app.set.theme == DAYLIGHT && app.day_theme & DAY_STEP != 0 {
+        (app.day_theme, app.set.theme) = (theme, theme);
     } else {
-        app.day_theme = app.set.theme;
-        app.set.theme = NIGHT_RED;
+        (app.day_theme, app.set.theme) = (app.set.theme, NIGHT_RED);
     }
 }
+
+/// [`App::day_theme`]'s bit 7: daylight is PTT B's step after night red (HOME-17).
+pub(crate) const DAY_STEP: u8 = 0x80;
 
 /// A row: the key, its feature, that feature's state now as shown and its colour, and the state as a 4-bit code.
 pub(crate) type Line = (&'static str, &'static str, Buf<4>, u16, u8);
@@ -149,7 +155,14 @@ pub(crate) fn lines(app: &App) -> [Line; ROWS] {
     } else {
         onoff(app.slots[app.active as usize].cfg().reverse)
     };
-    let night = onoff(app.set.theme == NIGHT_RED);
+    // HOME-17: PTT B's step: red (night red), day (daylight, the step after it), else off (0 off, 1 red, 2 day)
+    let night = if app.set.theme == NIGHT_RED {
+        (Buf::from(b"red"), GREEN, 1)
+    } else if app.set.theme == DAYLIGHT && app.day_theme & DAY_STEP != 0 {
+        (Buf::from(b"day"), GREEN, 2)
+    } else {
+        onoff(false)
+    };
     // GPS-1: off, auto or on (the state code: 0 off, 1 on, 2 auto, as stored)
     let gps = match app.set.gps {
         crate::settings::GPS_AUTO => (Buf::from(b"auto"), TEXT, 2),
@@ -163,7 +176,7 @@ pub(crate) fn lines(app: &App) -> [Line; ROWS] {
     [
         ("Knob", "Brightness", b, TEXT, level),
         ("PTT A", "Reverse", rev.0, rev.1, rev.2),
-        ("PTT B", "Night red", night.0, night.1, night.2),
+        ("PTT B", "Night/day", night.0, night.1, night.2),
         ("PF1", "GPS", gps.0, gps.1, gps.2),
         ("PF2", "Bluetooth", bt.0, bt.1, bt.2),
     ]
@@ -258,11 +271,11 @@ mod tests {
     /// HOME-17: every row's key, feature and longest state fit their columns in the box (240 px wide screen).
     #[test]
     fn rows_fit_the_box() {
-        for (k, n) in [("PTT A", "Reverse"), ("PTT B", "Night red"), ("PF1", "GPS"), ("PF2", "Bluetooth"), ("Knob", "Brightness")] {
+        for (k, n) in [("PTT A", "Reverse"), ("PTT B", "Night/day"), ("PF1", "GPS"), ("PF2", "Bluetooth"), ("Knob", "Brightness")] {
             assert!(text4_width(k.as_bytes(), &UI_12B) <= NAME_X - KEY_X - 4, "{k}");
             assert!(text4_width(n.as_bytes(), &UI_12) <= VAL_R - VAL_W - NAME_X - 4, "{n}");
         }
-        for v in ["off", "on", "10"] {
+        for v in ["off", "on", "red", "day", "10"] {
             assert!(text4_width(v.as_bytes(), &UI_12B) <= 24, "{v}");
         }
         assert!(BOX.0 >= 16 && BOX.0 + BOX.2 <= 240 - 16, "inside the screen with room either side");

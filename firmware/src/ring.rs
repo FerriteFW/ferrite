@@ -63,6 +63,11 @@ impl<'a> Ring<'a> {
         self.mask - self.count()
     }
 
+    /// Producer side: a byte not put, counted as dropped.
+    pub fn drop_one(&self) {
+        self.dropped.fetch_add(1, Relaxed);
+    }
+
     pub fn dropped(&self) -> u32 {
         self.dropped.load(Relaxed)
     }

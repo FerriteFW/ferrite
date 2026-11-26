@@ -8,7 +8,7 @@ use super::regs::*;
 use super::{clock, irq, modify, rd, wr};
 use crate::ring::Ring;
 use crate::report::{UartStats, UART_COUNT};
-use core::sync::atomic::{AtomicPtr, AtomicU32, AtomicU8, Ordering::Relaxed};
+use core::sync::atomic::{AtomicBool, AtomicPtr, AtomicU32, AtomicU8, Ordering::Relaxed};
 
 /// Above the time driver and the executors; the handlers only fill the rings.
 const PRIO: u8 = 3;
@@ -42,6 +42,11 @@ static TX_BYTES: [AtomicU32; UART_COUNT] = [const { AtomicU32::new(0) }; UART_CO
 /// framing errors, a receiver too slow to empty the data register as overruns.
 static FRAMING: [AtomicU32; UART_COUNT] = [const { AtomicU32::new(0) }; UART_COUNT];
 static OVERRUN: [AtomicU32; UART_COUNT] = [const { AtomicU32::new(0) }; UART_COUNT];
+/// TERM-13.1 (issue #236): bytes were lost on this port (its ring full, or an overrun) and the gap isn't marked
+/// yet: the next byte that finds room for two goes in behind [`ferrite_core::link::LOST`]. The cable and Bluetooth
+/// only ([`MARKS`]); the GPS's NMEA has its own checksums.
+static LOST: [AtomicBool; UART_COUNT] = [const { AtomicBool::new(false) }; UART_COUNT];
+static MARKS: [bool; UART_COUNT] = [true, false, true];
 /// The rate each port was last started at (0: never), for the bench's `bt stat`.
 static RATE: [AtomicU32; UART_COUNT] = [const { AtomicU32::new(0) }; UART_COUNT];
 
@@ -51,6 +56,7 @@ pub fn init(id: usize, baud: u32) {
     modify(u.en_reg, 0, u.en_bit);
     wr(u.base + USART_CTRL1, 0);
     RX[id].reset();
+    LOST[id].store(false, Relaxed);
     u.tx.output(true, Mode::AfPp); // idle high before the peripheral takes the pin
     u.rx.config(Mode::InPu);
     wr(u.base + USART_BAUDR, clock::tree().baudr(baud)); // both APBs alike (PWR-24.9)
@@ -149,6 +155,7 @@ pub fn set_stop2(id: usize, two: bool) {
 /// Drops what has come and not been taken.
 pub fn clear_rx(id: usize) {
     RX[id].clear();
+    LOST[id].store(false, Relaxed);
 }
 
 /// Off: both pins analog so a powered-down module is not fed, and the port's clock gated (PWR-23).
@@ -160,6 +167,7 @@ pub fn deinit(id: usize) {
     u.tx.config(Mode::Analog);
     u.rx.config(Mode::Analog);
     RX[id].clear();
+    LOST[id].store(false, Relaxed);
     modify(u.en_reg, u.en_bit, 0);
 }
 
@@ -305,11 +313,25 @@ fn take_rx(id: usize, base: u32, sts: u32) {
             }
             if sts & USART_STS_ROERR != 0 {
                 OVERRUN[id].fetch_add(1, Relaxed);
+                LOST[id].store(MARKS[id], Relaxed); // a byte the port had no time to hand over
             }
         }
         if sts & USART_STS_RDBF != 0 {
             RX_BYTES[id].fetch_add(1, Relaxed);
-            RX[id].put(b);
+            // TERM-13.1: the gap marked once there is room for the mark and this byte; until then this byte is
+            // lost too (counted by the ring), and a byte lost with nothing marked starts a gap.
+            let r = &RX[id];
+            if !LOST[id].load(Relaxed) {
+                if !r.put(b) && MARKS[id] {
+                    LOST[id].store(true, Relaxed);
+                }
+            } else if r.room() >= 2 {
+                r.put(ferrite_core::link::LOST);
+                r.put(b);
+                LOST[id].store(false, Relaxed);
+            } else {
+                r.drop_one();
+            }
         }
     }
 }

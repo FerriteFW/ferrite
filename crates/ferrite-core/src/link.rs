@@ -783,6 +783,12 @@ pub fn build(ty: u8, seq: u8, payload: &[u8], out: &mut [u8]) -> Option<usize> {
 /// programming (most likely the vendor's app sets the module to 115200 first: its FF31 handshake carries a rate byte).
 pub const BT_BAUD: u32 = 9_600;
 
+/// TERM-13.1 (issue #236): put into a port's received bytes where some were lost (its receive ring was full, or
+/// the UART overran), on the cable and Bluetooth: a terminal's `load` refuses the line it lands in, so a line with
+/// a hole in it is never applied. CAN, which a terminal sending text doesn't send; a link frame or a KISS frame
+/// that lost bytes was broken already, and its CRC (the link's) or the receiver refuses it.
+pub const LOST: u8 = 0x18;
+
 /// Bluetooth's fast rate (LINK-25.1, decision 285): the module's UART after the per-connection speed unlock (FF31,
 /// selector 02), which a host writes once the radio has agreed to `BAUD` 115200 on Bluetooth. The module keeps it
 /// across BLE connections and loses it when powered off (bench, Oct 24, 2026: `docs/research/ble-speed.md`).

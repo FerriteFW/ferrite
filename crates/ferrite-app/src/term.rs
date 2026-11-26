@@ -185,6 +185,8 @@ pub struct Term {
     sat: Option<cmd::SatPaste>,
     /// A load's line was longer than the buffer; the line before was ended by CR (its LF is no new line).
     long: bool,
+    /// TERM-13.1: bytes of this load line were lost on the way ([`ferrite_core::link::LOST`]): it is refused.
+    lost: bool,
     cr: bool,
     con: Con,
     cols: u8,
@@ -238,6 +240,7 @@ impl Term {
             pending: false,
             sat: None,
             long: false,
+            lost: false,
             cr: false,
             con: Con::Off,
             cols: MIN_COLS,
@@ -507,9 +510,10 @@ impl Term {
         match b {
             0x03 => end(self, 2),
             0x04 => end(self, 1),
+            ferrite_core::link::LOST => self.lost = true,
             b'\n' if was_cr => {}
             b'\r' | b'\n' => {
-                if cmd_trim(&self.cbuf[..self.clen as usize]) == b"end" {
+                if !self.lost && cmd_trim(&self.cbuf[..self.clen as usize]) == b"end" {
                     self.clen = 0;
                     end(self, 1);
                 } else {
@@ -668,7 +672,10 @@ impl Term {
         self.clen = if self.con == Con::Off { self.clen } else { 0 };
         if let Con::Run(Body::Load { mut line, mut ok, mut bad, end }) = self.con {
             line += 1;
-            let r = if core::mem::take(&mut self.long) {
+            let r = if core::mem::take(&mut self.lost) {
+                self.long = false;
+                Err(cmd::Msg::from("bytes lost on the way: send slower (XON/XOFF, or a delay per line)".as_bytes()))
+            } else if core::mem::take(&mut self.long) {
                 Err(cmd::Msg::from("too long: 255 characters at most".as_bytes()))
             } else if let Some(p) = self.sat.as_mut() {
                 cmd::sat_line(store, p, &self.cbuf[..n])
@@ -701,7 +708,7 @@ impl Term {
             Ok(cmd::Done::Debug(j)) => return self.con = Con::Start(Body::Debug(j)),
             Ok(d @ (cmd::Done::Load | cmd::Done::SatPaste)) => {
                 // The buffer takes the load's lines from here: the command that started it is gone.
-                (self.clen, self.clast, self.cr, self.long) = (0, 0, false, false);
+                (self.clen, self.clast, self.cr, self.long, self.lost) = (0, 0, false, false, false);
                 self.sat = matches!(d, cmd::Done::SatPaste).then(cmd::SatPaste::default);
                 return self.con = Con::Start(Body::Load { line: 0, ok: 0, bad: 0, end: 0 });
             }

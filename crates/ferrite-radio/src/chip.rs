@@ -78,6 +78,37 @@ pub fn retune_light<B: Bus>(bk: &mut Bk4829<B>, s: &RxSetup, sq: Option<(u16, u1
     bk.rx_on();
 }
 
+/// BCR-23.2 (ferrite#179): beside a broadcast, a receiving chip's watch turn to a slot set up otherwise (another
+/// bandwidth, AM against NAM, a sub-tone, tail elimination, the APRS data set-up): muted, the frequency, then only
+/// the set-up that differs from `was` (REG_43, the demodulator and REG_2B), the thresholds `sq` when they changed,
+/// the sub-tone detector and receive on (0x0200, then 0xBFF1), as [`retune_light`]: never REG_30 = 0 nor REG_37,
+/// so the chip's AF DAC stays on under the broadcast. Receive on last restarts the receive DSP on the new set-up.
+pub fn retune_changed<B: Bus>(bk: &mut Bk4829<B>, was: &RxSetup, s: &RxSetup, sq: Option<(u16, u16)>) {
+    bk.af_out(AfOut::Mute);
+    bk.set_freq(s.freq * 10);
+    if was.narrow != s.narrow {
+        bk.bandwidth(if s.narrow { Bandwidth::Narrow } else { Bandwidth::Wide });
+    }
+    if let Some(r) = sq {
+        squelch(bk, r);
+    }
+    if was.am != s.am || was.data != s.data {
+        bk.demod(if s.am { Demod::Am } else { Demod::Fm });
+        if s.data && !s.am {
+            bk.write(bk4829::reg::AF_FILTERS, DATA_RX_AF);
+        }
+    }
+    subtone(bk, s.rx_tone, s.rx_tail);
+    bk.rx_on();
+}
+
+/// SQL-18.10: whether a chip set up for `was` may take [`retune_light`] to `next`: everything but the frequency the
+/// same (FM or AM alike: a watch turn between two AM slots on one chip is as light as between two FM ones, BCR-23.1,
+/// ferrite#179). Anything else takes [`tune_rest_sq`]'s full order.
+pub fn light_ok(was: &RxSetup, next: &RxSetup) -> bool {
+    RxSetup { freq: next.freq, ..*was } == *next
+}
+
 /// APRS-55 (decision 309): REG_2B for the APRS slot's FM receive (1 = off): bit 10 the 300 Hz high-pass and bit 8
 /// de-emphasis. The 3 kHz low-pass (bit 9) stays on: the chip's fixed receive wall near 3.1 kHz is there either way,
 /// and the recorded-audio study (`ferrite-app/tests/rxaf_study.rs`) decoded the same with or without it.

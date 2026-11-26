@@ -271,7 +271,7 @@ impl Value {
                 w::field(b, 15, 200, y + 23, y + 40, y + 36, b"Signal now", const { &w::st(&UI_12, SUB, BG, Align::Left) });
             });
         }
-        let rssi = cx.live.slots[app.active as usize].rssi;
+        let rssi = cx.live.slots[app.active as usize].rssi_raw; // SQL-12.1, SQL-12.4: the level as read, open or closed
         // Where audio opens: the levels spread over the bar (the level table has no values yet: SQL-1).
         let open = 15 + 10 + v * 19;
         let level = (w::meter_level(rssi) as i32 * 210 / w::METER_SEGS as i32).clamp(0, 210);

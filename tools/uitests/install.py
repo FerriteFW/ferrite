@@ -185,7 +185,7 @@ def flasher_checks_release_signatures(t):
 def readings(t):
     t.home()
     u = t.keys("MENU 0 9 8")
-    about = {r["name"]: r["value"] for r in u.rows}
+    about = dict(zip(u.names(), (r["value"] for r in u.rows)))  # "Version" whether official or not (SELF-5.1)
     t.home()
     u = t.keys("MENU 0 9 9 2 MENU")
     cal = {r["name"]: r["value"] for r in u.rows}

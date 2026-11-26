@@ -741,7 +741,7 @@ impl Session {
         self.audio = 0; // LINK-13.5: listening ends with the session
         o.put(&[PROTOCOL, MAX_PAYLOAD as u8, self.authorised(app) as u8]);
         o.text(VERSION.as_bytes());
-        o.put(&[ferrite_core::link::build::of(dev.tx_built, app.dry_tx(), dev.bench)]); // LINK-35, TX-48
+        o.put(&[build_byte(app, dev)]); // LINK-35, TX-48, SELF-5.1
         // LINK-35.2 (decision 385): only what differs by build or session; everything else every radio has
         use ferrite_core::link::caps;
         let lz = if self.lz { caps::LZ } else { 0 };
@@ -1150,7 +1150,7 @@ fn info<S: ChannelStore>(app: &App, st: &S, dev: &Device, o: &mut Out) -> Status
     o.put(&(settings_record(app, &mut Window { b: &mut [], from: 0, n: 0 }) as u16).to_le_bytes());
     o.put(&[app.set.region]);
     o.text(app.set.callsign.as_bytes());
-    o.put(&[ferrite_core::link::build::of(dev.tx_built, app.dry_tx(), dev.bench)]); // LINK-35, TX-48
+    o.put(&[build_byte(app, dev)]); // LINK-35, TX-48, SELF-5.1
     o.put(&ferrite_core::uid::bytes(dev.selftest.uid)); // LINK-35.1: the unique ID, zeros until read
     layouts(st, o); // LINK-62
     Status::Ok
@@ -1179,6 +1179,12 @@ pub(crate) fn lists_gen<S: ChannelStore>(st: &S) -> u32 {
 
 /// LINK-62, UPD-16 (decision 333): the layout this firmware stores, then the one the chip's data is in (the same
 /// when all is well; another: Console finishes the update), a byte each.
+/// LINK-35's build byte as `HELLO` and `INFO` send it: the kind, Dry TX, the bench bit and (SELF-5.1) the unofficial bit.
+fn build_byte(app: &App, dev: &Device) -> u8 {
+    use ferrite_core::link::build;
+    build::sent(build::of(dev.tx_built, app.dry_tx(), dev.bench), ferrite_core::OFFICIAL)
+}
+
 fn layouts<S: ChannelStore>(st: &S, o: &mut Out) {
     let own = ferrite_core::layout::LAYOUT_VERSION;
     let found = match st.data().layout_found() {

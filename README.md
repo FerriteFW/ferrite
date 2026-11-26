@@ -62,3 +62,5 @@ Issues are what help most: bugs, ideas, design suggestions and fixes. We'd rathe
 [PolyForm Noncommercial 1.0.0](LICENSE.md): free for any noncommercial use. Selling Ferrite, shipping it on radios for sale or selling a service built on it needs a commercial licence. Copyright 2026 Alex Harvey.
 
 The firmware includes others' work under their own licences (Rust crates, fonts): [THIRD-PARTY-LICENSES.md](THIRD-PARTY-LICENSES.md).
+
+The names "Ferrite", "Ferrite Console" and "Ferrite Pocket" and the logo are for FerriteFW's own releases: a changed build takes another name ([TRADEMARKS.md](TRADEMARKS.md)).

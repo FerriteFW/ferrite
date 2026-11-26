@@ -1,0 +1,37 @@
+name: Bug report
+description: Something on the radio doesn't work as the user guide says.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. We fix bugs in official releases: a bug seen only on an unofficial build (your own, or someone else's changed one) is closed unless it also happens on an official release.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version line from About (MENU 0 9 8), as it reads, for example "v0.9.7 1a2b3c4".
+    validations:
+      required: true
+  - type: dropdown
+    id: official
+    attributes:
+      label: Official or unofficial
+      description: About's top row says "Version" on an official release and "Unofficial build" on any other.
+      options:
+        - Version (an official release)
+        - Unofficial build
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you did, what happened, what you expected. The keys you pressed help most.
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Photos of the screen, Console's debug info (About › Save debug info), how often it happens.

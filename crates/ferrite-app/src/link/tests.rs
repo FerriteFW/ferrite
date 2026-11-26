@@ -169,7 +169,8 @@ fn hello_and_info() {
 /// LINK-35: HELLO's answer ends with the build after the version, INFO's after the callsign: 0 receive, 1 tx,
 /// 3 tx with Dry TX on (TX-48), from the firmware's features (`Device::tx_built`) and the switch, with bit 7 set when
 /// the bench commands are in (`Device::bench`, TERM-38): the tx-bench build answers 0x83 from power-on (TX-48.1).
-/// 2 is the retired tx-dry build's (decision 193), still named for an older radio.
+/// 2 is the retired tx-dry build's (decision 193), still named for an older radio. SELF-5.1: bit 6 set on any build
+/// but an official release.
 /// LINK-35.2: HELLO ends with the capability byte (decision 385: compression, audio, the line commands), the layouts
 /// and the lists generation.
 #[test]
@@ -188,6 +189,9 @@ fn hello_and_info_give_the_build() {
         (pc.dev.tx_built, pc.dev.bench) = (tx, bench);
         pc.app.set_dry_tx(on);
         assert_eq!(build::dry(b), tx && on, "dry {b:#x}");
+        // SELF-5.1: bit 6 on every build but an official release's (the tests are never one)
+        let b = b | if ferrite_core::OFFICIAL { 0 } else { build::UNOFFICIAL };
+        assert_eq!(build::dry(b), tx && on, "dry {b:#x}, unofficial");
         let (_, a) = pc.ask(msg::HELLO, &[PROTOCOL]);
         let v = 4 + a[3] as usize;
         let cmds = if cfg!(feature = "line-cmds") { ferrite_core::link::caps::LINE_CMDS } else { 0 };
@@ -1567,7 +1571,8 @@ fn ui_status_line() {
     assert_eq!(s, Status::BadArg as u8);
 }
 
-/// LINK-19.6: `UI` what=4 is the radio's own report for Console's debug info: the flash chip and the store's
+/// LINK-19.6, SELF-5.1: `UI` what=4 is the radio's own report for Console's debug info: the build and whether it's
+/// official, the flash chip and the store's
 /// mount (a user's radio whose writes didn't stay, Nov 19, 2026), calibration, the chips, what is stored, and no
 /// callsign.
 #[test]
@@ -1588,6 +1593,9 @@ fn ui_radio_report() {
         i += 1;
     }
     assert!(all.starts_with("firmware version="), "{all}");
+    // SELF-5.1: the build ID and whether it's an official release (the tests aren't, unless FERRITE_OFFICIAL=1)
+    let official = ferrite_core::OFFICIAL as u8;
+    assert!(all.contains(&std::format!(" build={} official={official} tx=", ferrite_core::build())), "{all}");
     assert!(all.contains("flash id=0xef4016 mb=4 store=FAILED layout="), "{all}");
     assert!(all.contains("cal state=unknown") && all.contains("chips bk4829=0x3 ") && all.contains("data channels="), "{all}");
     assert!(all.contains("restart after=start in_a_row=0"), "{all}");

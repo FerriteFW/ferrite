@@ -34,6 +34,13 @@ pub mod build {
     /// low bits are the transmit kind above.
     pub const BENCH: u8 = 0x80;
 
+    /// Bit 6: not an official release (SELF-5.1, decision 466: [`crate::OFFICIAL`] unset). Set rather than an
+    /// "official" bit so a radio on an older release, which never sends it, still reads as official.
+    pub const UNOFFICIAL: u8 = 0x40;
+
+    /// The flag bits; what's left is the transmit kind.
+    const FLAGS: u8 = BENCH | UNOFFICIAL;
+
     /// The byte for a build with or without transmit, Dry TX on or not (TX-48: counts only with transmit), with
     /// or without the bench commands.
     pub const fn of(tx: bool, dry_on: bool, bench: bool) -> u8 {
@@ -45,10 +52,20 @@ pub mod build {
         kind | if bench { BENCH } else { 0 }
     }
 
+    /// The byte as sent: [`UNOFFICIAL`] added unless `official` (SELF-5.1; the radio passes [`crate::OFFICIAL`]).
+    pub const fn sent(b: u8, official: bool) -> u8 {
+        if official { b } else { b | UNOFFICIAL }
+    }
+
+    /// Whether a build byte is an official release's (SELF-5.1).
+    pub const fn official(b: u8) -> bool {
+        b & UNOFFICIAL == 0
+    }
+
     /// Whether the PA drive is held at 0 now: Dry TX on (TX-48), or an older radio's tx-dry build. What a bench
     /// tool needs before it keys.
     pub const fn dry(b: u8) -> bool {
-        matches!(b & !BENCH, TX_DRY | TX_DRY_ON)
+        matches!(b & !FLAGS, TX_DRY | TX_DRY_ON)
     }
 
     /// Whether a build byte has the bench commands.
@@ -56,9 +73,9 @@ pub mod build {
         b & BENCH != 0
     }
 
-    /// Its transmit kind's name, as the tools print it (the bench bit aside).
+    /// Its transmit kind's name, as the tools print it (the bench and unofficial bits aside).
     pub const fn name(b: u8) -> &'static str {
-        match b & !BENCH {
+        match b & !FLAGS {
             RECEIVE => "receive",
             TX => "tx",
             TX_DRY => "tx-dry",
@@ -921,6 +938,19 @@ mod tests {
         assert!(build::bench(build::of(false, false, true)) && !build::bench(build::TX_DRY_ON));
         let names = [build::RECEIVE, build::TX | build::BENCH, build::TX_DRY, build::TX_DRY_ON, 7].map(build::name);
         assert_eq!(names, ["receive", "tx", "tx-dry", "tx+dry", "unknown"]);
+    }
+
+    /// SELF-5.1, LINK-35: bit 6 marks a build that isn't an official release; the kind, Dry TX and bench bit read
+    /// the same with it, and a byte without it (every older release's) reads as official.
+    #[test]
+    fn build_byte_unofficial() {
+        let b = build::sent(build::of(true, true, true), false);
+        assert_eq!(build::sent(build::TX, true), build::TX);
+        assert_eq!(b, build::TX_DRY_ON | build::BENCH | build::UNOFFICIAL);
+        assert!(!build::official(b) && build::official(build::TX) && build::official(build::TX_DRY_ON | build::BENCH));
+        assert_eq!((build::name(b), build::dry(b), build::bench(b)), ("tx+dry", true, true));
+        assert_eq!(build::name(build::TX | build::UNOFFICIAL), "tx");
+        assert!(!build::dry(build::TX | build::UNOFFICIAL));
     }
 
     /// COBS into too short a buffer fails wherever it writes; a zero code, or one past the end, doesn't decode;

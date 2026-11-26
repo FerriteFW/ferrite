@@ -206,7 +206,16 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
     if !app.held(10) {
         if bcast || app.strip_blocked() {
             // HOME-14: the broadcast slot is active (or needs the relay); MODE-5.1: the APRS slot is, and APRS listens
-            let note: &[u8] = if !bcast && app.aprs_slot(a) { b"Scope off: APRS listens" } else { b"" };
+            // (DEC-20: Pager mode's C the same)
+            let note: &[u8] = if bcast {
+                b""
+            } else if app.aprs_slot(a) {
+                b"Scope off: APRS listens"
+            } else if a == crate::aprs::APRS_SLOT && app.pager_on() {
+                b"Scope off: Pager listens"
+            } else {
+                b""
+            };
             scope::strip_off(app, lcd, 10, 200, 34, note);
         } else if app.strip_paused {
             scope::strip_off(app, lcd, 10, 200, 34, b"Scope paused"); // MODE-5.1: # paused it

@@ -539,11 +539,11 @@ knob -1    -> =
 
 ## 71 B26 ACARS
 MENU       -> ACARS message
-BACK       -> Home | VoxScreen(true)
+BACK       -> Home | AcarsRx(0); VoxScreen(true)
 UP         -> =
 DOWN       -> =
-LEFT       -> =
-RIGHT      -> =
+LEFT       -> = | AcarsRx(13690000)
+RIGHT      -> = | AcarsRx(13172500)
 ABC        -> =
 V/M        -> =
 STAR       -> =
@@ -561,11 +561,11 @@ HASH       -> =
 SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
 SIDE2      -> =
 hold MENU  -> = | toast "No options here" ""
-hold BACK  -> Home | VoxScreen(true)
+hold BACK  -> Home | AcarsRx(0); VoxScreen(true)
 hold UP    -> =
 hold DOWN  -> =
-hold LEFT  -> =
-hold RIGHT -> =
+hold LEFT  -> = | AcarsRx(13690000); AcarsRx(13145000); AcarsRx(13045000); AcarsRx(12912500); AcarsRx(13002500)
+hold RIGHT -> = | AcarsRx(13172500); AcarsRx(13002500); AcarsRx(12912500); AcarsRx(13045000); AcarsRx(13145000)
 hold ABC   -> =
 hold V/M   -> =
 hold STAR  -> =
@@ -582,7 +582,7 @@ hold 8     -> =
 hold 9     -> =
 hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
 hold SIDE2 -> =
-PTT        -> Home | TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+PTT        -> Home | AcarsRx(0); TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
 knob +1    -> =
 knob -1    -> =
 

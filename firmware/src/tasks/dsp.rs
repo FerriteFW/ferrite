@@ -25,7 +25,7 @@ use embassy_sync::channel::Channel;
 use embassy_sync::signal::Signal;
 use ferrite_app::aprs_live::FRAME_MAX;
 use ferrite_core::audio::{afsk_tx_at, to_dac, tx_bits, uafsk, Decim, TxBits, BLOCK_DAC, BLOCK_IN, BLOCK_OUT};
-use ferrite_core::decoders::{Decoder, Found, Page};
+use ferrite_core::decoders::{Claim, Decoder, Found, Page};
 use ferrite_core::msg::{DecoderKind, DspCmd};
 
 /// An AX.25 frame without its FCS, as the demodulator gives it and the modulator takes it.
@@ -79,6 +79,15 @@ pub static SSTV_TX: Signal<M, ferrite_core::sstv::Send> = Signal::new();
 pub static SSTV_STOP: AtomicBool = AtomicBool::new(false);
 pub static SSTV_DONE: Signal<M, bool> = Signal::new();
 pub static SSTV_FRAME: AtomicU32 = AtomicU32::new(0);
+/// ACARS-11: a frame's bytes after SOH (up to its CRC) and how many.
+#[derive(Clone, Copy)]
+pub struct AcarsFrame {
+    pub len: u8,
+    pub b: [u8; ferrite_core::acarsrx::FRAME_MAX],
+}
+
+/// ACARS-11: frames heard, to the UI task: two deep (476 B; bursts come a few seconds apart at the most).
+pub static ACARS_RX: Channel<M, AcarsFrame, 2> = Channel::new();
 /// Pages heard, to the UI task (DEC-7): two deep, 144 B.
 pub static PAGES: Channel<M, Page, 2> = Channel::new();
 /// LINK-13.4: blocks made; dropped (the queue below full: the cable's ring had no room for 128 ms); and the times
@@ -352,6 +361,14 @@ fn feed(slot: &mut Decoder, x: &[i16], level: u16, heard: &mut bool, since_cap: 
         }
         Found::Call(_) => {} // DSC: roadmap 6c
         Found::SstvStart(_) | Found::SstvLine(..) | Found::SstvEnd(_) => sstv_found(f),
+        Found::Acars(b) => {
+            FRAMES.fetch_add(1, Relaxed);
+            let mut fr = AcarsFrame { len: b.len().min(ferrite_core::acarsrx::FRAME_MAX) as u8, b: [0; ferrite_core::acarsrx::FRAME_MAX] };
+            fr.b[..fr.len as usize].copy_from_slice(&b[..fr.len as usize]);
+            if ACARS_RX.try_send(fr).is_err() {
+                DROPPED.fetch_add(1, Relaxed);
+            }
+        }
     });
     let at = since_cap.map(|s| s * 1_000 / ferrite_core::decoders::RATE_HZ);
     if let Some(s) = since_cap {
@@ -399,8 +416,8 @@ pub async fn task() {
     let mut capturing = false;
     // What each side asks for, and what runs (DEC-18).
     let (mut aprs, mut running) = (DecoderKind::Off, DecoderKind::Off);
-    // SSTV-1: the SSTV screen has the slot while it's open
-    let mut sstv = false;
+    // SSTV-1, ACARS-11: the SSTV or ACARS screen has the slot while it's open
+    let (mut sstv, mut acars) = (false, false);
     // LINK-13.4: receive audio for the PC, coded from the same samples the decoder gets (the `AUDIO` mode: 0 none, 1
     // µ-law, 2 or 3 the bench's raw stream, LINK-13.9). LINK-13.8: the listening stream's gain is its own, ahead of its
     // coder only (the decoders take the samples as they are).
@@ -427,9 +444,10 @@ pub async fn task() {
         let test = core::future::pending::<Option<core::convert::Infallible>>();
         match select4(DSP.receive(), audio::ADC_HALF.wait(), select(AFSK_TX.wait(), SSTV_TX.wait()), test).await {
             Either4::First(DspCmd::SstvForce(vis)) => slot.sstv_force(vis, sstv_found),
-            Either4::First(cmd @ (DspCmd::Decoder(_) | DspCmd::Audio(_) | DspCmd::Meter(_) | DspCmd::Squelch(_) | DspCmd::Sstv(_))) => {
+            Either4::First(cmd @ (DspCmd::Decoder(_) | DspCmd::Audio(_) | DspCmd::Meter(_) | DspCmd::Squelch(_) | DspCmd::Sstv(_) | DspCmd::Acars(_))) => {
                 match cmd {
                     DspCmd::Sstv(on) => sstv = on,
+                    DspCmd::Acars(on) => acars = on,
                     DspCmd::Decoder(k) => aprs = k,
                     DspCmd::Audio(mode) => {
                         if mode != listen {
@@ -460,16 +478,18 @@ pub async fn task() {
                 // SSTV-1: SSTV's decoder in the slot while its screen is open; the others back after
                 // (`running` says Off meanwhile, so the decoder wanted is made again when SSTV lets go)
                 // (`Decoder::set`: never built here, or this poll's frame holds a whole decoder)
-                if sstv != matches!(slot, Decoder::Sstv(_)) {
-                    slot.set(sstv, DecoderKind::Off);
+                // ACARS-11: likewise ACARS's (SSTV first: the two screens are never open together)
+                let claim = if sstv { Claim::Sstv } else if acars { Claim::Acars } else { Claim::None };
+                if claim != slot.claim() {
+                    slot.set(claim, DecoderKind::Off);
                     running = DecoderKind::Off;
                 }
-                if !sstv && kind != running {
+                if claim == Claim::None && kind != running {
                     running = kind;
-                    slot.set(false, kind);
+                    slot.set(Claim::None, kind);
                 }
                 // PWR-26.9: AFSK only while the APRS slot's squelch is open, and its tail; the pager decoder always
-                let want = sstv || kind != DecoderKind::Off && (kind != DecoderKind::Afsk || sq || tail != 0) || listen != 0 || meter_on;
+                let want = claim != Claim::None || kind != DecoderKind::Off && (kind != DecoderKind::Afsk || sq || tail != 0) || listen != 0 || meter_on;
                 if want && !capturing {
                     clock::for_audio().await; // PWR-26.4: the speed first, never under a running capture
                     adc::init();

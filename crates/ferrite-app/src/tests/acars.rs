@@ -172,12 +172,12 @@ fn a_long_text_scrolls() {
 fn hash_toggles_the_strip() {
     let mut a = A::new();
     a.app.open(crate::screens::nav::Dest::Acars);
-    for _ in 0..7 {
+    for _ in 0..9 {
         a.tap(Key::Down);
     }
     a.tap(Key::Hash);
     let s = a.acars();
-    assert!(s.strip && s.cur.top > 0, "the 8th row is off a 7-row page: {s:?}");
+    assert!(s.strip && s.cur.top > 0, "the 10th row is off a 9-row page (compact rows, ACARS-4): {s:?}");
     let fb = a.render();
     // the strip's background under the status bar
     assert_eq!(fb.at(120, 22), ferrite_ui::gfx::SURFACE);
@@ -202,4 +202,131 @@ fn an_empty_list_and_no_airline_table() {
     a.s.acars().unwrap().frame(&b[..n], 0, 1).unwrap();
     a.render();
     assert!(a.line().contains("airlines=0") && a.line().contains("n=1"));
+}
+
+/// ACARS-11: the screen runs the Radio task's ACARS mode on the frequency picked: AcarsRx(131.550) as it opens, ◀▶
+/// retunes, BACK stops it (AcarsRx(0)). The decoder runs once the radio says it listens there (the header and the
+/// readback say so), and a frame heard goes into the list.
+#[test]
+fn the_screen_tunes_the_radio_and_frames_come_in() {
+    use ferrite_core::msg::{ModeLive, RadioCmd};
+    let mut a = A::new();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    a.wait(200);
+    let mut cmds = Vec::new();
+    while let Some(c) = a.app.pop_cmd() {
+        cmds.push(c);
+    }
+    assert!(cmds.contains(&RadioCmd::AcarsRx(13_155_000)), "{cmds:?}");
+    assert!(!a.app.acars_decoding(&a.live), "not before the radio listens");
+    a.render();
+    assert!(a.line().ends_with("radio=0"), "{}", a.line());
+    a.live.mode = ModeLive::Acars { freq: 13_155_000, rssi: -110, open: false };
+    a.wait(100);
+    assert!(a.app.acars_decoding(&a.live));
+    a.render();
+    assert!(a.line().ends_with("radio=1"), "{}", a.line());
+    let n = a.s.data().acars().unwrap().len();
+    let mut b = [0u8; 64];
+    let k = ferrite_core::acars::encode(
+        &ferrite_core::acars::Fields { mode: b'2', reg: b"C-GKOA", ack: ferrite_core::acars::NAK, label: *b"Q0", block: b'A', ..Default::default() },
+        &mut b,
+    );
+    a.app.acars_heard(&a.s, &b[..k - 1]);
+    assert_eq!(a.s.data().acars().unwrap().len(), n + 1, "the frame is in the list");
+    a.tap(Key::Right);
+    let mut cmds = Vec::new();
+    while let Some(c) = a.app.pop_cmd() {
+        cmds.push(c);
+    }
+    assert!(cmds.contains(&RadioCmd::AcarsRx(13_172_500)), "◀▶ retunes: {cmds:?}");
+    assert!(!a.app.acars_decoding(&a.live), "the radio still on the old frequency");
+    a.tap(Key::Exit);
+    let mut cmds = Vec::new();
+    while let Some(c) = a.app.pop_cmd() {
+        cmds.push(c);
+    }
+    assert!(cmds.contains(&RadioCmd::AcarsRx(0)), "BACK stops it: {cmds:?}");
+}
+
+/// ACARS-4.2: * shows only the messages with text (the samples' link test and ack hidden), the header counting
+/// them; * again shows all. The choice is kept in the settings; OK and ▲▼ skip the hidden ones.
+#[test]
+fn star_hides_the_messages_without_text() {
+    let mut a = A::new();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    a.render();
+    assert!(a.line().contains("n=10 sel=0") && a.line().contains("text=0"), "{}", a.line());
+    a.tap(Key::Star);
+    assert!(a.app.set.acars_text);
+    a.render();
+    // the newest (C-FJZS's link test) is hidden: the first shown is selected
+    let s = a.acars();
+    assert_eq!(s.cur.sel, 1, "{}", a.line());
+    assert!(a.line().contains("text=1"), "{}", a.line());
+    let mut seen = std::vec::Vec::new();
+    for _ in 0..12 {
+        let i = a.acars().cur.sel;
+        seen.push(i);
+        assert!(a.s.data().acars().unwrap().get(i, &mut [0u8; 1]).unwrap().1 > 0, "message {i} has text");
+        a.tap(Key::Down);
+    }
+    seen.sort_unstable();
+    seen.dedup();
+    assert_eq!(seen.len(), 8, "eight of the ten have text: {seen:?}");
+    a.tap(Key::Star);
+    assert!(!a.app.set.acars_text);
+    assert_eq!(a.acars().cur.sel, 0);
+}
+
+/// ACARS-3: the header follows the radio: opened before the radio listens it says so, and it redraws as soon as
+/// the radio reports (it waited for the next message or minute before).
+#[test]
+fn the_header_redraws_when_the_radio_listens() {
+    use ferrite_core::msg::ModeLive;
+    let mut a = A::new();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    a.wait(200);
+    a.render();
+    a.render();
+    let head = |fb: &FrameBuffer| {
+        let y = crate::screens::lists::HEAD_Y as usize;
+        fb.writes[y * 240..(y + 20) * 240].iter().filter(|&&w| w > 0).count()
+    };
+    assert_eq!(head(&a.render()), 0, "nothing changed: nothing drawn");
+    a.live.mode = ModeLive::Acars { freq: 13_155_000, rssi: -110, open: false };
+    assert!(head(&a.render()) > 0, "the header drawn again");
+}
+
+/// ACARS-4.3: a data report (an H1 #DFB from the aircraft's data unit, as the black radio heard WS1057 send) is
+/// in the list as its kind and size, its page names the kind and keeps the raw text; * hides it with the messages
+/// without text (ACARS-4.2).
+#[test]
+fn a_data_report_shows_its_kind_not_its_hex() {
+    let mut a = A::new();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    let mut b = [0u8; 256];
+    let f = ferrite_core::acars::Fields {
+        mode: b'2',
+        reg: b"C-FKWJ",
+        ack: ferrite_core::acars::NAK,
+        label: *b"H1",
+        block: b'5',
+        msgno: b"D01A",
+        flight: b"WS1057",
+        text: b"#DFB50101C-FKWJB737-800261125WS1057KLASCYVR0710WJX79B",
+        more: false,
+    };
+    let k = ferrite_core::acars::encode(&f, &mut b);
+    a.app.acars_heard(&a.s, &b[..k - 1]);
+    let (m, _) = a.s.data().acars().unwrap().get(0, &mut []).unwrap();
+    assert!(m.is_data() && m.has_text());
+    a.render();
+    a.tap(Key::Menu);
+    a.render();
+    assert!(a.line().contains("flight=\"WS1057\"") && a.line().contains("data=1"), "{}", a.line());
+    a.tap(Key::Exit);
+    a.tap(Key::Star);
+    a.render();
+    assert_ne!(a.acars().cur.sel, 0, "hidden under *: {}", a.line());
 }

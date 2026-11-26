@@ -200,6 +200,10 @@ pub enum RadioCmd {
     /// Satellite mode: the uplink's CTCSS tone in 0.1 Hz (the arming tone while it plays, SAT-10), half duplex
     /// (the downlink muted while keyed, SAT-11), and the uplink's power for the next key-up (TX-9 levels, SAT-22).
     SatTone { tone: u16, hd: bool, power: u8 },
+    /// ACARS (ACARS-11): the VHF chip receives this frequency in AM for the decoder while the ACARS screen is open,
+    /// the other chip asleep; watch, scans and the other decoders paused. Again with another frequency retunes; 0
+    /// leaves, and everything resumes.
+    AcarsRx(Freq10),
 }
 
 /// [`RadioCmd::SatRx`]: satellite mode on with nothing tuned (no pass open yet).
@@ -307,6 +311,9 @@ pub enum DspCmd {
     Sstv(bool),
     /// SSTV-2.5: start a mode by hand (its VIS code), or stop the picture being received (0).
     SstvForce(u8),
+    /// ACARS-11: the ACARS screen is open and the Radio task tuned for it: the decoder slot is the ACARS
+    /// receiver's, the capture runs (the other decoders wait).
+    Acars(bool),
 }
 
 /// PWR-26.9: how long the AFSK capture runs on after the APRS slot's squelch closes (the frame's last flags).
@@ -871,6 +878,9 @@ pub enum ModeLive {
     Xb(XbLive),
     /// Satellite mode: the downlink's level (dBm) and squelch.
     Sat { rssi: i16, open: bool },
+    /// ACARS (ACARS-11): the frequency the VHF chip listens on (0: none can: no VHF chip, or keyed), its level (dBm)
+    /// and squelch.
+    Acars { freq: Freq10, rssi: i16, open: bool },
 }
 
 /// The SI4732's receive settings from the UI (BCR-32, HF-35; decision 292), packed to keep [`RadioCmd`] small.

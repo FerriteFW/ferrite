@@ -1,6 +1,7 @@
 //! The six tasks (`docs/firmware-design.md`, "Software architecture"), each the only owner of its hardware, plus
 //! the input sampler that feeds the UI.
 
+pub mod acars;
 pub mod aprs;
 pub mod decode;
 pub mod dsp;

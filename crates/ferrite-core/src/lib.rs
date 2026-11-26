@@ -11,6 +11,7 @@
 extern crate std;
 
 pub mod acars;
+pub mod acarsrx;
 pub mod acc;
 pub mod airlines;
 pub mod audio;

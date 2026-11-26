@@ -96,6 +96,13 @@ impl Radio {
         }
     }
 
+    /// TERM-43's `fsk` run ended (`fsk_stop`): its set-up and its `fsk off` left the modem as the pager didn't, so
+    /// the pager sets it up again next tick (without this it stayed deaf until slot C retuned).
+    #[cfg(feature = "bench")]
+    pub(super) fn pager_after_fsk(&mut self) {
+        (self.pager.armed, self.pager.left) = (false, 0);
+    }
+
     /// The transmission ended: the page in progress to the UI task.
     fn pager_end(&mut self) {
         self.pager.rx.end(|p| {

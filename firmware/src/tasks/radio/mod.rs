@@ -90,6 +90,7 @@ mod pager;
 mod dtmf;
 mod bcast;
 mod hf;
+mod acars;
 mod sat;
 mod beep;
 mod counter;
@@ -341,6 +342,8 @@ struct Radio {
     hf_resume: bool,
     /// Satellite mode (SAT-1), while the satellite screen is open.
     sat: Option<sat::SatRun>,
+    /// ACARS-11: the frequency the VHF chip listens on for the decoder while the ACARS screen is open.
+    acars: Option<Freq10>,
     /// HF-31, BCR-18: an SI4732 seek running (HF mode's or FM broadcast's), polled by the tick (MODE-7: no command
     /// waits for it).
     seek: Option<SiSeek>,
@@ -876,6 +879,7 @@ pub async fn task() {
         hf: None,
         hf_resume: false,
         sat: None,
+        acars: None,
         seek: None,
         counter: None,
         tsearch: None,
@@ -980,7 +984,7 @@ pub async fn task() {
         // SCAN-21: a fast scan step's end ticks on time too (on the 10 ms tick alone a step waited for the next), but
         // only a due time still ahead of the last tick's start, and never within MIN_GAP_MS of its end
         // (`scan::tick_wake`, decision 165: a due time the tick didn't move woke it every 1 ms and hung the radio).
-        let tick_at = (!r.save.asleep() || r.kept() != 0 || r.hf.is_some() || r.sat.is_some() || r.fm.is_some() || r.seek.is_some()).then(|| {
+        let tick_at = (!r.save.asleep() || r.kept() != 0 || r.hf.is_some() || r.sat.is_some() || r.acars.is_some() || r.fm.is_some() || r.seek.is_some()).then(|| {
             let period = if r.busy() { TICK_MS } else { POLL_MS };
             crate::tasks::dsp::TICK_PERIOD_MS.store(period as u32, core::sync::atomic::Ordering::Relaxed); // APRS-56.4
             ferrite_core::scan::tick_wake(started, ticked, period, r.scan_due(now_ms()))

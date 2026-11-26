@@ -32,7 +32,10 @@ pub const TEXT_MAX: usize = 220;
 /// Mode, registration, ack, label and block ID: the fixed part after SOH.
 const HEAD: usize = 12;
 
-/// CRC-16/KERMIT, bit at a time (a frame is under 250 bytes, a few a minute: no table in the image).
+/// CRC-16/KERMIT, bit at a time (a frame is under 250 bytes, a few a minute: no table in the image). Inlined: this
+/// module is in the firmware's slow flash, and the DSP task's ACARS receiver checks each frame with it
+/// (`acarsrx`, in interrupt context).
+#[inline(always)]
 pub fn crc16(data: &[u8]) -> u16 {
     let mut c = 0u16;
     for &b in data {
@@ -253,7 +256,7 @@ const fn l(code: &[u8; 2], tag: &'static str, meaning: &'static str) -> Label {
 
 /// The labels Ferrite names, in code order for the binary search. A `const`: read only when a screen draws, so in
 /// the slow flash with the other unnamed constants.
-pub const LABELS: [Label; 32] = [
+pub const LABELS: [Label; 33] = [
     l(b"10", "AIRL", "Airline: free text"),
     l(b"5U", "WX", "Weather request"),
     l(b"5Z", "AIRL", "Airline designated"),
@@ -268,6 +271,7 @@ pub const LABELS: [Label; 32] = [
     l(b"BA", "ATC", "FANS CPDLC"),
     l(b"C1", "PRT", "To the cockpit printer"),
     l(b"H1", "TEXT", "Message to/from crew"),
+    l(b"MA", "MIAM", "MIAM data"),
     l(b"Q0", "TEST", "Link test"),
     l(b"Q1", "OOOI", "Departure/arrival report"),
     l(b"Q2", "ETA", "ETA report"),
@@ -287,6 +291,39 @@ pub const LABELS: [Label; 32] = [
     l(b"_j", "ACK", "No information"),
     l(b"_\x7f", "ACK", "General response"),
 ];
+
+/// What a data report is (ACARS-4.3): a name, or an H1 sub-label Ferrite doesn't name ("data (#XXX)").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DataKind {
+    Named(&'static str),
+    Sub([u8; 3]),
+}
+
+/// The labels whose text is always data for a machine: ADS-C, FANS CPDLC both ways, MIAM.
+const DATA_LABELS: [[u8; 2]; 4] = [*b"B6", *b"AA", *b"BA", *b"MA"];
+
+/// ACARS-4.3: a message that is data rather than words, by its label and its text's start: [`DATA_LABELS`], or an
+/// H1 whose text starts with `#` and a three-character sub-label (after "- " as some aircraft send it): #DFB the
+/// aircraft's data unit (ACMS reports), #CFB the maintenance computer, #M1B/#M2B the flight management computer.
+pub fn data_kind(code: [u8; 2], text: &[u8]) -> Option<DataKind> {
+    if DATA_LABELS.contains(&code) {
+        return Some(DataKind::Named(label(code).meaning));
+    }
+    if code != *b"H1" {
+        return None;
+    }
+    let t = text.strip_prefix(b"- ").unwrap_or(text);
+    let sub: [u8; 3] = match t {
+        [b'#', a, b, c, ..] if [a, b, c].iter().all(|x| x.is_ascii_alphanumeric()) => [*a, *b, *c],
+        _ => return None,
+    };
+    Some(match &sub {
+        b"DFB" => DataKind::Named("Aircraft data report"),
+        b"CFB" => DataKind::Named("Fault report"),
+        b"M1B" | b"M2B" => DataKind::Named("Flight computer message"),
+        _ => DataKind::Sub(sub),
+    })
+}
 
 /// A numbered label not in [`LABELS`] (airlines define their own).
 const AIRLINE: Label = l(b"00", "AIRL", "Airline defined");
@@ -322,8 +359,11 @@ pub struct Msg {
     pub parity: u8,
     /// The frequency it came on, as the caller numbers them.
     pub freq: u8,
-    /// When it came (the caller's seconds; ages wrap).
+    /// When it came (the caller's seconds; ages wrap); for a repeat, the last time.
     pub at_s: u32,
+    /// Times heard again after the first ([`Log`]'s repeats: a message without text merged into its aircraft's
+    /// newest row; 255 at most).
+    pub repeats: u8,
     at: u16,
     len: u16,
 }
@@ -336,10 +376,12 @@ pub const UP: u8 = 2;
 pub const CUT: u8 = 4;
 /// Blocks missing: a block's letter skipped one, or the last block never came ([`JOIN_S`]).
 pub const GAP: u8 = 8;
+/// Data for a machine, not words (ACARS-4.3, [`data_kind`]): decided by the first block.
+pub const DATA: u8 = 16;
 
 impl Msg {
     fn of(f: &Frame, freq: u8, now_s: u32) -> Msg {
-        let flags = if f.crc_ok { 0 } else { CRC_BAD } | if f.up() { UP } else { 0 };
+        let flags = if f.crc_ok { 0 } else { CRC_BAD } | if f.up() { UP } else { 0 } | if data_kind(f.label, f.text()).is_some() { DATA } else { 0 };
         Msg {
             reg: f.reg_raw,
             flight: f.flight,
@@ -353,6 +395,7 @@ impl Msg {
             parity: f.parity,
             freq,
             at_s: now_s,
+            repeats: 0,
             at: 0,
             len: 0,
         }
@@ -368,6 +411,21 @@ impl Msg {
 
     pub fn reg(&self) -> &[u8] {
         trim_reg(&self.reg)
+    }
+
+    /// Whether it has text (joined blocks' text counts).
+    pub fn has_text(&self) -> bool {
+        self.len > 0
+    }
+
+    /// Its text's length (joined blocks).
+    pub fn text_len(&self) -> u16 {
+        self.len
+    }
+
+    /// Data for a machine (ACARS-4.3): not counted as text by the list's * (ACARS-4.2).
+    pub fn is_data(&self) -> bool {
+        self.flags & DATA != 0
     }
 
     /// The flight, trimmed (empty: none).
@@ -440,7 +498,7 @@ impl<const N: usize, const POOL: usize> Default for Log<N, POOL> {
 }
 
 impl<const N: usize, const POOL: usize> Log<N, POOL> {
-    const PART0: Part = Part { m: Msg { reg: [0; 7], flight: [0; 6], msgno: [0; 4], label: [0; 2], mode: 0, ack: 0, block: 0, flags: 0, blocks: 0, parity: 0, freq: 0, at_s: 0, at: 0, len: 0 }, text: [0; JOIN_MAX], len: 0, last_s: 0, next: 0, used: false };
+    const PART0: Part = Part { m: Msg { reg: [0; 7], flight: [0; 6], msgno: [0; 4], label: [0; 2], mode: 0, ack: 0, block: 0, flags: 0, blocks: 0, parity: 0, freq: 0, at_s: 0, repeats: 0, at: 0, len: 0 }, text: [0; JOIN_MAX], len: 0, last_s: 0, next: 0, used: false };
 
     pub const fn new() -> Self {
         assert!(N <= 255 && POOL <= u16::MAX as usize && POOL >= JOIN_MAX);
@@ -559,9 +617,34 @@ impl<const N: usize, const POOL: usize> Log<N, POOL> {
     }
 
     fn keep(&mut self, m: Msg, text: &[u8]) {
+        if text.is_empty() && self.repeat(&m) {
+            return;
+        }
         let at = self.room(text.len());
         self.pool[at..at + text.len()].copy_from_slice(text);
         self.put(Msg { at: at as u16, len: text.len() as u16, ..m });
+    }
+
+    /// A message without text, its CRC good, that repeats its aircraft's newest row (the same direction, label and
+    /// flight, no text either: link tests, acks, general responses): that row counts it, takes its time and moves to
+    /// the front. False: kept as a row of its own.
+    fn repeat(&mut self, m: &Msg) -> bool {
+        if !m.crc_ok() {
+            return false;
+        }
+        let at = |i: usize| (self.head as usize + N - 1 - i) % N;
+        let Some(i) = (0..self.count as usize).find(|&i| self.msgs[at(i)].reg == m.reg) else { return false };
+        let o = self.msgs[at(i)];
+        if o.len > 0 || !o.crc_ok() || (o.up(), o.label, o.flight) != (m.up(), m.label, m.flight) {
+            return false;
+        }
+        for k in (1..=i).rev() {
+            self.msgs[at(k)] = self.msgs[at(k - 1)];
+        }
+        let repeats = o.repeats.saturating_add(1);
+        self.msgs[at(0)] = Msg { repeats, at: o.at, len: 0, ..*m };
+        self.version = self.version.wrapping_add(1);
+        true
     }
 
     /// Where `len` bytes of text go in the pool: at the write point, or at its start when they don't fit before the
@@ -767,6 +850,59 @@ mod tests {
         assert_eq!((m.reg(), t, m.at_s), (&b"C-GWSZ"[..], &b"SECOND"[..], 11));
         assert_eq!(l.get(1).unwrap().1, DOWN.text);
         assert!(l.get(2).is_none());
+    }
+
+    /// ACARS-4.3: data reports: H1 with a #-sub-label (named or not, after "- " too), and ADS-C, CPDLC and MIAM
+    /// whatever their text; a plain H1 is words. The flag is set as the message is kept. The two #DFB texts are
+    /// ACMS reports the black radio heard near Vancouver (Nov 25, 2026); the others are made up in their shape.
+    #[test]
+    fn data_reports_are_known_by_label_and_sub_label() {
+        use DataKind::*;
+        assert_eq!(data_kind(*b"H1", b"#DFB50101C-FKWJB737-800261125WS1057KLASCYVR0710WJX79B"), Some(Named("Aircraft data report")));
+        assert_eq!(data_kind(*b"H1", b"#DFBTRP 222416  48.6463 -122.2918 150 141.9 337   3352 0.03003"), Some(Named("Aircraft data report")));
+        assert_eq!(data_kind(*b"H1", b"- #CFBFLR/FR2611251922"), Some(Named("Fault report")));
+        assert_eq!(data_kind(*b"H1", b"#M2BPOSN49123W123158"), Some(Named("Flight computer message")));
+        assert_eq!(data_kind(*b"H1", b"#T1B018CE0000006002349C5"), Some(Sub(*b"T1B")));
+        assert_eq!(data_kind(*b"H1", b"REQ WX UPDATE CYYZ"), None);
+        assert_eq!(data_kind(*b"H1", b"# 12"), None);
+        assert_eq!(data_kind(*b"B6", b"/YVRDLYA.ADS.C-FIUA07EE"), Some(Named("ADS-C report")));
+        for c in [*b"AA", *b"BA", *b"MA"] {
+            assert!(data_kind(c, b"").is_some());
+        }
+        let mut l = L::new();
+        push(&mut l, &Fields { text: b"#DFB018CE0000006002349C500000100007F", ..DOWN }, 10);
+        push(&mut l, &Fields { msgno: b"M02A", ..DOWN }, 11);
+        assert!(!l.get(0).unwrap().0.is_data() && l.get(1).unwrap().0.is_data());
+        assert_eq!(l.get(1).unwrap().0.text_len(), 36);
+    }
+
+    /// ACARS-4.1: a message without text that repeats its aircraft's newest row (the same label, direction and
+    /// flight, no text) is counted on that row, which moves to the front; anything else is a row of its own.
+    #[test]
+    fn repeats_without_text_merge_into_the_aircrafts_newest_row() {
+        let mut l = L::new();
+        let q0 = |block: u8| Fields { label: *b"Q0", block, msgno: b"", flight: b"", text: b"", ..DOWN };
+        push(&mut l, &q0(b'1'), 10);
+        push(&mut l, &Fields { reg: b"C-GWSZ", text: b"OTHER", ..DOWN }, 11);
+        push(&mut l, &q0(b'2'), 12);
+        push(&mut l, &q0(b'3'), 13);
+        assert_eq!(l.len(), 2);
+        let (m, t) = l.get(0).unwrap();
+        assert_eq!((m.reg(), &m.label, m.repeats, m.at_s, t.len(), m.block), (&b"C-FIUA"[..], b"Q0", 2, 13, 0, b'3'));
+        assert_eq!(l.get(1).unwrap().0.reg(), b"C-GWSZ");
+        // the aircraft's newest row has text: a row of its own (and the next Q0 a new row too)
+        push(&mut l, &Fields { text: b"POS", msgno: b"M05A", ..DOWN }, 14);
+        push(&mut l, &q0(b'4'), 15);
+        assert_eq!((l.len(), l.get(0).unwrap().0.repeats), (4, 0));
+        // another label, or a bad CRC: not a repeat
+        push(&mut l, &Fields { label: *b"_d", ..q0(b'5') }, 16);
+        assert_eq!(l.len(), 5);
+        let mut b = frame(&q0(b'6'));
+        let n = b.len();
+        b[n - 3] ^= 0x5A;
+        l.push(&parse(&b).unwrap(), 0, 17);
+        assert_eq!(l.len(), 6);
+        assert!(!l.get(0).unwrap().0.crc_ok());
     }
 
     /// ACARS-2.3: a block heard again within 60 s is kept once; long after, it is a new message.

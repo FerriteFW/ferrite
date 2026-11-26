@@ -110,6 +110,8 @@ SECTIONS
     /* Not the merged pools of 4, 8, 16 and 32-byte constants (`.rodata.cst*`, one input section each): hot code reads
      * them (the encoder, the safe state, the DSC framer), and after LTO small named statics land in them too. They
      * stay fast, short UI strings of those sizes with them (about 4 KB in the tx build, Oct 13, 2026). */
+    /* ACARS's sample traffic (ACARS-8): the bench terminal's `acars feed` only. */
+    *(.rodata.*5acars6sample6FRAMES*);
     /* The UI's match jump tables (the code that reads them is slow anyway). */
     *(.rodata..Lswitch.table.*11ferrite_app*);
     *(.rodata..Lswitch.table.*10ferrite_ui*);
@@ -186,7 +188,10 @@ SECTIONS
  * 68,200 B; the budget is left where it was until lowering it is decided. */
 /* Nov 3, 2026 (Alex): raised to 180 KB. tx-bench reached 147.6 KB with satellite mode's fast-flash prediction loop
  * and the clock-aware LCD strobe; the zero-wait room is 244 KB, so 180 stays a tripwire with real room behind it. */
-__fast_budget = 180K;
+/* Nov 25, 2026 (Alex, decision 460): raised to 212 KB. ACARS's receiver (ACARS-11: the per-sample MSK demodulator
+ * in the DSP task and the ACARS mode in the Radio task's tick) took tx-bench to 182.6 KB, past 180; the zero-wait
+ * room is 244 KB, so 212 leaves room for the next features and still trips well before it runs out. */
+__fast_budget = 212K;
 ASSERT(__efast_ui - ORIGIN(FLASH) <= __fast_budget, "fast flash over its budget (__fast_budget in memory.x): move code to the slow part or raise the budget");
 
 /* The fast part (code and the other constants) must end inside the zero-wait region (0x08000000 + 256 KB). */

@@ -72,6 +72,8 @@ enum Fake {
     XbStopped(u8),
     /// Satellite mode (SAT-1): the downlink heard, and the uplink a key-up goes out on.
     Sat { up: Freq10 },
+    /// ACARS (ACARS-11): the VHF chip on this frequency.
+    Acars(Freq10),
 }
 
 /// Carriers the scope and counter "hear": frequency and level (dBm).
@@ -466,7 +468,8 @@ impl FakeRadio {
                 }
             }
             RadioCmd::Crossband(None) => self.set(Fake::Off),
-            RadioCmd::SatRx(0) => self.set(Fake::Off),
+            RadioCmd::SatRx(0) | RadioCmd::AcarsRx(0) => self.set(Fake::Off),
+            RadioCmd::AcarsRx(f) => self.set(Fake::Acars(f)),
             RadioCmd::SatRx(_) if !matches!(self.mode, Fake::Sat { .. }) => self.set(Fake::Sat { up: 0 }),
             RadioCmd::SatUp(f) => {
                 if let Fake::Sat { up } = &mut self.mode {
@@ -626,6 +629,7 @@ impl FakeRadio {
                 let rssi = -97 + ((t * 0.9).sin() * 9.0) as i16;
                 ModeLive::Sat { rssi, open: rssi > -100 }
             }
+            Fake::Acars(freq) => ModeLive::Acars { freq, rssi: -110, open: false },
         };
         // Transmit: speech, the mic level wandering 30-85%.
         if self.live.tx.keyed {

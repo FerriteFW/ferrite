@@ -21,6 +21,16 @@ pub enum Decoder {
     Dsc(Dsc),
     /// SSTV pictures (chapter 27a), while the SSTV screen is open.
     Sstv(usstv::Decoder),
+    /// ACARS (ACARS-11), while the ACARS screen is open and the radio tuned for it.
+    Acars(crate::acarsrx::Demod),
+}
+
+/// A screen that takes the slot while it's open, the other decoders waiting (SSTV-1, ACARS-11).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Claim {
+    None,
+    Sstv,
+    Acars,
 }
 
 /// What a decoder found, handed to the event bus.
@@ -36,6 +46,8 @@ pub enum Found<'a> {
     SstvStart(u8),
     SstvLine(u16, &'a [u16; usstv::mode::WIDTH]),
     SstvEnd(bool),
+    /// ACARS-11: a frame's bytes after SOH, up to its CRC.
+    Acars(&'a [u8]),
 }
 
 /// The SSTV decoder's lines, to the slot's caller.
@@ -67,20 +79,30 @@ impl Decoder {
         Decoder::Sstv(usstv::Decoder::new(RATE_HZ))
     }
 
-    /// Puts a new decoder in the slot: SSTV's while its screen is open (SSTV-1), else `kind`. In a frame of its own:
+    /// Which screen has the slot now.
+    pub fn claim(&self) -> Claim {
+        match self {
+            Decoder::Sstv(_) => Claim::Sstv,
+            Decoder::Acars(_) => Claim::Acars,
+            _ => Claim::None,
+        }
+    }
+
+    /// Puts a new decoder in the slot: SSTV's or ACARS's while its screen has it (SSTV-1, ACARS-11), else `kind`. In a frame of its own:
     /// a decoder is built by value, as large as the slot, and built inline in the DSP task's poll it made that frame
     /// 12.9 KB on every poll, on top of what the DSP's interrupt preempts. Black faulted receiving SSTV (the stack ran
     /// into the statics, Nov 17, 2026); here the temporary (9.6 KB for SSTV's) is on the stack only while the slot
     /// changes, not on every block of audio.
     #[inline(never)]
-    pub fn set(&mut self, sstv: bool, kind: crate::msg::DecoderKind) {
+    pub fn set(&mut self, claim: Claim, kind: crate::msg::DecoderKind) {
         use crate::msg::DecoderKind;
         *self = Decoder::Off; // the old one dropped first (nothing of it is kept)
-        match (sstv, kind) {
-            (true, _) => *self = Decoder::sstv(),
-            (false, DecoderKind::Off) => {}
-            (false, DecoderKind::Afsk) => *self = Decoder::afsk(),
-            (false, DecoderKind::Dsc) => *self = Decoder::dsc(),
+        match (claim, kind) {
+            (Claim::Sstv, _) => *self = Decoder::sstv(),
+            (Claim::Acars, _) => *self = Decoder::Acars(crate::acarsrx::Demod::new(RATE_HZ)),
+            (Claim::None, DecoderKind::Off) => {}
+            (Claim::None, DecoderKind::Afsk) => *self = Decoder::afsk(),
+            (Claim::None, DecoderKind::Dsc) => *self = Decoder::dsc(),
         }
     }
 
@@ -118,6 +140,7 @@ impl Decoder {
             }
             Decoder::Dsc(d) => block.iter().for_each(|&x| d.push(x, |c| found(Found::Call(c)))),
             Decoder::Sstv(d) => d.feed(block, &mut SstvOut(&mut found)),
+            Decoder::Acars(d) => d.feed(block, |f| found(Found::Acars(f))),
         }
     }
 }

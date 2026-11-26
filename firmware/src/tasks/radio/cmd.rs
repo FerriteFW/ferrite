@@ -285,6 +285,7 @@ impl Radio {
                 self.tx.region = Some((r, extend));
             }
             RadioCmd::SatRx(f) => self.sat_rx(f).await,
+            RadioCmd::AcarsRx(f) => self.acars_rx(f).await,
             RadioCmd::SatUp(f) => self.sat_up(f).await,
             RadioCmd::SatTone { tone, hd, power } => self.sat_tone(tone, hd, power),
             #[cfg(feature = "tx")]

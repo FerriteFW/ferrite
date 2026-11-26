@@ -5,9 +5,9 @@
 //!
 //! On the station: OK writes it a message, # saves it as a waypoint, ▲▼ step through the list.
 //!
-//! Traffic (the APRS list's 3; APRS-59): every packet heard lately, one line each, newest first (C3b). Sent (the
-//! APRS list's 4; APRS-53): our beacons since power-on, newest first, each with its age and the digipeaters heard
-//! repeating it (C3a).
+//! Sent (the APRS list's 3; APRS-53): our beacons since power-on, newest first, each with its age and the
+//! digipeaters heard repeating it (C3a). Traffic (the APRS list's 8; APRS-59): every packet heard lately, a row
+//! each, newest first (C3b).
 
 use super::lists::*;
 use super::nav::Dest;
@@ -262,45 +262,48 @@ fn heard_index(d: &dyn Data, call: &[u8]) -> Option<(u16, Station)> {
     (0..d.stations()).find_map(|i| d.station_ram(i).filter(|s| s.call.as_bytes() == call).map(|s| (i, s)))
 }
 
-/// APRS-59.6: a Traffic line: `VE7GPL-1 > TEST: "6"`, `VE3OCB-7 position 2.1 km NE`, `VE3KPW-9 ack 12`, the
-/// times heard in a row after it (`x3`, `x8+`), and its age. A position's distance and bearing are the heard
-/// list's (its station's last position, from the GPS fix). The screen and the readback say it this way.
+/// APRS-59.6: a Traffic row, as the screen and the readback say it: line one the sender (`VE7GPL-1`, a message's
+/// `VE7GPL-1 > TEST`) with the age at the right; line two what it was: a message's text in quotes, `ack 12`,
+/// `position · 2.1 km NE` (the heard list's position from the GPS fix), `object CLUBNET`, then the times heard in
+/// a row (`· x3`, `· x8+`).
 #[inline(never)]
-pub(crate) fn traffic_row(r: &crate::aprs_traffic::Rec, d: &dyn Data) -> (Buf<64>, Buf<12>) {
+pub(crate) fn traffic_row(r: &crate::aprs_traffic::Rec, d: &dyn Data) -> (Buf<24>, Buf<48>, Buf<12>) {
     use crate::aprs_traffic::{Kind, COUNT_MAX};
-    let (mut l, mut age) = (Buf::<64>::new(), Buf::<12>::new());
-    l.push(r.src.as_bytes());
+    let (mut title, mut sub, mut age) = (Buf::<24>::new(), Buf::<48>::new(), Buf::<12>::new());
+    title.push(r.src.as_bytes());
+    let addressed = matches!(r.kind, Kind::Message | Kind::Ack | Kind::Rej | Kind::Query) && !r.to.is_empty();
+    if addressed {
+        let _ = uwrite!(title, " > {}", Txt(r.to.as_bytes()));
+    }
     match r.kind {
         Kind::Message => {
-            let _ = uwrite!(l, " > {}: \"{}\"", Txt(r.to.as_bytes()), Txt(r.text.as_bytes()));
+            let _ = uwrite!(sub, "\"{}\"", Txt(r.text.as_bytes()));
         }
-        Kind::Ack | Kind::Rej | Kind::Object | Kind::Item | Kind::ThirdParty => {
-            let _ = uwrite!(l, " {} {}", r.kind.name(), Txt(if r.kind == Kind::ThirdParty { r.to.as_bytes() } else { r.text.as_bytes() }));
-        }
-        Kind::Query if !r.to.is_empty() => {
-            let _ = uwrite!(l, " query > {}", Txt(r.to.as_bytes()));
+        Kind::Ack | Kind::Rej | Kind::Object | Kind::Item | Kind::ThirdParty | Kind::Query => {
+            sub.push(r.kind.name().as_bytes());
+            let what = if r.kind == Kind::ThirdParty { r.to.as_bytes() } else { r.text.as_bytes() };
+            if !what.is_empty() {
+                let _ = uwrite!(sub, " {}", Txt(what));
+            }
         }
         Kind::Position => {
-            l.push(b" position");
+            sub.push(b"position");
             if let (Some((_, s)), Some(f)) = (heard_index(d, r.src.as_bytes()), d.fix()) {
                 if let Some(p) = s.pos {
                     let (m, deg) = dist_bearing(f.pos, p);
                     let mut t = Buf::<12>::new();
                     dist_text(m, &mut t);
-                    let _ = uwrite!(l, " {} {}", Txt(t.as_bytes()), compass_name(deg));
+                    let _ = uwrite!(sub, " \u{b7} {} {}", Txt(t.as_bytes()), compass_name(deg));
                 }
             }
         }
-        k => {
-            l.push(b" ");
-            l.push(k.name().as_bytes());
-        }
+        k => sub.push(k.name().as_bytes()),
     }
     if r.count > 1 {
-        let _ = uwrite!(l, " x{}{}", r.count, if r.count == COUNT_MAX { "+" } else { "" });
+        let _ = uwrite!(sub, " \u{b7} x{}{}", r.count, if r.count == COUNT_MAX { "+" } else { "" });
     }
     age_text(r.ago_s, &mut age);
-    (l, age)
+    (title, sub, age)
 }
 
 impl View for Traffic {
@@ -337,7 +340,7 @@ impl View for Traffic {
 
     fn knob(self, app: &mut App, d: i32, store: &impl ChannelStore) {
         let n = store.data().traffic().map_or(0, |t| t.len());
-        let cur = self.cur.step(d, n, ROWS1_FULL, &ALL);
+        let cur = self.cur.step(d, n, ROWS2, &ALL);
         app.screen = Screen::AprsTraffic(Traffic { cur });
     }
 
@@ -352,16 +355,15 @@ impl View for Traffic {
         let mut l = Buf::<16>::new();
         let _ = uwrite!(l, "{} heard", n);
         app.list_head(lcd, l.as_bytes(), b"newest first");
-        let rows = self.cur.rows(n, ROWS1_FULL, &ALL, |row, i| {
+        let rows = self.cur.rows(n, ROWS2, &ALL, |row, i| {
             if let Some(r) = t.and_then(|t| t.get(i)) {
-                let (line, age) = traffic_row(&r, data);
-                // a long line is cut to leave its age room (OK shows the whole message)
-                let room = (232 - 8 - 40).min(232 - 8 - 8 - text4_width(age.as_bytes(), &UI_12));
-                app.row1(lcd, row, w::fit(line.as_bytes(), &UI_12, room), age.as_bytes(), false, i == self.cur.sel, false);
+                let (title, sub, age) = traffic_row(&r, data);
+                let r = Row2 { title: title.as_bytes(), big: true, right: age.as_bytes(), sub: sub.as_bytes(), selected: i == self.cur.sel, ..Row2::default() };
+                app.row2(lcd, row, &r);
             }
         });
-        app.rows_end(lcd, rows, ROWS1_FULL, ROW1_H);
-        app.list_cue(lcd, self.cur, n, ROWS1_FULL, ROW1_H, rows, &ALL);
+        app.rows_end(lcd, rows, ROWS2, ROW2_H);
+        app.list_cue(lcd, self.cur, n, ROWS2, ROW2_H, rows, &ALL);
         if n == 0 {
             app.empty(lcd, b"Nothing heard yet", b"Every packet shows here, RAM only");
         }

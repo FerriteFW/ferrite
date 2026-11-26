@@ -928,14 +928,23 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
                 }
             }
         }
-        // APRS-59.8: the Traffic page's rows on the page, as the screen says them: `row 0 "VE7GPL-1 > TEST: \"6\"" "4 min"`
+        // APRS-59.8: the Traffic page's rows on the page, as the screen says them, uncut:
+        // `traffic "VE7GPL-1 > TEST" "\"6\"" "4 min"`, with ` sel` on the selected one
         Screen::AprsTraffic(st) => {
             let data = cx.store.data();
             let t = data.traffic();
-            st.cur.rows(t.map_or(0, |t| t.len()), screens::lists::ROWS1_FULL, &|_| true, |_, i| {
-                if let Some(r) = t.and_then(|t| t.get(i)) {
-                    let (line, age) = aprs::traffic_row(&r, data);
-                    row(d, 0, line.as_bytes(), age.as_bytes(), i == st.cur.sel, false, false);
+            st.cur.rows(t.map_or(0, |t| t.len()), screens::lists::ROWS2, &|_| true, |_, i| {
+                if let (Some(r), Some(l)) = (t.and_then(|t| t.get(i)), d.ln()) {
+                    let (title, sub, age) = aprs::traffic_row(&r, data);
+                    l.push(b"traffic ");
+                    q(l, title.as_bytes());
+                    l.push(b" ");
+                    q(l, sub.as_bytes());
+                    l.push(b" ");
+                    q(l, age.as_bytes());
+                    if i == st.cur.sel {
+                        l.push(b" sel");
+                    }
                 }
             });
         }

@@ -552,7 +552,7 @@ fn sent_page_lists_our_beacons() {
     assert!(!matches!(a.app.screen(), Screen::AprsSent(_)), "BACK leaves it");
 }
 
-/// APRS-59, APRS-59.6, APRS-59.8: the APRS list's 8 opens Traffic: every packet heard lately, newest first, a row
+/// APRS-59, APRS-59.6, APRS-59.8: the APRS list's 8 opens Traffic: every packet heard lately, newest first, ten to a page, a row
 /// each: the sender (a message's `SRC > DEST`) and its age, then what it was (a message's text, `ack 12`, a
 /// position with its station's distance and bearing, repeats as `x3`); the readback says it as the screen does.
 /// APRS-59.7: OK on a row opens its station; BACK twice comes back to Traffic.
@@ -571,7 +571,7 @@ fn traffic_page_lists_every_packet() {
         (0..).map_while(|i| crate::uistate::line(&a.app, &a.s, &dev, &a.live, i, &mut l).then(|| String::from_utf8_lossy(l.as_bytes()).into_owned())).filter(|l| l.starts_with("traffic ")).collect::<Vec<_>>()
     };
     let r = rows(&a);
-    assert_eq!(r.len(), 8, "a page: {r:?}");
+    assert_eq!(r.len(), 10, "a page of compact rows: {r:?}");
     assert_eq!(r[0], r#"traffic "VE3KPW-9 > VA7FER-9" "\"On my way\"" "2 min" sel"#);
     assert!(r[1].starts_with(r#"traffic "VA3RTX" "position · "#) && r[1].contains(" km "), "with the distance: {r:?}");
     assert_eq!(r[2], r#"traffic "VE3KPW-9 > VA7FER-9" "ack 12" "4 min""#);

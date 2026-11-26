@@ -933,7 +933,7 @@ fn body<S: ChannelStore>(app: &App, cx: &Cx<S>, d: &mut Desc) {
         Screen::AprsTraffic(st) => {
             let data = cx.store.data();
             let t = data.traffic();
-            st.cur.rows(t.map_or(0, |t| t.len()), screens::lists::ROWS2, &|_| true, |_, i| {
+            st.cur.rows(t.map_or(0, |t| t.len()), screens::lists::ROWS2C, &|_| true, |_, i| {
                 if let (Some(r), Some(l)) = (t.and_then(|t| t.get(i)), d.ln()) {
                     let (title, sub, age) = aprs::traffic_row(&r, data);
                     l.push(b"traffic ");

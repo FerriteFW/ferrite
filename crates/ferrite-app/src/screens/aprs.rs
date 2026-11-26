@@ -340,7 +340,7 @@ impl View for Traffic {
 
     fn knob(self, app: &mut App, d: i32, store: &impl ChannelStore) {
         let n = store.data().traffic().map_or(0, |t| t.len());
-        let cur = self.cur.step(d, n, ROWS2, &ALL);
+        let cur = self.cur.step(d, n, ROWS2C, &ALL);
         app.screen = Screen::AprsTraffic(Traffic { cur });
     }
 
@@ -355,15 +355,15 @@ impl View for Traffic {
         let mut l = Buf::<16>::new();
         let _ = uwrite!(l, "{} heard", n);
         app.list_head(lcd, l.as_bytes(), b"newest first");
-        let rows = self.cur.rows(n, ROWS2, &ALL, |row, i| {
+        let rows = self.cur.rows(n, ROWS2C, &ALL, |row, i| {
             if let Some(r) = t.and_then(|t| t.get(i)) {
                 let (title, sub, age) = traffic_row(&r, data);
-                let r = Row2 { title: title.as_bytes(), big: true, right: age.as_bytes(), sub: sub.as_bytes(), selected: i == self.cur.sel, ..Row2::default() };
+                let r = Row2 { title: title.as_bytes(), right: age.as_bytes(), sub: sub.as_bytes(), selected: i == self.cur.sel, compact: true, ..Row2::default() };
                 app.row2(lcd, row, &r);
             }
         });
-        app.rows_end(lcd, rows, ROWS2, ROW2_H);
-        app.list_cue(lcd, self.cur, n, ROWS2, ROW2_H, rows, &ALL);
+        app.rows_end(lcd, rows, ROWS2C, ROW2C_H);
+        app.list_cue(lcd, self.cur, n, ROWS2C, ROW2C_H, rows, &ALL);
         if n == 0 {
             app.empty(lcd, b"Nothing heard yet", b"Every packet shows here, RAM only");
         }

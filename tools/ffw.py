@@ -371,6 +371,29 @@ def hello_layouts(hello):
     return (t[2], t[3]) if len(t) >= 4 else (0, 0)
 
 
+LAYOUT_MOVING = 255  # layout.rs: the chip's data half moved (LINK-62)
+MARK_MAGIC = 0x564D5246  # the migration mark's records (layout.rs MIGRATE_MARK), as Console's markFrom reads them
+
+
+def mark_from(ask):
+    """The layout the migration mark says a move began from, else None: 16-byte records in MIGRATE_MARK (magic, the
+    layout from, ..., CRC-32 of the first 12 bytes), read raw (DATA_READ 0) up to the first erased one."""
+    import zlib
+    lo, hi = MIGRATE_MARK
+    for at in range(lo, hi, 224):
+        st, b = ask(DATA_READ, struct.pack("<BIB", 0, at, min(224, hi - at)))
+        if st != OK:
+            return None
+        for o in range(0, len(b) - 15, 16):
+            rec = b[o:o + 16]
+            if rec == b"\xff" * 16:
+                return None
+            magic, frm = struct.unpack_from("<IH", rec)
+            if magic == MARK_MAGIC and struct.unpack_from("<I", rec, 12)[0] == zlib.crc32(rec[:12]):
+                return frm
+    return None
+
+
 def write_parts(ask, hello, parts, say=print, busy_s=15.0, clock=None):
     """Writes the SPI parts to a running Ferrite over the cable (UPD-21): each part's sectors erased, its bytes
     programmed, its CRC read back; then the layout stamp (LINK-62), on which the radio restarts. `ask(type, payload)`
@@ -383,6 +406,11 @@ def write_parts(ask, hello, parts, say=print, busy_s=15.0, clock=None):
         if why:
             raise Refused([why])
     this, found = hello_layouts(hello)
+    # UPD-16 (as Console's update, LINK-62): 255 ("half moved") with a migration mark that began from this very layout
+    # means nothing was moved, only an earlier update's parts were cut before their stamp: writing them finishes it.
+    if this == LAYOUT and found == LAYOUT_MOVING and mark_from(ask) == LAYOUT:
+        say("the radio says 255, but its mark began from this layout: only the SPI parts were cut; writing them")
+        found = LAYOUT
     if this != LAYOUT or found != LAYOUT:
         raise Refused([f"the radio's firmware stores layout {this} and its data is in layout {found}: finish the update "
                        "with Ferrite Console (it moves the data), then write the parts again (flash.py --parts-only)"])

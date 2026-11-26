@@ -1106,6 +1106,33 @@ fn load_reports_bad_lines() {
     assert_eq!(r.app.set.region, crate::tests::set().region);
 }
 
+/// TERM-13.1 (issue #236): where the port lost bytes (its ring full), the line the mark lands in is refused
+/// whole, never applied with a hole in it; the lines around it go in. Even one that reads `end` after the hole.
+#[test]
+fn load_refuses_a_line_with_lost_bytes() {
+    let mut r = Rig::with(Blank::default());
+    r.send(b"\r\r");
+    r.cmd("load");
+    // "ch 2 ..." lost its tail and "ch 3"'s head: what is left would read as channel 2 at 146.53
+    let lost = ferrite_core::link::LOST;
+    let mut text = b"ch 1 \"One\" 146.52\r\nch 2 \"Two\" 14".to_vec();
+    text.push(lost);
+    text.extend_from_slice(b"6.53\r\nch 4 \"Four\" 146.54\r\n");
+    text.push(lost);
+    text.extend_from_slice(b"end\r\nend\r\n");
+    r.send(&text);
+    for _ in 0..4 {
+        r.poll();
+    }
+    assert_eq!(r.term.con, Con::Done);
+    let raw = r.raw();
+    assert!(raw.contains("line 2: bytes lost on the way"), "{raw}");
+    assert!(raw.contains("line 4: bytes lost on the way"), "{raw}");
+    assert!(raw.contains("Done: 4 lines read, 2 applied, 2 refused."), "{raw}");
+    assert!(r.store.by_num(0).is_some() && r.store.by_num(3).is_some()); // numbers from 0 here
+    assert!(r.store.by_num(1).is_none());
+}
+
 /// A load waits for the store before each line (TERM-13): the cable is held, nothing is lost.
 #[test]
 fn load_waits_for_the_store() {

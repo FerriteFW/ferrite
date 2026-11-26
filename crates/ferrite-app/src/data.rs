@@ -496,6 +496,18 @@ pub enum DataWrite {
     Stamp,
 }
 
+/// LINK-73 (`SSB_WRITE`, HF-18): one step of the SSB patch's write over the link, for the store's owner. The link
+/// has checked the shape, the length and the hash; the store writes only its SSB region.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SsbWrite {
+    /// The region erased; the patch stored until now is gone (HF mode hides USB, LSB and CW meanwhile).
+    Begin,
+    /// `len` bytes of `bytes` at `off` in the patch.
+    Program { off: u16, len: u8, bytes: [u8; ferrite_core::link::ssb::PROGRAM_MAX] },
+    /// The header written, only if what the region holds is this patch (length, records, SHA-256).
+    Finish(ferrite_core::ssb::Patch),
+}
+
 pub trait Data {
     /// Changes whenever anything here changes: lists redraw only when it or their own position moved.
     fn version(&self) -> u32 {
@@ -713,6 +725,18 @@ pub trait Data {
     /// LINK-60: a raw write queued for the store's owner (false: no room, or no flash here). The link has checked
     /// the range and the shape.
     fn data_write(&self, _w: DataWrite) -> bool {
+        false
+    }
+
+    /// HF-20: the SSB patch the store holds, verified (at boot, or by the write that stored it); None while a link
+    /// write is under way, or with no flash here.
+    fn ssb(&self) -> Option<ferrite_core::ssb::Patch> {
+        None
+    }
+
+    /// LINK-73: an `SSB_WRITE` step queued for the store's owner (false: no room, no flash here, or the chip's data
+    /// waits for an update, UPD-16).
+    fn ssb_write(&self, _w: SsbWrite) -> bool {
         false
     }
 

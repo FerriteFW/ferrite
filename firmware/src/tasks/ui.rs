@@ -589,7 +589,8 @@ pub async fn task() {
     let mut bat_logged = 0u32;
     let mut battery = ferrite_core::battery::Battery::default();
     // About and Self-test (SELF-5 to SELF-7): what the boot checks found. The BK4829s from the Radio task's
-    // snapshot below; the SI4732 isn't tested at boot; the SSB patch store comes with the link's SSB_WRITE.
+    // snapshot below; the SI4732 isn't tested at boot; the SSB patch's state is the store's (kept up below:
+    // the link's SSB_WRITE changes it).
     {
         let t = &mut dev.selftest;
         t.idcode = crate::hal::sys::idcode();
@@ -808,6 +809,8 @@ pub async fn task() {
         }
         sec!(0); // ports in, battery
         dev.selftest.chips = live.chips;
+        // HF-20, LINK-73: the patch held now: one written over the link shows USB, LSB and CW without a restart
+        dev.selftest.ssb_patch = ferrite_app::data::Data::ssb(store).is_some();
         // SBAR-20: the Radio task's MCU temperature reading, in whole degrees.
         let t = crate::chan::MCU_TEMP.load(Relaxed);
         dev.mcu_temp = (t != i16::MIN).then(|| ferrite_core::mcutemp::whole(t));

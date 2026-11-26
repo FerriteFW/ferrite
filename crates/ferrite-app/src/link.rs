@@ -94,6 +94,8 @@ pub struct Session {
     /// 1 the µ-law stream (decision 330), 2 or 3 the bench's raw stream (LINK-13.9); and the blocks' counter.
     audio: u8,
     audio_seq: u16,
+    /// LINK-73: the SSB patch this session began writing (`SSB_WRITE` `BEGIN`): its length and hash, until `FINISH`.
+    ssb: Option<ferrite_core::ssb::Patch>,
 }
 
 /// A `WRITE_MANY` under way (LINK-41): its records wait in `asm` (what's after the `what` byte), applied one a
@@ -164,6 +166,7 @@ impl Session {
             sub: sub::Sub::new(),
             audio: 0,
             audio_seq: 0,
+            ssb: None,
         }
     }
 
@@ -186,6 +189,7 @@ impl Session {
         self.many = None;
         self.lz = false; // LINK-51: the shared block goes back
         self.audio = 0; // LINK-13.5: listening ends with the connection
+        self.ssb = None; // LINK-73: a patch half sent is begun again
         self.unsubscribe(); // LINK-46: events end with the connection
     }
 
@@ -559,6 +563,9 @@ impl Session {
                 self.reboot |= stamp; // LINK-62: the radio restarts on the stamped layout
                 s
             }
+            // LINK-8, LINK-73: either port (past AUTH above), not while the other port writes
+            msg::SSB_WRITE if self.other_writing && p.first() != Some(&ferrite_core::link::ssb::CHECK) => Status::Busy,
+            msg::SSB_WRITE => self.ssb_write(st, p, &mut o),
             msg::REBOOT if app.radio.keyed.is_some() || live.tx.keyed => Status::Busy, // LINK-24.3: a data key-up too
             msg::REBOOT => {
                 self.reboot = true;
@@ -734,6 +741,76 @@ impl Session {
     }
 
     /// `HELLO`: the protocol, the largest payload, and whether this session may go on (0: `AUTH` first).
+    /// `SSB_WRITE` (LINK-73, HF-18): the SSB patch in records, each step queued for the store's owner, which alone
+    /// writes the region. Only the known stock patch is taken: the radio's on-screen question for another one (D15)
+    /// isn't asked over the link, so an unknown hash is refused before anything is erased.
+    fn ssb_write<S: ChannelStore>(&mut self, st: &S, p: &[u8], o: &mut Out) -> Status {
+        use crate::data::SsbWrite;
+        use ferrite_core::link::ssb::*;
+        let d = st.data();
+        let w = match p {
+            [CHECK] => {
+                if d.busy() {
+                    return Status::Busy;
+                }
+                match d.ssb() {
+                    Some(have) => {
+                        o.put(&[1]);
+                        o.put(&have.sha);
+                    }
+                    None => o.put(&[0]),
+                }
+                return Status::Ok;
+            }
+            [BEGIN, l0, l1, l2, l3, sha @ ..] if sha.len() == 32 => {
+                let len = le32(&[*l0, *l1, *l2, *l3]);
+                if !ferrite_core::ssb::len_valid(len) {
+                    return Status::BadArg;
+                }
+                let want = ferrite_core::ssb::Patch { len, sha: sha.try_into().unwrap() };
+                if want.sha != ferrite_core::ssb::KNOWN_SHA256 {
+                    o.put(b"ssb: not the stock patch Ferrite knows");
+                    return Status::Invalid;
+                }
+                if d.layout_found() != 0 {
+                    o.put(b"ssb: finish the update in Ferrite Console first");
+                    return Status::Invalid;
+                }
+                if d.ssb() == Some(want) {
+                    self.ssb = None;
+                    o.put(&[1]); // stored already: nothing written (flash wear)
+                    return Status::Ok;
+                }
+                if !d.ssb_write(SsbWrite::Begin) {
+                    return Status::Busy;
+                }
+                self.ssb = Some(want);
+                o.put(&[0]);
+                return Status::Ok;
+            }
+            [PROGRAM, o0, o1, bytes @ ..] => {
+                let Some(want) = self.ssb else { return Status::BadArg };
+                let off = u16::from_le_bytes([*o0, *o1]);
+                if !piece_ok(off as u32, bytes, want.len) {
+                    return Status::BadArg;
+                }
+                let mut b = [0xFFu8; PROGRAM_MAX];
+                b[..bytes.len()].copy_from_slice(bytes);
+                SsbWrite::Program { off, len: bytes.len() as u8, bytes: b }
+            }
+            [FINISH] => {
+                let Some(want) = self.ssb else { return Status::BadArg };
+                if !d.ssb_write(SsbWrite::Finish(want)) {
+                    return Status::Busy;
+                }
+                self.ssb = None;
+                return Status::Ok;
+            }
+            _ => return Status::BadArg,
+        };
+        if d.ssb_write(w) { Status::Ok } else { Status::Busy }
+    }
+
     fn hello<S: ChannelStore>(&mut self, app: &App, st: &S, dev: &Device, p: &[u8], o: &mut Out) -> Status {
         self.hellos = self.hellos.wrapping_add(1);
         // LINK-51: the first reserved byte's bit 0 asks for compression; granted while the shared block is free
@@ -1450,7 +1527,7 @@ fn name_of<const N: usize>(b: &[u8]) -> Option<Buf<N>> {
 /// commands, events or audio.
 fn transfer(ty: u8, p: &[u8]) -> bool {
     match ty {
-        msg::READ | msg::WRITE | msg::DELETE | msg::BEGIN | msg::USED | msg::READ_MANY | msg::WRITE_MANY | msg::LOG_READ | msg::HEARD | msg::MSGS | msg::STOCK_RESTORE | msg::DATA_READ | msg::DATA_WRITE => true,
+        msg::READ | msg::WRITE | msg::DELETE | msg::BEGIN | msg::USED | msg::READ_MANY | msg::WRITE_MANY | msg::LOG_READ | msg::HEARD | msg::MSGS | msg::STOCK_RESTORE | msg::DATA_READ | msg::DATA_WRITE | msg::SSB_WRITE => true,
         msg::STREAM => p.first().is_some_and(|&t| t != msg::UI),
         _ => false,
     }

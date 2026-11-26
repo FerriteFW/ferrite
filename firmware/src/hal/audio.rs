@@ -24,9 +24,9 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex as M;
 use embassy_sync::signal::Signal;
 use ferrite_core::audio::{ADC_HZ, BLOCK_DAC, BLOCK_IN, DAC_HZ};
 
-const CRM_AHBEN: u32 = 0x4002_1014;
+pub(super) const CRM_AHBEN: u32 = 0x4002_1014;
 const CRM_AHB_DMA1: u32 = 1 << 0;
-const CRM_AHB_DMA2: u32 = 1 << 1;
+pub(super) const CRM_AHB_DMA2: u32 = 1 << 1;
 
 const DMA1: u32 = 0x4002_0000;
 pub(super) const DMA2: u32 = 0x4002_0400;
@@ -179,8 +179,7 @@ static DMA2_USERS: AtomicU8 = AtomicU8::new(0);
 /// task and a speed switch can't race on the clock bit).
 pub(super) fn dma2_use(user: u8, on: bool) {
     critical_section::with(|_| {
-        let u = DMA2_USERS.load(Relaxed);
-        let u = if on { u | user } else { u & !user };
+        let u = ferrite_core::screenpwm::dma2_users(DMA2_USERS.load(Relaxed), user, on);
         DMA2_USERS.store(u, Relaxed);
         if u != 0 {
             modify(CRM_AHBEN, 0, CRM_AHB_DMA2);

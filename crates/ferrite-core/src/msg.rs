@@ -636,8 +636,12 @@ pub struct LcdBench {
     /// The screen light's PWM frequency and dither over DISP-23.1's ([`crate::screenpwm`]), or theirs (None).
     pub hz: Option<u16>,
     pub dither: Option<u16>,
-    /// The dither runs now (the UI task fills it in: not while the light is dark or full on).
+    /// The dither runs now (the UI task fills it in: not while the light is dark or full on), as the firmware's flag
+    /// says and as the registers say (DMA2 clocked, channel 1 on, TMR8's OVFDEN), and the light's duty in
+    /// thousandths (0 dark): DISP-23.1.
     pub dithering: bool,
+    pub dither_hw: bool,
+    pub light: u16,
 }
 
 #[cfg(feature = "bench")]

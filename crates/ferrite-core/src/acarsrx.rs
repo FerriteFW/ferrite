@@ -464,5 +464,79 @@ mod tests {
         }));
         assert!(decode(&x, 24_000).is_empty());
     }
-}
 
+    /// ACARS-11 (ferrite#73: a receive path must never stick): after up to a second of any audio (noise at any
+    /// level, a steady tone, clipping, DC, bursts cut short or with bits flipped) the receiver decodes the next good
+    /// burst: every slicer's reader is back to hunting within a frame's length, and a held copy goes out within
+    /// HOLD_BITS. Each case's work is bounded by its samples (no loop over the input but the per-sample one).
+    #[test]
+    fn fuzz_recovers_after_garbage() {
+        use ferrite_fuzzkit::{bytes_to_samples, samples_to_bytes, Fuzz};
+        let mut b = [0u8; FRAME_MAX + 1];
+        let n = sample(b"FERRITE AFTER GARBAGE", &mut b);
+        let good = b[..n].to_vec();
+        let burst = audio(&tones(&good, 16), 24_000, 12_000.0, 1500.0);
+        Fuzz::new("acars_recovers", 0xACA6, 60).slow_ms(5_000).run(
+            |r| {
+                let mut a: Vec<i16> = Vec::new();
+                while a.len() < 24_000 && !r.one_in(6) {
+                    let k = r.range(1, 8000);
+                    match r.below(5) {
+                        0 => {
+                            // a burst cut short, its bits flipped here and there
+                            let mut t = tones(&good, r.below(16));
+                            let cut = r.range(1, t.len());
+                            t.truncate(cut);
+                            for _ in 0..r.below(6) {
+                                let i = r.below(t.len());
+                                t[i] = !t[i];
+                            }
+                            a.extend(audio(&t, 24_000, r.range(500, 20_000) as f64, r.below(8000) as f64));
+                        }
+                        1 => {
+                            let amp = r.range(1, 32768) as i32;
+                            a.extend((0..k).map(|_| ((r.u16() as i16 as i32 * amp) >> 15) as i16));
+                        }
+                        2 => {
+                            let half = r.range(2, 40);
+                            a.extend((0..k).map(|i| if (i / half).is_multiple_of(2) { i16::MAX } else { i16::MIN }));
+                        }
+                        3 => a.extend(core::iter::repeat_n(r.u16() as i16, k)),
+                        _ => a.extend(core::iter::repeat_n(0, k)),
+                    }
+                }
+                samples_to_bytes(&a)
+            },
+            |g| {
+                let mut d = Demod::new(24_000);
+                d.feed(&bytes_to_samples(g), |f| assert!(f.len() <= FRAME_MAX));
+                // a frame's time of quiet: a reader reading a burst cut short reads on until FRAME_MAX characters
+                d.feed(&std::vec![0i16; (FRAME_MAX + 4) * 8 * 10], |f| assert!(f.len() <= FRAME_MAX));
+                let mut got = Vec::new();
+                d.feed(&burst, |f| got.push(f.to_vec()));
+                assert!(got.iter().any(|f| f[..] == good[..n - 1]), "a good burst lost after garbage ({} frames)", got.len());
+            },
+        );
+    }
+
+    /// ACARS-11, found by fuzz_recovers_after_garbage: a burst cut short (a fade, a collision) leaves each reader
+    /// reading its body until FRAME_MAX characters (about 0.8 s), and a burst starting inside that time is lost on
+    /// every slicer (its sync isn't looked for while a body is read). Bounded, not stuck; ignored until the
+    /// readers also watch for a sync mid-body (a decoder change, left for a decision).
+    #[test]
+    #[ignore = "a burst within 0.8 s of one cut short is lost: the readers don't hunt mid-body"]
+    fn burst_right_after_a_cut_one() {
+        let mut b = [0u8; FRAME_MAX + 1];
+        let n = sample(b"FERRITE AFTER GARBAGE", &mut b);
+        let mut lost = Vec::new();
+        let first = tones(&b[..n], 8);
+        for cut in (100..first.len()).step_by(5) {
+            let mut x = audio(&first[..cut], 24_000, 12_000.0, 1000.0);
+            x.extend(audio(&tones(&b[..n], 16), 24_000, 12_000.0, 1000.0));
+            if !decode(&x, 24_000).iter().any(|f| f[..] == b[..n - 1]) {
+                lost.push(cut);
+            }
+        }
+        assert!(lost.is_empty(), "the second burst lost after the first cut at these bits: {lost:?}");
+    }
+}

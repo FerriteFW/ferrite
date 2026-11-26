@@ -62,7 +62,7 @@ impl Rig {
     }
 
     fn poll(&mut self) {
-        self.now += 10;
+        self.now = self.now.wrapping_add(10); // the firmware's count wraps (fuzz_ports_recover starts anywhere in it)
         self.p.poll(&mut self.app, &self.st, &Device::default(), &LiveAll::default(), self.now, &mut self.cable, &mut self.bt);
         while let Some(w) = self.app.pop_write() {
             self.st.apply(w);
@@ -695,4 +695,130 @@ fn live_view_moves_to_the_newest_subscriber() {
         r.poll();
     }
     assert!(!r.p.links[1].ui_wanted());
+}
+
+/// LINK-28, LINK-29, TERM-2, KISS-6 (ferrite#73: nothing on a port may leave it stuck): any bytes on both ports
+/// (line noise, link frames whole, cut or damaged, terminal keys) with the clock jumping (late turns, hours, the
+/// millisecond count's wrap). Afterwards, once Bluetooth has been quiet for BT_IDLE_MS: a HELLO is answered on
+/// each port (its session starts over: no half frame, terminal, compression block or debug request in flight
+/// keeps it out).
+#[test]
+fn fuzz_ports_recover() {
+    use ferrite_fuzzkit::{Fuzz, Rng};
+    let hello = |seq: u8| {
+        let mut w = [0u8; MAX_WIRE];
+        let n = wire::build(msg::HELLO, seq, &[ferrite_core::link::PROTOCOL], &mut w).unwrap();
+        let mut f = std::vec![0u8];
+        f.extend_from_slice(&w[..n]);
+        f.push(0);
+        f
+    };
+    // A byte as the firmware's UI task hands it over: only while the port takes one (a whole frame or line waits for
+    // its turn, TERM-4); the turns it waits are bounded, or the port is stuck.
+    fn put(r: &mut Rig, port: Port, b: u8) {
+        let mut turns = 0;
+        while !r.p.ready_for(port) {
+            r.poll();
+            turns += 1;
+            assert!(turns < 50, "{port:?} takes no byte after 50 turns: stuck");
+        }
+        let t = r.p.route(&r.app, port, b, r.now);
+        r.p.feed(&mut r.app, &r.st, &Device::default(), &LiveAll::default(), t, b, r.now);
+        while let Some(w) = r.app.pop_write() {
+            r.st.apply(w);
+        }
+    }
+    let answered = |out: &mut Vec<u8>, seq: u8| out.split_mut(|&b| b == 0).any(|f| wire::parse(f).is_ok_and(|a| a.seq == seq && a.payload.first() == Some(&0)));
+    Fuzz::new("ports_recover", 0x9047, 1_500).slow_ms(5_000).run(
+        |r: &mut Rng| {
+            let mut v = Vec::new();
+            for _ in 0..r.range(1, 30) {
+                v.push(r.byte()); // what: the port, a clock step or a poll
+                let chunk: Vec<u8> = match r.below(5) {
+                    0 => {
+                        let n = r.len(64);
+                        r.bytes(n)
+                    }
+                    1 => {
+                        let mut f = hello(r.byte());
+                        if r.one_in(2) {
+                            let cut = r.range(1, f.len());
+                            f.truncate(cut);
+                        }
+                        f
+                    }
+                    2 => {
+                        let mut w = [0u8; MAX_WIRE];
+                        let n = r.len(40);
+                        let p = r.bytes(n);
+                        let n = wire::build(r.byte(), r.byte(), &p, &mut w).unwrap_or(0);
+                        let mut f = std::vec![0u8];
+                        f.extend_from_slice(&w[..n]);
+                        if r.one_in(3) && n > 2 {
+                            let i = r.range(1, n);
+                            f[i] ^= r.byte() | 1;
+                        }
+                        f
+                    }
+                    3 => r.pick(&[&b"\r"[..], b"\x1b", b":", b"\x1b[A", b"+++", b"\xc0\x00\x01\xc0"]).to_vec(),
+                    _ => r.bytes(4),
+                };
+                v.push(chunk.len() as u8);
+                v.extend(chunk);
+            }
+            v
+        },
+        |d| {
+            let mut r = Rig::new();
+            r.now = d.first().map_or(1000, |&b| (b as u32).wrapping_mul(16_843_009)); // anywhere in the count
+            let mut rest = d;
+            while let [what, n, tail @ ..] = rest {
+                let n = (*n as usize).min(tail.len());
+                let (chunk, more) = tail.split_at(n);
+                rest = more;
+                match what & 3 {
+                    0 | 1 => {
+                        let port = if what & 1 == 0 { Port::Cable } else { Port::Bt };
+                        for &b in chunk {
+                            put(&mut r, port, b);
+                        }
+                    }
+                    2 => {
+                        let v = u32::from_le_bytes([chunk.first().copied().unwrap_or(0), chunk.get(1).copied().unwrap_or(0), 0, 0]);
+                        r.now = r.now.wrapping_add(match what >> 6 {
+                            0 => v % 1000,
+                            1 => v * 1000,
+                            2 => v.wrapping_mul(65_537),
+                            _ => BT_IDLE_MS,
+                        });
+                    }
+                    _ => {
+                        if let Some(_q) = r.p.debug_req() {
+                            // the firmware's answer may never come (the asker gives up): sometimes none
+                        }
+                        r.poll();
+                    }
+                }
+                while r.app.pop_cmd().is_some() {}
+            }
+            // quiet: Bluetooth's connection ends, every session's frame, terminal or block times out
+            r.now = r.now.wrapping_add(BT_IDLE_MS + 1000);
+            r.poll();
+            r.app.set.cable_port = 0;
+            r.app.set.bt = true;
+            for (port, seq) in [(Port::Cable, 0xA5u8), (Port::Bt, 0x5A)] {
+                r.cable.0.clear();
+                r.bt.0.clear();
+                for &b in &hello(seq) {
+                    put(&mut r, port, b);
+                }
+                for _ in 0..3 {
+                    r.poll();
+                }
+                let out = if port == Port::Cable { &mut r.cable.0 } else { &mut r.bt.0 };
+                let dbg = ferrite_fuzzkit::hex(out);
+                assert!(answered(out, seq), "{port:?}: HELLO not answered after the noise: {dbg} term {} owner {:?}", r.p.term.on(), r.p.owner());
+            }
+        },
+    );
 }

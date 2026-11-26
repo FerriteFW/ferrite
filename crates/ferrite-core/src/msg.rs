@@ -389,15 +389,16 @@ pub const SLOTS: usize = 3;
 pub struct SlotLive {
     /// What the receiver is on (while scanning, the current step).
     pub freq: Freq10,
-    /// dBm.
+    /// dBm, as read, whether the squelch is open or not (a closed slot's meter shows it dimmed).
     pub rssi: i16,
     /// A carrier above the squelch (the BK4829's RSSI and noise squelch), whatever tone it carries.
     pub squelch_open: bool,
     /// SQL-13.1: a carrier, as the squelch decided it: not level 0's always-open nor monitor. Busy lockout, the green
     /// LED, receive activity and DTMF go by this; the audio by `squelch_open`.
     pub carrier: bool,
-    /// SQL-12.1: the RSSI as read (dBm), not held down while closed as `rssi` is for the S-meters: the squelch
-    /// screen's floor and meter show the signal under the threshold.
+    /// SQL-12.1: the RSSI as read (dBm): the squelch screen's floor and meter show the signal under the threshold.
+    /// The same as `rssi` now that `rssi` isn't held down while closed; a slot deferring to the APRS slot (APRS-21.2)
+    /// shows the APRS slot's in `rssi` and keeps its own here.
     pub rssi_raw: i16,
     pub scanning: bool,
     /// The scan is stopped on a hit (held there until it resumes), not just passing a busy step.

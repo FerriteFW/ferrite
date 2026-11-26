@@ -124,7 +124,7 @@ impl Radio {
                 }
                 let l = &mut self.live.slots[i];
                 let shown = open || level0;
-                (l.squelch_open, l.rssi, l.rssi_raw) = (shown, if shown { rssi } else { rssi.min(-121) }, rssi);
+                (l.squelch_open, l.rssi, l.rssi_raw) = (shown, rssi, rssi); // the level, open or closed
                 l.carrier = st.squelch_open; // SQL-13.1: the chip's own decision
             }
             self.chip(chip).af_out(if heard { AfOut::Normal } else { AfOut::Mute });

@@ -63,7 +63,7 @@ fn lower_rows() {
     has(&status(&mut t, 9), "Waking");
     t.app.set_vfo(0, ferrite_core::freq::mhz(100) + 50_000);
     t.wait(100);
-    has(&status(&mut t, 10), "FM 100.5 on A");
+    has(&status(&mut t, 10), "WFM 100.5 on A");
     t.dev.clock_min = None;
     has(&status(&mut t, 11), "Not set");
     t.dev.battery_low = true;

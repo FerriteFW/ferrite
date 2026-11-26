@@ -2391,6 +2391,9 @@ impl<N: Nor, D: Data> Data for FlashStore<N, D> {
     fn beacon(&self) -> Beacon {
         self.extra.beacon()
     }
+    fn traffic(&self) -> Option<&ferrite_app::aprs_traffic::Traffic> {
+        self.extra.traffic()
+    }
     fn beacons_sent(&self) -> u16 {
         self.extra.beacons_sent()
     }

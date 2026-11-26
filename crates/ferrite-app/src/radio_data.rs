@@ -122,6 +122,10 @@ impl Data for RadioData {
         self.aprs.beacon(&self.cfg.get())
     }
 
+    fn traffic(&self) -> Option<&crate::aprs_traffic::Traffic> {
+        Some(self.aprs.traffic())
+    }
+
     fn beacons_sent(&self) -> u16 {
         self.aprs.beacons_sent()
     }

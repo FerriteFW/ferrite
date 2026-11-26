@@ -272,6 +272,11 @@ impl Radio {
         self.live.rx_asleep = self.save.asleep();
     }
 
+    /// SQL-12.4: the slots whose level is read: the active one, the watched ones, and any a chip is tuned to now.
+    pub(super) fn listened_slots(&self) -> u8 {
+        ferrite_core::watch::listened(self.watch_set, self.active, &self.tuned.map(|t| t.map(|(s, _)| s)))
+    }
+
     /// The kept slots that are listened to (decision 111): their chip stays awake beside the hop's, and through
     /// Battery Save's sleep.
     pub(super) fn kept(&self) -> u8 {

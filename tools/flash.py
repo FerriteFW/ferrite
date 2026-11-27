@@ -239,6 +239,16 @@ def check_sha256(path, data):
     return []
 
 
+def icons_note(img, icons, ipath):
+    """What the menu tiles will be after a stock image (BACKUP-12.3): the image's own when it covers them with tiles
+    (Radtel's ICON firmware), else the icons file or backup's, else none (Nov 26, 2026: an ICON firmware was
+    reported as "none")."""
+    tiles = img[btf.ICONS_OFF:btf.ICONS_OFF + btf.ICONS_LEN]
+    if len(img) >= btf.ICONS_OFF + btf.ICONS_LEN and btf.icons_plausible(tiles):
+        return "in the image itself (an ICON firmware)"
+    return f"from {ipath}" if icons else "none: the tiles stay blank (BACKUP-12.3)"
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("port", help="the programming cable: a device, a radio's name (radios.toml) or auto ('-' with --dry-run)")
@@ -319,11 +329,12 @@ def main():
             icons, ipath = fb_icons, a.backup
         if icons is not None and not btf.icons_plausible(icons):
             sys.exit(f"{ipath}: not stock's menu icons ({btf.ICONS_LEN} bytes of tiles expected)")
+        note = icons_note(img, icons, ipath)
         img = btf.stock_restore_image(img, marker, icons)
         is_btf = False                         # repacked with the zero key below
         print(f"stock image padded through 0x{btf.MARKER_ADDR + btf.MARKER_PAGE - 1:08X}; marker sector: "
               f"{btf.marker_describe(marker)}{f' ({mpath})' if marker is not None else ''}; menu icons: "
-              f"{f'from {ipath}' if icons else 'none: the tiles stay blank (BACKUP-12.3)'}")
+              f"{note}")
     if a.ssb_from:
         import hashlib
         import ssbpatch

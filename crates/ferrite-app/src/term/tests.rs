@@ -607,11 +607,13 @@ fn frequencies() {
 /// a typed value as long as an APRS message (67 characters, TERM-49) 44 more. Bench builds 32 more: their debug
 /// commands' kinds (a memory read's address and length, 20 bytes) and `bk dump`'s row of eight registers (16), less
 /// 4 of padding (never counted: the release CI's bench test run would have failed, found Nov 4, 2026).
+/// 0.9.8's bench jobs (`dac`'s tone, `fsk`'s framing options, `lcd`'s hardware readback) 16 more (found by the
+/// release CI's bench run, Nov 26, 2026).
 #[test]
 fn small() {
     let n = core::mem::size_of::<Term>();
     std::eprintln!("Term is {n} bytes");
-    let bench = if cfg!(feature = "bench") { 32 } else { 0 };
+    let bench = if cfg!(feature = "bench") { 48 } else { 0 };
     assert!(n <= 512 + 256 + 112 + 304 + 16 + 375 + 64 + 16 + 44 + bench, "Term is {n} bytes");
 }
 

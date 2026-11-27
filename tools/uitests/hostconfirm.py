@@ -122,7 +122,7 @@ def installed_image_matches_its_btf(t):
 BUILT = {fl.HELLO, fl.INFO, fl.AUTH, fl.READ, fl.WRITE, fl.DELETE, fl.BEGIN, fl.END, fl.SLOT, fl.BAUD, fl.REBOOT,
          fl.KEY, fl.CMD, fl.MORE, fl.UI, fl.USED, fl.READ_MANY, fl.WRITE_MANY, fl.LOG_READ,
          fl.SUBSCRIBE, fl.HEARD, fl.MSGS, fl.MSG_SEND, fl.MSG_STOP, fl.MSG_DELETE, fl.AUDIO, fl.STREAM, fl.Z,
-         0x60, fl.DATA_READ, fl.DATA_WRITE, fl.CLOCK, fl.STATE, fl.TUNE, fl.BEACON, fl.PHONE_POS}
+         0x60, fl.DATA_READ, fl.DATA_WRITE, fl.CLOCK, fl.STATE, fl.TUNE, fl.BEACON, fl.PHONE_POS, fl.SSB_WRITE}
 # EVENT (0x51): radio to PC only. 0x60 STOCK_RESTORE (decision 261): calibration and the update area are refused by
 # ferrite_core::restore::allowed (host-tested), and it is cable only (refused here). DATA_READ and DATA_WRITE (LINK-59,
 # LINK-60, decision 333): calibration and the update area refused by ferrite_core::link::data::allowed, checked below.
@@ -130,6 +130,8 @@ BUILT = {fl.HELLO, fl.INFO, fl.AUTH, fl.READ, fl.WRITE, fl.DELETE, fl.BEGIN, fl.
 # BEACON (LINK-69): the APRS task's beacon now, as the radio's own; it writes nothing.
 # PHONE_POS (LINK-72): the phone's position, kept in RAM for GPS-3.1; it writes nothing.
 # CLOCK (LINK-65, decision 340): the clock only, never a store write.
+# SSB_WRITE (LINK-73, decision 457): the SI4732's SSB patch into its own region (HF-18) only, and only the known stock
+# patch's hash; never calibration or the update area.
 
 
 @test("LINK-3", "SAFE-5", "TERM-8", pages=("Home",))

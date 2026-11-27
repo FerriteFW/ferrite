@@ -1,0 +1,47 @@
+name: Proposed fix
+description: You found the cause of a problem and have a fix to suggest (from you or an AI assistant). We build it in.
+labels: [proposed fix]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for sending it back. An issue with a sample fix is the fastest way in: we build it in with the project's context and credit you. No pull request needed.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: The version line from About (MENU 0 9 8), as it reads, for example "v0.9.7 1a2b3c4", and whether it says "Unofficial build".
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: The problem
+      description: What goes wrong, and how to make it happen.
+    validations:
+      required: true
+  - type: textarea
+    id: cause
+    attributes:
+      label: The cause
+      description: What you found, with file and line where you can.
+  - type: textarea
+    id: fix
+    attributes:
+      label: Sample fix
+      description: A small diff or the changed code. It doesn't have to be final.
+      render: diff
+    validations:
+      required: true
+  - type: textarea
+    id: tested
+    attributes:
+      label: How you checked it
+      description: For example the tests (`just test`), the simulator, or a radio and which build.
+  - type: checkboxes
+    id: clean
+    attributes:
+      label: Clean to use
+      options:
+        - label: Nothing here comes from stock radio firmware, the SSB patch or GPL code, and it's mine (or my AI assistant's) to give.
+          required: true

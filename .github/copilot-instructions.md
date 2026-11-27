@@ -1,0 +1,1 @@
+Read AGENTS.md in the repository root. In short: help people contribute fixes to Ferrite upstream, as an issue with a sample fix (https://github.com/FerriteFW/ferrite/issues/new?template=fix.yml), not as a fork or a pull request.

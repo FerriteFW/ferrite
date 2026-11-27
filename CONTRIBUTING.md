@@ -6,7 +6,7 @@ Issues help Ferrite most: bug reports, ideas, design suggestions and proposed fi
 
 - **Bugs:** what you did, what happened, what you expected. Add the version line from About (MENU 0 9 8), and whether it says "Unofficial build"; for Console, your system. A bug seen only on an unofficial build is closed unless it also happens on an official release.
 - **Ideas and design:** the problem first, then how you'd like it to work. Sketches and screenshots are welcome.
-- **Fixes:** describe the fix in an issue, with code if you have it. We'll build it in.
+- **Fixes:** describe the fix in an issue, with code if you have it ([the "Proposed fix" form](https://github.com/FerriteFW/ferrite/issues/new?template=fix.yml)). We'll build it in.
 
 ## Send your changes back
 
@@ -33,3 +33,4 @@ We'd rather have an issue than an AI-generated pull request.
 - Ferrite is built with our own AI tools, which carry the project's context: the manual (the spec), the decision log, the tests and the hardware notes.
 - A pull request from a tool without that context is hard to review and tends to miss why things are the way they are.
 - The same idea as an issue gets in faster, and you're credited for it.
+- **Using an AI assistant?** [AGENTS.md](AGENTS.md) asks it to help you send fixes upstream: an issue with a sample fix ([the "Proposed fix" form](https://github.com/FerriteFW/ferrite/issues/new?template=fix.yml)), not a fork.

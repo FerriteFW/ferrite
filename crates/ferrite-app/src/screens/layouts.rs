@@ -172,13 +172,15 @@ pub fn single(app: &mut App, lcd: &mut impl Panel, cx: &Cx<impl ChannelStore>) {
         }
     }
     if !dbm {
-        let old = app.drawn.meter[a as usize].filter(|&(_, o)| o == on).map(|(l, _)| l);
-        if app.drawn.meter[a as usize] != Some((lit, on)) {
+        // the held peak above the bar (none on a broadcast's signal)
+        let peak = if bcast { 0 } else { app.meter_peak(a, live, lit) };
+        let old = app.drawn.meter[a as usize].filter(|&(_, o, _)| o == on).map(|(l, _, k)| (l, k));
+        if app.drawn.meter[a as usize] != Some((lit, on, peak)) {
             if old.is_none() {
                 canvas::banded(lcd, 8, 166, 226, 4, BG, |_| {}); // what the dBm number left above the bars
             }
-            w::meter(lcd, 8, 170, old, lit, col, BG);
-            app.drawn.meter[a as usize] = Some((lit, on));
+            w::meter_peak(lcd, 8, 170, old, (lit, peak), col, BG);
+            app.drawn.meter[a as usize] = Some((lit, on, peak));
         }
         let s = if bcast { Buf::new() } else { w::s_text(lv.rssi) };
         if app.dirty(9, Mix::new().h(&s).h(&bcast).get()) {

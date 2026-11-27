@@ -99,6 +99,126 @@ pub(crate) fn card_kind(app: &App, s: u8) -> u8 {
     }
 }
 
+/// How long the S-meter holds a peak after the signal falls back from it.
+pub(crate) const PEAK_HOLD_MS: u32 = 2_000;
+/// How long a new signal's readings are left out of the peak: the Radio task reads the level, then retunes (a scan's
+/// step, a turn of the knob) and publishes both together, so the first snapshots on a new frequency or channel can
+/// still carry the old one's level and squelch. Four of its 50 ms polls; a scan's 70 ms steps never settle, a scan
+/// held on a hit does.
+const PEAK_SETTLE_MS: u32 = 200;
+
+/// What the active slot is on, for the held peak: a change lets the peak go.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MeterOn {
+    Vfo,
+    /// A memory channel, by its number.
+    Channel(u16),
+    /// A scan's step, by its position in the scan's list (`SlotLive::chan`, 1-based; 0 a VFO range step).
+    ScanStep(u16),
+}
+
+/// The signal a held peak belongs to: the slot, the frequency it shows and what it is on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct MeterSource {
+    slot: u8,
+    freq: Freq10,
+    on: MeterOn,
+}
+
+/// The S-meter's held peak: the active slot's bars on home, watch and single layouts (not the activity layout, the
+/// dBm number, a broadcast, APRS or off slot's card). The highest level the open squelch showed stays marked above
+/// the live bar until [`PEAK_HOLD_MS`] pass without the level reaching it again (a level as high renews the hold, a
+/// higher one takes over); then it goes, and the next peak starts from the level then (lower ones in between
+/// aren't kept). A new signal's first [`PEAK_SETTLE_MS`] make none. A [`MeterSource`] laid out flat, 16 bytes.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MeterPeak {
+    /// The slot it is held for, [`MeterPeak::NO_SLOT`] for none; what that slot is on and the frequency it shows.
+    slot: u8,
+    /// Segments, as [`w::meter_level`] gives (0: none).
+    level: u8,
+    on: MeterOn,
+    freq: Freq10,
+    /// When it was last reached; with no level, when its signal took over (or, settled, [`PEAK_SETTLE_MS`] before the
+    /// last one ran out) (ms, the App's clock).
+    at: u32,
+}
+
+impl MeterPeak {
+    const NO_SLOT: u8 = 0xFF;
+    pub(crate) const NONE: MeterPeak = MeterPeak { slot: Self::NO_SLOT, level: 0, on: MeterOn::Vfo, freq: 0, at: 0 };
+
+    fn source(&self) -> Option<MeterSource> {
+        (self.slot != Self::NO_SLOT).then_some(MeterSource { slot: self.slot, freq: self.freq, on: self.on })
+    }
+
+    /// Held for `source`, which took over at `now`: none reached yet, settling.
+    fn new(source: Option<MeterSource>, now: u32) -> Self {
+        match source {
+            Some(src) => MeterPeak { slot: src.slot, level: 0, on: src.on, freq: src.freq, at: now },
+            None => MeterPeak { at: now, ..Self::NONE },
+        }
+    }
+}
+
+impl App {
+    /// The signal the meter's peak is held for now, or None where the meter holds none.
+    fn meter_source(&self, live: &LiveAll) -> Option<MeterSource> {
+        let s = self.active;
+        let lv = &live.slots[s as usize];
+        let freq = self.shown_freq(s, live);
+        if self.screen != Screen::Home || self.home_layout() > 1 || self.set.smeter_dbm || card_kind(self, s) != 0 {
+            return None;
+        }
+        // keyed, waiting for the other band relay (WATCH-11), or a retune the radio hasn't confirmed yet
+        if live.tx.keyed || self.radio.keyed.is_some() || lv.relay || lv.freq == 0 || lv.freq != freq {
+            return None;
+        }
+        let slot = self.slot(s);
+        let on = match slot.ch.filter(|_| slot.on_channel()) {
+            _ if lv.scanning => MeterOn::ScanStep(lv.chan),
+            Some(c) => MeterOn::Channel(c.num),
+            None => MeterOn::Vfo,
+        };
+        Some(MeterSource { slot: s, freq, on })
+    }
+
+    /// The held peak, each tick: let go when its signal changed or its hold ran out, then raised (or renewed) by
+    /// the level now. Only a level the open squelch shows counts (the closed meter is empty, SQL-12.4), so noise
+    /// under the threshold never leaves a mark; a receiver asleep (Battery Save) adds nothing either, nor does a new
+    /// signal until it has settled ([`PEAK_SETTLE_MS`]). A hold running out on the same signal leaves it settled, so
+    /// a burst right then is taken.
+    pub(crate) fn meter_peak_tick(&mut self, now: u32, live: &LiveAll) {
+        let source = self.meter_source(live);
+        let p = &mut self.meter_peak;
+        if p.source() != source {
+            *p = MeterPeak::new(source, now);
+        } else if now.wrapping_sub(p.at) >= PEAK_HOLD_MS {
+            (p.level, p.at) = (0, now.wrapping_sub(PEAK_SETTLE_MS));
+        }
+        let Some(src) = source else { return };
+        let lv = &live.slots[src.slot as usize];
+        if live.rx_asleep || !lv.squelch_open || p.level == 0 && now.wrapping_sub(p.at) < PEAK_SETTLE_MS {
+            return;
+        }
+        let level = w::meter_level(lv.rssi);
+        if level > 0 && level >= p.level {
+            (p.level, p.at) = (level, now);
+        }
+    }
+
+    /// The peak to mark on slot `s`'s meter showing `lit` segments: the held one while it is above the bar, its
+    /// hold hasn't run out and it is this slot's signal still; 0 none.
+    pub(crate) fn meter_peak(&self, s: u8, live: &LiveAll, lit: u8) -> u8 {
+        let p = &self.meter_peak;
+        let held = p.slot == s && p.level > lit && self.now.wrapping_sub(p.at) < PEAK_HOLD_MS;
+        if held && p.source() == self.meter_source(live) {
+            p.level
+        } else {
+            0
+        }
+    }
+}
+
 /// BCR-26: a slot in the broadcast band: the frequency with the stereo pilot and SNR, the RDS text (the radio text
 /// whole, wrapped on the large card; else the station name) and the signal. A slot in the band while another has
 /// the broadcast says where it plays instead (BCR-22).
@@ -173,10 +293,10 @@ fn bcast_card(app: &mut App, lcd: &mut impl Panel, live: &LiveAll, s: u8, y: i32
         }
         // The signal: the FM screen's scale, green while it plays.
         let lit = (rssi as u32 * w::METER_SEGS as u32 / 70).min(w::METER_SEGS as u32) as u8;
-        let old = app.drawn.meter[p].filter(|&(_, o)| o == heard).map(|(l, _)| l);
-        if app.drawn.meter[p] != Some((lit, heard)) {
+        let old = app.drawn.meter[p].filter(|&(_, o, k)| o == heard && k == 0).map(|(l, _, _)| l);
+        if app.drawn.meter[p] != Some((lit, heard, 0)) {
             w::meter(lcd, 14, y + 109, old, lit, if heard { GREEN } else { DIM }, SURFACE);
-            app.drawn.meter[p] = Some((lit, heard));
+            app.drawn.meter[p] = Some((lit, heard, 0));
         }
     } else {
         app.drawn.meter[p] = None;
@@ -1012,14 +1132,15 @@ fn draw_card(app: &mut App, lcd: &mut canvas::Band, cx: &Cx<impl ChannelStore>, 
                 w::field(lcd, 212, 21, y + 103, y + 120, y + 117, st.as_bytes(), const { &w::st(&UI_12B, TEXT, SURFACE, Align::Right) });
             }
         }
-        // S-meter: only the segments that changed (HOME-6, HOME-7).
+        // S-meter: only the segments that changed (HOME-6, HOME-7), with the held peak above the bar.
         if !dbm {
             let lit = w::meter_level(lv.rssi);
+            let peak = app.meter_peak(s, live, lit);
             let col = if lv.squelch_open { GREEN } else { DIM };
-            let old = app.drawn.meter[p].filter(|&(_, o)| o == lv.squelch_open).map(|(l, _)| l);
-            if app.drawn.meter[p] != Some((lit, lv.squelch_open)) {
-                w::meter(lcd, 14, y + 109, old, lit, col, SURFACE);
-                app.drawn.meter[p] = Some((lit, lv.squelch_open));
+            let old = app.drawn.meter[p].filter(|&(_, o, _)| o == lv.squelch_open).map(|(l, _, k)| (l, k));
+            if app.drawn.meter[p] != Some((lit, lv.squelch_open, peak)) {
+                w::meter_peak(lcd, 14, y + 109, old, (lit, peak), col, SURFACE);
+                app.drawn.meter[p] = Some((lit, lv.squelch_open, peak));
             }
         }
     } else {

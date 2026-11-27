@@ -262,8 +262,8 @@ pub(crate) struct Drawn {
     pub sbar: Option<ferrite_ui::widgets::StatusBar>,
     /// One hash per region; 0 = not drawn.
     pub hash: [u32; REGIONS],
-    /// Each card's meter: lit segments and whether squelch was open.
-    pub meter: [Option<(u8, bool)>; SLOTS],
+    /// Each card's meter: lit segments, whether squelch was open, and the held peak marked (0: none).
+    pub meter: [Option<(u8, bool, u8)>; SLOTS],
     /// Each home card's geometry (slot, place, size, APRS) as last drawn: a change of border colour alone then
     /// redraws only the border, not the whole card (DISP-25).
     pub card: [u32; SLOTS],
@@ -471,6 +471,8 @@ pub struct App {
     /// The zones page's Nearby row (CHAN-29): the nearest positioned channel, found again only when the fix moved
     /// about 100 m or the channels changed. 12 bytes.
     pub(crate) near: screens::zones::NearCache,
+    /// The S-meter's held peak ([`screens::home::MeterPeak`]).
+    meter_peak: screens::home::MeterPeak,
     /// The Nearby view's rows (CHAN-15).
     pub(crate) near_list: screens::zones::NearList,
     /// The channel browser's header count and what it was counted for (0: none yet).
@@ -596,6 +598,7 @@ impl App {
             contact_call: Buf::new(),
             back: [None; BACK_DEPTH],
             near: screens::zones::NearCache::NONE,
+            meter_peak: screens::home::MeterPeak::NONE,
             near_list: screens::zones::NearList::NONE,
             view_count: (0, 0),
             band_counts: (0, [0; 5]),
@@ -1437,6 +1440,7 @@ impl App {
         chanscan::answer(self, live, store);
         self.lights_tick(now, live);
         self.lpm_tick(); // PWR-24
+        self.meter_peak_tick(now, live);
         let mut rx = 0;
         let mut scan = 0;
         let mut relay = 0;

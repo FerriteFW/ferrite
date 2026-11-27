@@ -170,8 +170,9 @@ fn ram_is_small() {
     // the beacon mode to put back when 0 5 3 leaves Tracker (APRS-29.2: 2 bytes), 8 with padding, to 2232;
     // the end of the satellite screen's keep-lit window (SAT-24: 4 bytes), 8 with padding, to 2240; Pager mode's
     // (DEC-20, DEC-22: the APRS mode to put back, the unread pages, the pages since power-on and the newest one's
-    // capcode and time, 15 bytes), 16 with padding, to 2256
-    assert!(n <= 2256, "App is {n} bytes");
+    // capcode and time, 15 bytes), 16 with padding, to 2256; the S-meter's held peak (16 bytes) and the peak marked
+    // in each card's meter cache (3), 24 with padding, to 2280
+    assert!(n <= 2280, "App is {n} bytes");
     let s = core::mem::size_of::<crate::settings::Settings>();
     std::println!("Settings: {s} bytes");
     assert!(s <= 512, "Settings is {s} bytes");

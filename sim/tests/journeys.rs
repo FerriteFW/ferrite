@@ -450,7 +450,7 @@ fn pager_card_ok_and_ptt_open_pages() {
         r.press(Key::Slot).wait(300);
     }
     r.expect_text("OK Pages");
-    r.run("press OK; expect text \"Pager slot\"; press OK; expect screen \"Event log\"; expect text \"STN 4\"");
+    r.run("press OK; expect text \"Pager slot\"; press OK; expect screen \"Event log\"; expect text \"NET TONIGHT\"");
     r.run("home; wait 500ms");
     r.run("down PTT; wait 300ms; expect screen \"Event log\"; up PTT");
     assert!(!r.sim.radio().live.tx.keyed, "no key-up on the pager slot");

@@ -504,7 +504,7 @@ impl FakeRadio {
     pub fn take_page(&mut self, wanted: bool) -> Option<ferrite_core::decoders::Page> {
         use ferrite_core::decoders::{Page, PAGE_TEXT};
         const PAGES: [(u32, u16, u8, &[u8]); 3] =
-            [(1_234_567, 1200, 3, b"STN 4 RESPOND MVC HWY 417 EB AT KM 120"), (1_234_570, 512, 0, b"5551234"), (1_234_571, 2400, 2, b"")];
+            [(1_234_567, 1200, 3, b"NET TONIGHT 1930 ON 146.520 ALL WELCOME"), (1_234_570, 512, 0, b"5551234"), (1_234_571, 2400, 2, b"")];
         if !wanted {
             self.paged_at = self.now;
             return None;

@@ -122,7 +122,7 @@ const STATIONS: [StationRow; 11] = [
 type EventRow = (Src, u32, Freq10, u8, bool, u32, u16, u16, Option<Pos>, &'static str, &'static str);
 const EVENTS: [EventRow; 6] = [
     (Src::Aprs, 120, mhz(144) + 39_000, 2, true, 0, 0, 0, None, "VE3KPW-9", "On my way"),
-    (Src::Pocsag, 380, mhz(439) + 98_750, 2, true, 1_234_567, 1200, 3, None, "", "STN 4 RESPOND MVC HWY 417 EB AT KM 120"),
+    (Src::Pocsag, 380, mhz(439) + 98_750, 2, true, 1_234_567, 1200, 3, None, "", "NET TONIGHT 1930 ON 146.520 ALL WELCOME"),
     (Src::Same, 840, mhz(162) + 55_000, 2, true, 0, 0, 0, None, "", "ZCZC-WXR-SVR-035001-035003+0045-2761410-KOTT/NWS-"),
     (Src::Pocsag, 2820, mhz(439) + 98_750, 2, false, 1_234_571, 1200, 0, None, "", "MEETING MOVED TO 1930"),
     (Src::Aprs, 4800, mhz(144) + 39_000, 2, false, 0, 0, 0, None, "VA3RTX", "Net at 8 tonight?"),

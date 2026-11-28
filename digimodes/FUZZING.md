@@ -27,6 +27,7 @@ The fuzz targets live in `ferrite/fuzz/`, a workspace of its own. They are not p
 
 - `tools/fuzz.sh seeds` rebuilds the corpora (the first run does it on its own).
 - They come from the TNC2 test packets: `digimodes/uaprs/tests/spec_packets.txt`, and when present the test data's `aprs/*.hex` (the WA8LMF CD and the APRS suite) and `fx25/msgs.txt`.
+- ACARS's come from the sample traffic (`ferrite_app::acars::sample`) and, when present, the test data's `acars/*.wav` in 3 s windows at their own rate.
 - The test data: `TESTDATA` if set, else `../testdata-private` if present, else `../testdata` (the public FerriteFW/testdata; its `fetch/all.sh` adds the WA8LMF CD).
 - `fuzz/src/bin/seeds.rs` turns each packet into every target's format: AX.25 bytes, KISS, HDLC bits, FX.25 blocks and bit streams, and AFSK audio at 24 kHz.
 
@@ -42,6 +43,9 @@ The fuzz targets live in `ferrite/fuzz/`, a workspace of its own. They are not p
 | `hdlc_bits` | the HDLC deframer bit by bit, plain and with soft-decision repair |
 | `afsk_audio` | the radio's AFSK decoder (`ferrite_core::decoders`, 24 kHz) on any audio, FX.25 blocks corrected |
 | `aprs_live` | `AprsLive::receive` and `tick`: the radio's whole receive path, digipeater on |
+| `acars` | ACARS frames through `ferrite_core::acars::parse` and the RAM log (copies, joined blocks, the text pool) |
+| `acars_audio` | the ACARS receiver (`ferrite_core::acarsrx`) on any audio at 12 to 48 kHz, in blocks; every frame it gives into the screen |
+| `acars_screen` | the ACARS screen: frames heard (raw, or built with a good CRC), keys, the knob, time, the radio's state, `*` and `#`; every message's page drawn |
 
 ## A crash
 
@@ -50,3 +54,5 @@ The fuzz targets live in `ferrite/fuzz/`, a workspace of its own. They are not p
 3. Add a unit test with the input (or a hand-written packet showing the same thing) next to the code. Its doc comment says fuzzing found it.
 
 Builds run with debug assertions and overflow checks, so an overflow that would wrap silently on the radio still shows up.
+
+A stack overflow (unbounded recursion) aborts the host test process instead of failing one case: the radio reboots on the same input. `acars_screen` found one (Nov 27, 2026): `*` on with no message to show made the list draw itself again for ever (`fuzz/regress/acars_screen/`).

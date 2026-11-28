@@ -13,12 +13,12 @@ set -eu
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 OUT="$ROOT/target/fuzz"
-TARGETS="aprs_parse ax25_frame kiss fx25_block fx25_bits hdlc_bits afsk_audio aprs_live acars"
+TARGETS="aprs_parse ax25_frame kiss fx25_block fx25_bits hdlc_bits afsk_audio aprs_live acars acars_audio acars_screen"
 TESTDATA=$(tools/testdata.sh) # TESTDATA, ../testdata-private or ../testdata
 
 seeds() {
     set -- "$ROOT/digimodes/uaprs/tests/spec_packets.txt"
-    for f in "$TESTDATA"/aprs/*.hex "$TESTDATA"/fx25/msgs.txt; do
+    for f in "$TESTDATA"/aprs/*.hex "$TESTDATA"/fx25/msgs.txt "$TESTDATA"/acars/*.wav; do
         [ -f "$f" ] && set -- "$@" "$f"
     done
     (cd fuzz && CARGO_TARGET_DIR="$OUT" cargo run -q --release --bin seeds -- "$OUT/corpus" "$@")
@@ -44,6 +44,7 @@ for t in $TARGETS; do
     # an AFSK frame at 24 kHz takes 40 bytes of input a bit
     max=8192
     [ "$t" = afsk_audio ] && max=65536
+    [ "$t" = acars_audio ] && max=262144 # 5 s at 24 kHz: a burst is about half a second
     mkdir -p "$OUT/corpus/$t"
     echo "fuzz $t: ${SECONDS_EACH}s, $JOBS jobs"
     if ! cargo fuzz run --target-dir "$OUT" "$t" "$OUT/corpus/$t" -- \

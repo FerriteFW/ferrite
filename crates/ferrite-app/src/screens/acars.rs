@@ -466,13 +466,17 @@ impl View for Acars {
         } else {
             now_s / 60
         };
-        // ACARS-4.2: a selection on a message the filter hides (the list moved under it) goes to the next shown
+        // ACARS-4.2: a selection on a message the filter hides (the list moved under it) goes to the next shown;
+        // with none shown it stays (the empty page): stepping again drew again for ever, and the stack overflowed
         if !self.detail && app.set.acars_text {
             let (n, k) = (count(st), kept(st, true));
             if self.cur.sel < n && !k(self.cur.sel) {
-                let me = Acars { cur: self.cur.step(1, n, self.rows(), &k), ..self };
-                app.screen = Screen::Acars(me);
-                return me.render(app, lcd, cx);
+                let cur = self.cur.step(1, n, self.rows(), &k);
+                if k(cur.sel) {
+                    let me = Acars { cur, ..self };
+                    app.screen = Screen::Acars(me);
+                    return me.render(app, lcd, cx);
+                }
             }
         }
         // the header's radio state (ACARS-3) redraws as it changes

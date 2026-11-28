@@ -69,6 +69,7 @@ impl ferrite_radio::Hw for Radio {
         let e = self.tx.end[self.tx.slot as usize % 4];
         let t = tonegen::END_TONES.get(e as usize).copied().unwrap_or(&[]);
         self.play_keyed(t.iter().copied()).await;
+        self.tx.end_heard = e; // TONE-8.1: heard here too, once the unkey is done
     }
     #[cfg(feature = "tx")]
     async fn cw_id(&mut self) {

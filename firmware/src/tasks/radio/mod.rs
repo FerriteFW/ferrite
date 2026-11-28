@@ -511,6 +511,8 @@ struct Tx {
     /// Each slot's end tone (TONE-10: an index into `tonegen::END_TONES`, 0 off) and transmit tail elimination
     /// (TONE-5), the channel's over the radio's as the UI resolved them; the slot keyed now (index 3: HF mode).
     end: [u8; 4],
+    /// TONE-8.1 (ferrite#296): the end tone just sent on air, to play on the radio's own speaker after the unkey (0 none).
+    end_heard: u8,
     tail: [bool; 4],
     slot: u8,
     /// 0 8 8 3's phase (0 55 Hz, 1-3 the CTCSS phase shifts), 0 8 6 2's CW ID (0 off, 1 every 10 min, 2 on unkey)
@@ -915,6 +917,7 @@ pub async fn task() {
             reg3b: [0; 2],
             adc: false,
             end: [0; 4],
+            end_heard: 0,
             tail: [false; 4],
             slot: 0,
             phase: 0,

@@ -111,6 +111,7 @@ impl Radio {
                 self.watcher.after_tx(now_ms() as u32); // APRS-21.4: listen for its digipeat or ack
             }
             self.unkeyed();
+            self.end_tone_heard().await;
             return;
         }
         if let Some(c) = crate::chan::TX_CAL.try_take() {
@@ -443,6 +444,20 @@ impl Radio {
             Timer::after_millis(ms as u64).await;
         }
         radio_chip::tones_end(&mut self.chip(n));
+    }
+
+    /// TONE-8.1 (ferrite#296): the end tone just sent on air, played again on the radio's own speaker once the
+    /// unkey is done, as stock's release beep is heard: each step through the local beep (SND-11, the MCU's DAC; a
+    /// signal already playing skips it, SND-13), silences as waits.
+    pub(super) async fn end_tone_heard(&mut self) {
+        let e = core::mem::take(&mut self.tx.end_heard);
+        for &(hz, ms) in tonegen::END_TONES.get(e as usize).copied().unwrap_or(&[]) {
+            if hz == 0 {
+                Timer::after_millis(ms as u64).await;
+            } else {
+                self.beep(hz, ms).await;
+            }
+        }
     }
 
     /// After any unkey: the chips back to their slots on the next tick, the UI told.

@@ -28,7 +28,7 @@ checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
 
 [[package]]
 name = "ferrite-app"
-version = "0.9.5"
+version = "0.9.8"
 dependencies = [
  "ferrite-core",
  "ferrite-ui",
@@ -38,7 +38,7 @@ dependencies = [
 
 [[package]]
 name = "ferrite-core"
-version = "0.9.5"
+version = "0.9.8"
 dependencies = [
  "uafsk",
  "udsc",
@@ -53,6 +53,7 @@ version = "0.0.0"
 dependencies = [
  "ferrite-app",
  "ferrite-core",
+ "ferrite-ui",
  "libfuzzer-sys",
  "uafsk",
  "uaprs",
@@ -61,7 +62,7 @@ dependencies = [
 
 [[package]]
 name = "ferrite-ui"
-version = "0.9.5"
+version = "0.9.8"
 dependencies = [
  "ferrite-core",
  "ufmt",

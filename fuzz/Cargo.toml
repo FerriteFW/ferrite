@@ -20,6 +20,7 @@ ufx25 = { path = "../digimodes/ufx25" }
 uafsk = { path = "../digimodes/uafsk" }
 ferrite-core = { path = "../crates/ferrite-core" }
 ferrite-app = { path = "../crates/ferrite-app" }
+ferrite-ui = { path = "../crates/ferrite-ui", features = ["std"] }
 
 [profile.release]
 debug = 1
@@ -83,6 +84,20 @@ bench = false
 [[bin]]
 name = "acars"
 path = "fuzz_targets/acars.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "acars_audio"
+path = "fuzz_targets/acars_audio.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "acars_screen"
+path = "fuzz_targets/acars_screen.rs"
 test = false
 doc = false
 bench = false

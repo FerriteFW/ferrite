@@ -59,6 +59,28 @@ fn audio(samples: impl Iterator<Item = i16>) -> Vec<u8> {
     samples.flat_map(|s| s.to_le_bytes()).collect()
 }
 
+/// A 16-bit mono WAV's samples and rate.
+fn wav(path: &Path) -> Option<(Vec<i16>, u32)> {
+    let b = fs::read(path).ok()?;
+    let (mut i, mut rate) = (12, 0);
+    while i + 8 <= b.len() {
+        let n = u32::from_le_bytes(b[i + 4..i + 8].try_into().ok()?) as usize;
+        let body = b.get(i + 8..(i + 8 + n).min(b.len()))?;
+        match &b[i..i + 4] {
+            b"fmt " if body.len() >= 16 => {
+                if u16::from_le_bytes([body[2], body[3]]) != 1 || u16::from_le_bytes([body[14], body[15]]) != 16 {
+                    return None;
+                }
+                rate = u32::from_le_bytes(body[4..8].try_into().ok()?);
+            }
+            b"data" => return Some((body.chunks_exact(2).map(|c| i16::from_le_bytes([c[0], c[1]])).collect(), rate)),
+            _ => {}
+        }
+        i += 8 + n + (n & 1);
+    }
+    None
+}
+
 struct Out(PathBuf);
 
 impl Out {
@@ -74,6 +96,7 @@ fn main() {
     let out = Out(PathBuf::from(args.next().expect("usage: seeds OUT_DIR TNC2_FILE...")));
     let tx = TxConfig { rate_hz: ferrite_core::decoders::RATE_HZ, preamble: 4, postamble: 2, amp: 12000 };
     let mut frames = Vec::new();
+    let (wavs, args): (Vec<String>, Vec<String>) = args.partition(|f| f.ends_with(".wav"));
     for file in args {
         for (i, line) in lines(Path::new(&file)).into_iter().enumerate() {
             let stem = Path::new(&file).file_stem().unwrap().to_string_lossy().into_owned();
@@ -132,5 +155,34 @@ fn main() {
         all.extend_from_slice(&b[..n]);
     }
     out.put("acars", "samples", &all);
+    // the ACARS screen: the sample frames heard one by one, a key and a few seconds between; and with * on, a link
+    // test (no text) heard on an empty list
+    for flags in 0..8u8 {
+        let mut v = vec![flags];
+        for (k, (_, f, _)) in ferrite_app::acars::sample::FRAMES.iter().enumerate() {
+            let mut b = [0u8; 256];
+            let n = ferrite_core::acars::encode(f, &mut b);
+            v.extend([0, (n - 1) as u8]);
+            v.extend_from_slice(&b[..n - 1]);
+            v.extend([2, k as u8, 4, 30]);
+        }
+        out.put("acars_screen", &format!("samples-{flags}"), &v);
+    }
+    // ACARS audio: the recordings (`acars/*.wav`), 3 s windows at their own rate
+    for file in wavs {
+        let Some((x, rate)) = wav(Path::new(&file)) else { continue };
+        let cfg = match rate {
+            12_000 => 1,
+            16_000 => 2,
+            48_000 => 3,
+            _ => 0,
+        };
+        let stem = Path::new(&file).file_stem().unwrap().to_string_lossy().into_owned();
+        for (k, w) in x.chunks(rate as usize * 3).enumerate() {
+            let mut v = vec![cfg | (k as u8 % 16) << 2];
+            v.extend(audio(w.iter().copied()));
+            out.put("acars_audio", &format!("{stem}-{k:03}"), &v);
+        }
+    }
     println!("{} frames", frames.len());
 }

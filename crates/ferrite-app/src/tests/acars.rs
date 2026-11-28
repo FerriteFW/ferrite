@@ -330,3 +330,32 @@ fn a_data_report_shows_its_kind_not_its_hex() {
     a.render();
     assert_ne!(a.acars().cur.sel, 0, "hidden under *: {}", a.line());
 }
+
+/// ACARS-4.2, the reboot receiving ACARS (Nov 27, 2026): with * on and no message with text (an empty list, then
+/// link tests, acks or data reports heard) the list showed its empty page; before, the render stepped the
+/// selection off the hidden message, found none to step to and drew again, for ever (the stack overflowed).
+#[test]
+fn star_with_no_message_to_show() {
+    use ferrite_core::acars::{encode, Fields, NAK};
+    let mut a = A::new();
+    a.s.acars().unwrap().clear();
+    a.app.open(crate::screens::nav::Dest::Acars);
+    a.tap(Key::Star);
+    assert!(a.app.set.acars_text);
+    a.render();
+    let mut b = [0u8; 300];
+    // a link test (no text), then an ADS-C report (data, not words): neither is shown under *
+    let link = Fields { mode: b'2', reg: b"C-FJZS", ack: NAK, label: *b"Q0", block: b'1', ..Default::default() };
+    let ads = Fields { mode: b'2', reg: b"C-FTJO", ack: NAK, label: *b"B6", block: b'2', msgno: b"M01A", flight: b"AC0001", text: b"/ADS.C-FTJO0123", more: false };
+    for (k, f) in [link, ads].iter().enumerate() {
+        let n = encode(f, &mut b);
+        a.s.acars().unwrap().frame(&b[..n], 0, 2 + k as u32).unwrap();
+        a.render();
+        assert!(a.line().contains(&std::format!("n={}", k + 1)), "{}", a.line());
+        for key in [Key::Down, Key::Up, Key::Menu, Key::Hash, Key::Hash] {
+            a.tap(key);
+            a.render();
+        }
+        assert!(!a.acars().detail, "nothing shown to open");
+    }
+}

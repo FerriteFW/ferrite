@@ -610,3 +610,93 @@ fn fuzz_clear_wait_ends() {
         },
     );
 }
+
+// ---- ACARS's receiver and screen (chapter 27b) --------------------------------------------------------------------
+
+/// The ACARS recordings (`acars/*.wav` in the test data, at the radio's 12 or 16 kHz) as `acars_audio` inputs:
+/// each whole, and windows of a few seconds (a burst is about half a second).
+fn acars_recordings() -> Vec<Vec<u8>> {
+    let Some(dir) = ferrite_fuzzkit::testdata_private_file("acars") else { return Vec::new() };
+    let mut files: Vec<_> = std::fs::read_dir(&dir).unwrap().filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "wav")).collect();
+    files.sort();
+    let mut out = Vec::new();
+    for p in files {
+        let Some((x, rate)) = ferrite_fuzzkit::read_wav(&p) else { continue };
+        let cfg = match rate {
+            12_000 => 1,
+            16_000 => 2,
+            48_000 => 3,
+            _ => 0,
+        };
+        let win = rate as usize * 3;
+        for (k, w) in x.chunks(win).enumerate() {
+            let mut v = vec![cfg | (k as u8 % 16) << 2];
+            v.extend(samples_to_bytes(w));
+            out.push(v);
+        }
+    }
+    out
+}
+
+/// ACARS-11: the recordings whole through the receiver and into the screen (every frame in the list, every page
+/// drawn), * off and on; then cut anywhere, with noise over them (a burst cut short, a fade).
+#[test]
+fn acars_recordings_through_the_screen() {
+    let recs = acars_recordings();
+    let mut frames = 0;
+    for r in &recs {
+        frames += harness::acars_audio(r);
+        let mut on = r.clone();
+        on[0] |= 0x40;
+        harness::acars_audio(&on);
+    }
+    // the bench recordings' 59 good frames (acars_recordings.rs), less any a window's edge cut
+    assert!(recs.is_empty() || frames >= 50, "{frames} frames from the recordings");
+    let mut rng = Rng::new(0xACA7);
+    for r in recs.iter().take(64) {
+        let mut v = r.clone();
+        let cut = 1 + rng.below(v.len() - 1);
+        v.truncate(cut);
+        for i in (1..v.len()).step_by(2) {
+            if rng.one_in(3) {
+                v[i] = v[i].wrapping_add(rng.byte() >> 3);
+            }
+        }
+        harness::acars_audio(&v);
+    }
+}
+
+/// ACARS-11: any audio through the receiver into the screen never panics or overflows; the seeds are the
+/// recordings' windows when the test data is there, else noise.
+#[test]
+fn fuzz_acars_audio() {
+    let mut corpus = acars_recordings();
+    if corpus.is_empty() {
+        corpus.push(vec![0; 2]);
+    }
+    Fuzz::new("acars_audio", 0xACA8, 300).slow_ms(20_000).run(|r| from(r, &corpus, 200_000), |d| {
+        harness::acars_audio(d);
+    });
+}
+
+/// ACARS-4, ACARS-7: the screen with any frames heard, keys, knob, time and radio state never panics or recurses
+/// without end (with * on and nothing to show, it did: the reboot receiving ACARS, fuzz/regress/acars_screen).
+#[test]
+fn fuzz_acars_screen() {
+    let mut corpus = Vec::new();
+    for flags in 0..8u8 {
+        // the sample frames, each as raw bytes, with keys between
+        let mut v = vec![flags];
+        for (k, (_, f, _)) in ferrite_app::acars::sample::FRAMES.iter().enumerate() {
+            let mut b = [0u8; 256];
+            let n = ferrite_core::acars::encode(f, &mut b);
+            v.extend([0, (n - 1) as u8]);
+            v.extend_from_slice(&b[..n - 1]);
+            v.extend([2, k as u8, 4, 30]);
+        }
+        corpus.push(v);
+    }
+    // * on, then a link test with no text heard
+    corpus.push(vec![2, 1, 0, 0, b'2', 7, b'C', b'-', b'F', b'J', b'Z', b'S', 0x15, b'Q', b'0', b'1', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5, 0]);
+    Fuzz::new("acars_screen", 0xACA9, 2_000).slow_ms(20_000).run(|r| from(r, &corpus, 4096), harness::acars_screen);
+}

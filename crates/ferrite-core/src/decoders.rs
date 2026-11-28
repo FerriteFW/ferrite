@@ -167,24 +167,31 @@ pub struct Page {
 }
 
 impl Page {
-    /// A message's text, read the way it most likely is: function 0 as numeric digits (the usual convention),
-    /// others as 7-bit characters when nine in ten of them are printable (control characters and the padding
-    /// senders end with dropped), else as digits after all (systems differ: upocsag's `Message`). A tone-only
-    /// page has no text.
+    /// A message's text, read the way it most likely is (DEC-4.1): as 7-bit characters when nine in ten of them are
+    /// printable (the padding senders end with, NUL, ETX and EOT, left out), else as numeric digits. Function 0 is
+    /// numeric by convention, so there a clean digit reading (digits, space, '-' and '.' only) still wins; but many
+    /// networks send text on function 0 too (fire and CAD pages, the sigid test pages), and going by the function
+    /// bits alone showed those as digits and U, [ and ]. A tone-only page has no text.
     pub fn from(m: &upocsag::Message) -> Page {
         let mut p = Page { capcode: m.address, baud: m.baud, function: m.function, numeric: false, len: 0, text: [0; PAGE_TEXT] };
-        let (mut n, mut ok) = (0usize, 0usize);
+        let (mut n, mut ok, mut pad) = (0usize, 0usize, 0usize);
         for c in m.alpha() {
             n += 1;
-            ok += (0x20..0x7F).contains(&c) as usize;
+            let printable = (0x20..0x7F).contains(&c);
+            ok += printable as usize;
+            pad = if matches!(c, 0 | 3 | 4) { pad + 1 } else { 0 };
         }
+        let n = n - pad.min(n); // the trailing padding isn't the message
+        let digits = m.numeric().filter(|&c| c != b' ').all(|c| c.is_ascii_digit() || c == b'-' || c == b'.');
+        let text = n > 0 && ok * 10 >= n * 9;
         let mut put = |c: u8| {
             if (p.len as usize) < PAGE_TEXT {
                 p.text[p.len as usize] = c;
                 p.len += 1;
             }
         };
-        if m.function != 0 && n > 0 && ok * 10 >= n * 9 {
+        // function 0 is numeric by convention: text only when the digits aren't clean; the others text first
+        if text && (m.function != 0 || !digits) {
             m.alpha().filter(|c| (0x20..0x7F).contains(c)).for_each(&mut put);
         } else {
             p.numeric = true;
@@ -213,6 +220,12 @@ mod tests {
         for (function, content, want, numeric) in [
             (3, upocsag::encode::Content::Alpha(b"STN 4 RESPOND HWY 417"), &b"STN 4 RESPOND HWY 417"[..], false),
             (0, upocsag::encode::Content::Numeric(b"5551234"), &b"5551234"[..], true),
+            (0, upocsag::encode::Content::Numeric(b"0151-234.56"), &b"0151-234.56"[..], true),
+            // DEC-4.1: text on function 0, as fire and CAD networks send it
+            (0, upocsag::encode::Content::Alpha(b"STN 4 RESPOND HWY 417"), &b"STN 4 RESPOND HWY 417"[..], false),
+            (0, upocsag::encode::Content::Alpha(b"THE QUICK BROWN FOX\x04\0\0"), &b"THE QUICK BROWN FOX"[..], false),
+            // a short text page on function 3 stays text even where its digit reading would be clean
+            (3, upocsag::encode::Content::Alpha(b"OK"), &b"OK"[..], false),
         ] {
             let mut words = Vec::new();
             upocsag::encode::encode(1_234_567, function, content, |w| words.push(w));
@@ -230,6 +243,27 @@ mod tests {
             let p = got.expect("decoded");
             assert_eq!((p.capcode, p.function, p.baud, p.numeric), (1_234_567, function, 1200, numeric));
             assert_eq!(p.text(), want);
+        }
+    }
+
+    /// DEC-4.1: the recordings' text pages sent on function 0 (the sigid test page, a CAD fire page) show as text,
+    /// as multimon-ng's alpha reading has them, through the same path the radio takes (upocsag's receiver, then
+    /// [`Page::from`]). A missing recording is skipped.
+    #[test]
+    fn recorded_function_0_text_pages_read_as_text() {
+        extern crate std;
+        use std::vec::Vec;
+        for (name, want) in [("sigid_1200", &b"THE QUICK BROWN FOX JUMPS OVER THE LAZY DOG 1234567890"[..]), ("sigid_1200_variant", b"FROM: sducad@fire.ca.gov")] {
+            let Some(path) = ferrite_fuzzkit::testdata_file(&std::format!("pocsag/{name}.9600.wav")) else { continue };
+            let (samples, rate) = ferrite_fuzzkit::read_wav(&path).expect("a wav");
+            let mut rx: upocsag::Receiver = upocsag::Receiver::new(rate);
+            let mut pages = Vec::new();
+            for x in samples {
+                rx.push(x, |m| pages.push(Page::from(m)));
+            }
+            rx.flush(|m| pages.push(Page::from(m)));
+            let p = pages.iter().find(|p| p.function == 0 && p.len > 0).unwrap_or_else(|| panic!("{name}: a function 0 page"));
+            assert!(!p.numeric && p.text().starts_with(want), "{name}: {:?}", std::string::String::from_utf8_lossy(p.text()));
         }
     }
 

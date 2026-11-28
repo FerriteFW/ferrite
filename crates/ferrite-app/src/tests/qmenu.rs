@@ -548,3 +548,25 @@ fn a_shortcut_popup_goes_straight_to_home() {
         assert_eq!(diff, 0, "layout {layout}: after the popup, home as drawn from scratch");
     }
 }
+
+/// VFO-7, ferrite#225: reverse retunes the receiver to the input in every home layout (MENU 0 7 2: Watch, Single +
+/// scope with its strip running, Watch + activity), and the retune is the last word once home again.
+#[test]
+fn reverse_in_each_layout() {
+    for layout in 0..3u8 {
+        let mut t = ready();
+        t.app.set.layout = layout;
+        t.wait(300);
+        t.app.slots[0].cfg.offset = 60_000;
+        let rx = t.app.slot(0).freq();
+        open(&mut t);
+        t.cmds();
+        down(&mut t, Key::Ptt(PTT_A));
+        up(&mut t, Key::Ptt(PTT_A));
+        t.tap(Key::Exit);
+        t.tap(Key::Exit);
+        t.wait(2000);
+        let tunes: std::vec::Vec<_> = t.cmds().iter().filter_map(|c| match c { RadioCmd::TuneSlot { slot: 0, freq } => Some(*freq), _ => None }).collect();
+        assert_eq!(tunes.last(), Some(&(rx + 60_000)), "layout {layout}: listens on the input");
+    }
+}

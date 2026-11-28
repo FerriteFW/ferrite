@@ -128,18 +128,23 @@ pub const AIR_COM: (Freq10, Freq10) = (11_797_500, 13_700_000);
 /// 10 Hz digits ([`channel_name`]). Never tuned: [`channel_freq`] gives the frequency a name stands for.
 pub const NAMED: Freq10 = 1 << 31;
 
+/// 121.500 MHz, the aeronautical emergency frequency: a 25 kHz channel only (VFO-18.2 keeps its name).
+const EMERGENCY: Freq10 = 12_150_000;
+
 /// VFO-18.2: the channel name of an airband frequency on the 8.33 kHz grid, as ICAO Annex 10 Volume V Table
-/// 4-1 (bis) pairs them: each 25 kHz block keeps its 25 kHz name (118.000) for its base, and its other two 8.33 kHz
-/// channels are named 10 and 15 kHz above the base (118.00833 is 118.010, 118.01667 is 118.015). The base's own
-/// 8.33 kHz name (118.005) is the same frequency; the 25 kHz name is shown, so 121.500 stays 121.500. None off
-/// the grid or off the band. The name is in 10 Hz units (11_801_000 for 118.010).
+/// 4-1 (bis) pairs them for 8.33 kHz channels: a 25 kHz block's base by its 8.33 kHz name, 5 kHz up (118.000 is
+/// 118.005), and the other two 10 and 15 kHz up (118.00833 is 118.010, 118.01667 is 118.015), so a 100 kHz block
+/// reads .005 .010 .015 .030 .035 .040 .055 ... as aircraft radios in 8.33 mode show it (ferrite#297). 121.500, the
+/// emergency frequency, is a 25 kHz channel only and keeps its name. None off the grid or off the band. The name is
+/// in 10 Hz units (11_801_000 for 118.010).
 pub fn channel_name(f: Freq10) -> Option<Freq10> {
     if !(AIR_COM.0..AIR_COM.1).contains(&f) {
         return None;
     }
     let (block, r) = (f / 2500 * 2500, f % 2500);
     match r {
-        0 => Some(f),
+        0 if f == EMERGENCY => Some(f),
+        0 => Some(block + 500),
         833 => Some(block + 1000),
         1667 => Some(block + 1500),
         _ => None,
@@ -269,8 +274,8 @@ mod tests {
         ] {
             assert_eq!(channel_freq(n(name.as_bytes())), Some(n(f.as_bytes())), "{name}");
         }
-        // Frequency to name: the 25 kHz name for a block's base, so 121.500 stays 121.500
-        for (f, name) in [("118.00000", "118.000"), ("118.00833", "118.010"), ("118.01667", "118.015"), ("118.04167", "118.040"), ("121.50000", "121.500"), ("117.97500", "117.975")] {
+        // Frequency to name: a block's base by its 8.33 kHz name (ferrite#297), except 121.500 (25 kHz only)
+        for (f, name) in [("118.00000", "118.005"), ("118.02500", "118.030"), ("118.05000", "118.055"), ("118.07500", "118.080"), ("118.00833", "118.010"), ("118.01667", "118.015"), ("118.04167", "118.040"), ("121.50000", "121.500"), ("117.97500", "117.980")] {
             assert_eq!(channel_name(n(f.as_bytes())), Some(n(name.as_bytes())), "{f}");
         }
         // Every name maps back to itself or to its block's base name, all through the band

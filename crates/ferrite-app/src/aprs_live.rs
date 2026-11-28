@@ -1356,7 +1356,8 @@ impl AprsLive {
                 }
             }
         }
-        let beacon = beacon || self.after_voice.get() && auto_ok;
+        // APRS-27 (ferrite#150): Beacon Off (0 5 6 1) stops the beacon after voice too; Manual, timed and smart keep it
+        let beacon = beacon || self.after_voice.get() && auto_ok && cfg.mode() != 0;
         if beacon && (auto_ok || self.beacon_now.get()) {
             // GPS-33: never a fix older than the beacon interval as current (the fixed position stands in as
             // itself, GPS-3). An automatic beacon waits for a fresh fix, then is skipped (the caller logs it); one
@@ -2647,6 +2648,18 @@ mod tests {
         assert_eq!(a.tick(110, Sending::All, true, b"VE3XYZ", Some(fix()), &cfg, &mut out).len, 0, "30 s spacing");
         assert_eq!(a.tick(131, Sending::All, true, b"VE3XYZ", Some(fix()), &cfg, &mut out).what, "Beacon");
         assert_eq!(a.tick(170, Sending::All, true, b"VE3XYZ", Some(fix()), &cfg, &mut out).len, 0, "once per transmission");
+    }
+
+    /// APRS-27 (ferrite#150): with Beacon Off, After voice TX left on sends nothing: if it's off, it's off.
+    #[test]
+    fn no_beacon_after_voice_with_beacon_off() {
+        let a = AprsLive::new();
+        let mut out = [0u8; FRAME_MAX];
+        let cfg = AprsCfg { beacon: 0, after_voice: true, telemetry: true, ..AprsCfg::DEFAULT };
+        a.after_voice();
+        for t in [100, 131, 200] {
+            assert_eq!(a.tick(t, Sending::All, true, b"VE3XYZ", Some(fix()), &cfg, &mut out).len, 0, "nothing at {t}");
+        }
     }
 
     /// The information field of the frame `tick` wrote.

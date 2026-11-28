@@ -583,3 +583,60 @@ fn display_stays_lit_around_a_pass() {
     assert!(t.app.dark(), "the screen closed: the usual timer, pass or not");
     assert_eq!(t.app.sat.awake_until, 0, "the window's end let go with the screen");
 }
+
+/// SAT-12: the alarm set with the picker's keys as on the radio (# on the list, OK), then home with EXIT: the toast
+/// comes at the lead (Discord, Nov 26-27: no tone or toast on the radio; the host gets it, the radio still to explain).
+#[test]
+fn alarm_by_keys_then_home() {
+    let t0 = crate::sat::SIM_T0;
+    let mut t = sat_app(t0);
+    t.open(crate::screens::nav::Dest::Satellites);
+    t.wait(3000); // predicted
+    t.tap(Key::Hash);
+    t.tap(Key::Menu);
+    let p = t.app.sat_data().alarm().expect("an alarm set");
+    std::println!("alarm on sat {} aos {} (+{} s) lead {} fired {}", p.sat, p.aos, p.aos - t0, t.app.sat.alarm_lead, t.app.sat.fired);
+    t.tap(Key::Exit);
+    t.tap(Key::Exit);
+    std::println!("screen {:?}", t.app.screen());
+    let mut toast_at = None;
+    let mut s = 0;
+    while t0 + s < p.aos + 60 {
+        t.app.sat_clock(Some(t0 + s), true, Some(HERE));
+        t.wait(1000);
+        if toast_at.is_none() && t.app.toast.is_some_and(|x| x.icon) {
+            toast_at = Some(p.aos as i64 - (t0 + s) as i64);
+        }
+        s += 1;
+    }
+    std::println!("toast {:?} s before the rise; lead now {}, alarm {:?}", toast_at, t.app.sat.alarm_lead, t.app.sat_data().alarm().map(|a| a.aos));
+    assert!(toast_at.is_some(), "the alarm's toast came");
+}
+
+/// SAT-12: a clock that reads past the rise for a moment (a GPS searching indoors) doesn't spend the alarm: back on
+/// time, the toast comes at its lead, the alert tone with it, and it lights a dark screen.
+#[test]
+fn alarm_survives_a_clock_jump_and_lights_the_screen() {
+    let p = a_pass(0);
+    let mut t = sat_app(p.aos - 900);
+    t.app.set.alert_tones = true;
+    t.app.sat_set_alarm(p, 2); // 5 min
+    t.wait(200);
+    t.app.sat_clock(Some(p.aos + 30), true, Some(HERE)); // ahead for a moment
+    t.wait(1000);
+    assert!(t.app.toast.is_none_or(|x| !x.icon), "no toast for a pass the clock says has risen");
+    t.app.sat_clock(Some(p.aos - 600), true, Some(HERE)); // back on time
+    t.wait(1000);
+    t.app.set.backlight = 1;
+    t.wait(120_000); // the screen goes dark meanwhile
+    t.cmds();
+    let mut s = 0;
+    while t.app.toast.is_none_or(|x| !x.icon) && s < 600 {
+        t.app.sat_clock(Some(p.aos - 480 + s), true, Some(HERE));
+        t.wait(1000);
+        s += 1;
+    }
+    assert!(t.app.toast.is_some_and(|x| x.icon), "the toast at the lead");
+    assert!(!t.app.dark(), "the screen lit");
+    assert!(t.cmds().iter().any(|c| matches!(c, RadioCmd::Beep { .. })), "the alert tone");
+}

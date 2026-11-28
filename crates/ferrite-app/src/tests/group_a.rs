@@ -954,3 +954,25 @@ fn region_start_off_us_frequencies() {
     t.app.region_start();
     assert_eq!(t.app.slots[0].vfo, 14_700_000);
 }
+
+/// ferrite#97: a VFO changed from NFM to FM stays FM after the active slot moves to another VFO and back, and
+/// after a VFO-memory round trip (V/M twice).
+#[test]
+fn vfo_fm_kept_across_slot_switch() {
+    let mut t = T::new();
+    crate::screens::entry::tune_vfo(&mut t.app, 0, mhz(146) + 52_000);
+    t.wait(100);
+    let mode = |t: &T| (t.app.slot(0).cfg.mode, t.app.slot(0).cfg.narrow);
+    while mode(&t) != (0, false) {
+        t.app.change(crate::slot::Item::Mode, 1);
+    }
+    t.tap(Key::Slot);
+    assert_eq!(t.app.active(), 1);
+    t.tap(Key::Slot);
+    t.tap(Key::Slot);
+    assert_eq!(t.app.active(), 0);
+    assert_eq!(mode(&t), (0, false), "still FM after A -> B -> C -> A");
+    t.tap(Key::VfoMem);
+    t.tap(Key::VfoMem);
+    assert_eq!(mode(&t), (0, false), "still FM after V/M twice");
+}

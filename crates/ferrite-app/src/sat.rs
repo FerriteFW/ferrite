@@ -176,10 +176,13 @@ impl App {
         if self.sat.fired || now + self.sat.alarm_lead as u32 * 60 < p.aos {
             return;
         }
-        self.sat.fired = true;
         if now >= p.aos {
-            return; // risen already (the alarm set late, or the clock moved): no toast
+            // Risen already (the alarm set late, or the clock read ahead): no toast, and the alarm kept armed. A GPS
+            // searching indoors can report a time ahead for a moment; marking it fired then spent the alarm, and the
+            // real lead came with nothing (Discord, Nov 26-27; black, Nov 27). It goes at the pass's end (SAT-20).
+            return;
         }
+        self.sat.fired = true;
         let d = self.sat_data();
         let name = d.sat(p.sat).map(|s| s.name).unwrap_or_default();
         let mut head = ferrite_ui::text::Buf::<20>::new();
@@ -193,6 +196,7 @@ impl App {
             t.until = self.now.wrapping_add(TOAST_MS);
         }
         self.sat.toast_at = self.now.max(1);
+        self.wake(self.now); // SAT-12: an alarm you set lights the screen (it stayed dark: black, Nov 27)
         if self.set.alert_tones {
             self.out.push(RadioCmd::Beep { hz: crate::ALERT_HZ, ms: crate::ALERT_MS });
         }

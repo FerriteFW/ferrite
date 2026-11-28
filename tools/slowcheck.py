@@ -38,7 +38,7 @@ SLOW_CALLS = {
 SLOW_TABLES = [
     (r"si4732::Si4732<", None, "SI4732 command bytes: sent over the bit-banged I2C bus, far slower than the flash"),
     (r"ferrite_core::tonegen::", None, "beep gains and tone sequences: read once per setting or once per tone step"),
-    (r">::end_tone\b", None, "the end tone's step list: once per unkey"),
+    (r">::end_tone(_heard)?\b", None, "the end tone's step list: once per unkey (on air, then heard on the radio, TONE-8.1)"),
     (r"ferrite_core::txplan::", None, "the transmit plan's band tables: once per key-up"),
     (r"uafsk::fsk::Fsk<.*>::new\b", None, "the AFSK demodulator's set-up: once when a decoder starts"),
     (r"upocsag::demod::Receiver.*>::(new|batch)\b", None, "POCSAG set-up, and the baud of a batch: once per batch"),
@@ -160,7 +160,11 @@ def main(elf, verbose):
         s = next(x for x in ro_secs if inside(a0, x))
         b = data[a0 - sec[s][0] + sec[s][1]: min(a1, sec[s][0] + sec[s][2]) - sec[s][0] + sec[s][1]]
         b = b[:16].rstrip(b"\0")  # its start: strings sit back to back, and an object's end is a guess
-        return all(32 <= c < 127 or c in (9, 10, 13) or c >= 0xA0 for c in b)
+        ok = lambda c: 32 <= c < 127 or c in (9, 10, 13) or c >= 0xA0
+        # A short log text can end before 16 bytes with an unnamed table right after it (Nov 27, 2026: "hf khz ",
+        # 7 bytes, then a table, read as a 21-byte table): a printable start of 6 bytes or more is text.
+        run_n = next((i for i, c in enumerate(b) if not ok(c)), len(b))
+        return run_n == len(b) or run_n >= 6
 
     # Interrupt context: handlers, then the interrupt executors' task polls.
     vt_addr, vt_off, vt_size = sec[".vector_table"]

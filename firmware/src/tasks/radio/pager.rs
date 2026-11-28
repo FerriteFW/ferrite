@@ -103,6 +103,19 @@ impl Radio {
         (self.pager.armed, self.pager.left) = (false, 0);
     }
 
+    /// DEC-23.1: an exclusive mode (HF, satellites, ACARS, the crossband repeater, the scope, the counter, tone
+    /// search) has the chips, and its tick runs instead of [`Self::pager_tick`]: the modem goes off on the pager's
+    /// chip (still tuned), so the mode doesn't receive through a chip armed for pages. The pager sets it up again on
+    /// the next tick back at home (its chip then differs).
+    pub(super) fn pager_park(&mut self) {
+        let Some(n) = self.pager.chip.take() else { return };
+        if self.tuned[n as usize].is_some() {
+            self.chip(n).fsk_off();
+        }
+        self.pager_end();
+        (self.pager.at, self.pager.armed, self.pager.left) = (None, false, 0);
+    }
+
     /// The transmission ended: the page in progress to the UI task.
     fn pager_end(&mut self) {
         self.pager.rx.end(|p| {

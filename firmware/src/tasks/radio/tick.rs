@@ -96,6 +96,13 @@ impl Radio {
         self.vox_poll();
         #[cfg(feature = "tx")]
         self.dial_step(); // DTMF-1: the dialled sequence's next step
+        #[cfg(feature = "tx")]
+        let xb = self.xb.is_some();
+        #[cfg(not(feature = "tx"))]
+        let xb = false;
+        if self.hf.is_some() || self.sat.is_some() || self.acars.is_some() || xb || self.scope.is_some() || self.counter.is_some() || self.tsearch.is_some() {
+            self.pager_park(); // DEC-23.1: the modem off while another mode has the chips
+        }
         if self.hf.is_some() {
             self.unread(0); // SQL-21: HF mode reads no slot
             // Keyed from HF mode (HF-23): the keyed tick as from home (TX-30 backstop, TX-31 duty limit, TX-32

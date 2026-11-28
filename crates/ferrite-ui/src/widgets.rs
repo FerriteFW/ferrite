@@ -299,6 +299,48 @@ pub fn meter(lcd: &mut impl Panel, x: i32, y: i32, old: Option<u8>, lit: u8, on:
     }
 }
 
+/// [`meter`] with a held peak: `peak` (a level as [`meter_level`] gives, 0 none) above the live bar marks its top
+/// segment, drawn empty with an amber stripe down its middle so it reads apart from the bar and from an empty
+/// segment in every theme (night red and cyberpunk draw green and amber alike; night red outlines the empty segment
+/// around the stripe). `old` is the (lit, peak) last drawn: only the segments whose look changed are drawn (None:
+/// all of them, in one band).
+pub fn meter_peak(lcd: &mut impl Panel, x: i32, y: i32, old: Option<(u8, u8)>, now: (u8, u8), on: u16, bg: u16) {
+    let on = if crate::theme::outlined(on) { SUB } else { on };
+    match old {
+        None => crate::canvas::banded(lcd, x, y, METER_SEGS as i32 * 10, 8, bg, |band| {
+            for i in 0..METER_SEGS {
+                peak_seg(band, x + i as i32 * 10, y, seg_look(i, now), on);
+            }
+        }),
+        Some(was) => {
+            for i in 0..METER_SEGS {
+                let look = seg_look(i, now);
+                if look != seg_look(i, was) {
+                    peak_seg(lcd, x + i as i32 * 10, y, look, on);
+                }
+            }
+        }
+    }
+}
+
+/// Segment `i` (from 0) of a meter showing `(lit, peak)`: 0 empty, 1 lit, 2 the held peak.
+fn seg_look(i: u8, (lit, peak): (u8, u8)) -> u8 {
+    if i < lit {
+        1
+    } else if peak > lit && i + 1 == peak {
+        2
+    } else {
+        0
+    }
+}
+
+fn peak_seg(lcd: &mut impl Panel, x: i32, y: i32, look: u8, on: u16) {
+    lcd.fill_r(x, y, 8, 8, 1, if look == 1 { on } else { LINE });
+    if look == 2 {
+        lcd.fill(x + 2, y, 4, 8, AMBER);
+    }
+}
+
 fn meter_segs(lcd: &mut impl Panel, x: i32, y: i32, a: u8, b: u8, lit: u8, on: u16) {
     // DISP-18: night red outlines a DIM fill, which would read as empty: lit segments are solid there
     let on = if crate::theme::outlined(on) { SUB } else { on };
@@ -1135,6 +1177,64 @@ mod tests {
         assert_eq!(s_text(-85).as_bytes(), b"S7");
         assert_eq!(s_text(-60).as_bytes(), b"+10");
         assert_eq!(s_text(-140).as_bytes(), b"S0");
+    }
+
+    /// The held peak's segment reads apart from a lit and an empty one in every theme: night red and cyberpunk draw
+    /// green and amber alike, so the mark is a stripe in an empty segment, not a filled one.
+    #[test]
+    fn meter_peak_reads_apart_in_every_theme() {
+        let row = |fb: &FrameBuffer, seg: i32, y: i32| (0..8).map(|dx| fb.at(10 + seg * 10 + dx, y)).collect::<std::vec::Vec<_>>();
+        for th in [crate::theme::DARK, crate::theme::DAYLIGHT, crate::theme::NIGHT_RED, crate::theme::CYBERPUNK] {
+            crate::theme::set(th);
+            let mut fb = FrameBuffer::new();
+            // segments 0-2 lit, 3-5 empty, 6 the peak (a level of 7), 7-19 empty
+            meter_peak(&mut fb, 10, 50, None, (3, 7), GREEN, SURFACE);
+            let look = |seg| (row(&fb, seg, 51), row(&fb, seg, 54));
+            let (lit, empty, peak) = (look(1), look(4), look(6));
+            assert_ne!(peak, lit, "theme {th}: the peak isn't another lit segment");
+            assert_ne!(peak, empty, "theme {th}: the peak isn't an empty segment");
+            assert_eq!(look(5), empty, "theme {th}: below the peak, empty");
+            assert_eq!(look(7), empty, "theme {th}: above the peak, empty");
+        }
+        crate::theme::set(crate::theme::DARK);
+    }
+
+    /// A change draws only the segments whose look changed, and ends in the picture drawing it whole gives; no peak
+    /// at or under the bar.
+    #[test]
+    fn meter_peak_draws_only_what_changed() {
+        struct Count(FrameBuffer, u64);
+        impl Panel for Count {
+            fn window(&mut self, a: i32, b: i32, c: i32, d: i32) {
+                self.0.window(a, b, c, d)
+            }
+            fn push(&mut self, c: u16, n: u32) {
+                self.1 += n as u64;
+                self.0.push(c, n)
+            }
+            fn push_buf(&mut self, p: &[u16]) {
+                self.1 += p.len() as u64;
+                self.0.push_buf(p)
+            }
+        }
+        let steps = [(3, 7), (3, 7), (5, 7), (5, 0), (9, 0), (2, 9), (2, 2), (8, 3), (0, 20), (20, 0)];
+        let mut lcd = Count(FrameBuffer::new(), 0);
+        meter_peak(&mut lcd, 10, 50, None, steps[0], GREEN, SURFACE);
+        for w in steps.windows(2) {
+            lcd.1 = 0;
+            meter_peak(&mut lcd, 10, 50, Some(w[0]), w[1], GREEN, SURFACE);
+            let changed = (0..METER_SEGS).filter(|&i| seg_look(i, w[0]) != seg_look(i, w[1])).count() as u64;
+            assert!(lcd.1 <= changed * (64 + 32), "{:?} to {:?}: {} px for {changed} segments", w[0], w[1], lcd.1);
+            let mut whole = FrameBuffer::new();
+            meter_peak(&mut whole, 10, 50, None, w[1], GREEN, SURFACE);
+            for y in 50..58 {
+                for x in 10..210 {
+                    assert_eq!(lcd.0.at(x, y), whole.at(x, y), "{:?} to {:?} at ({x}, {y})", w[0], w[1]);
+                }
+            }
+        }
+        assert_eq!(seg_look(2, (3, 3)), 1, "a peak at the bar is the bar");
+        assert!((0..METER_SEGS).all(|i| seg_look(i, (5, 2)) != 2), "a peak under the bar isn't marked");
     }
 
     #[test]

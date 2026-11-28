@@ -214,3 +214,320 @@ fn airband_833_names() {
         t.hides("118.010");
     }
 }
+
+
+/// The held peak's tests: layout `layout` (0 watch, 1 single), A in the VFO on 145 MHz with its squelch open at
+/// -100 dBm (8 segments) long enough to settle, then -73 dBm (17) heard and gone: the peak is held. Returns the
+/// meter's left and top.
+fn peak_held(layout: u8) -> (T, i32, i32) {
+    let mut t = T::ready();
+    t.app.set_layout(layout);
+    let a = t.app.active;
+    t.tune(mhz(145));
+    t.live.slots[a as usize] = ferrite_core::msg::SlotLive { freq: mhz(145), squelch_open: true, carrier: true, rssi: -100, ..Default::default() };
+    t.wait(300);
+    t.live.slots[a as usize].rssi = -73;
+    t.wait(100);
+    t.live.slots[a as usize].rssi = -100;
+    t.wait(100);
+    let (x, y) = if layout == 0 { (14, crate::screens::home::card(a, a).0 + 109) } else { (8, 170) };
+    (t, x, y)
+}
+
+/// Segment `i`'s look on the meter at (x, y): 0 empty, 1 lit (open), 2 the held peak.
+fn seg(t: &T, x: i32, y: i32, i: i32) -> u8 {
+    use ferrite_ui::gfx::{AMBER, GREEN};
+    match t.fb.at(x + 10 * i + 4, y + 4) {
+        GREEN => 1,
+        AMBER => 2,
+        _ => 0,
+    }
+}
+
+/// The meter's segments, as `seg` reads them.
+fn segs(t: &T, x: i32, y: i32) -> std::vec::Vec<u8> {
+    (0..20).map(|i| seg(t, x, y, i)).collect()
+}
+
+/// A memory channel numbered `num` on `rx`, on the active slot (shown, not tuned through the store).
+fn on_channel(t: &mut T, num: u16, rx: ferrite_core::freq::Freq10) {
+    let a = t.app.active as usize;
+    use crate::chan::ChannelStore;
+    t.app.slots[a].ch = Some(crate::chan::Channel { num, rx, ..t.s.get(9).unwrap() });
+    t.app.slots[a].vfo_mode = false;
+    t.live.slots[a].freq = rx;
+}
+
+/// The S-meter holds its peak: after a strong signal falls back, the highest level stays marked above the bar for
+/// two seconds (watch and single layouts), the same level again renews the hold, and a higher one takes over.
+#[test]
+fn meter_holds_its_peak_for_two_seconds() {
+    for layout in [0, 1] {
+        let (mut t, x, y) = peak_held(layout);
+        let a = t.app.active as usize;
+        let want = |lit: usize, peak: usize| (0..20).map(|i| if i < lit { 1 } else if i + 1 == peak { 2 } else { 0 }).collect::<std::vec::Vec<u8>>();
+        assert_eq!(segs(&t, x, y), want(8, 17), "layout {layout}: the bar at 8, the peak at 17");
+        t.wait(1600); // 1.8 s since -73 dBm
+        assert_eq!(segs(&t, x, y), want(8, 17), "layout {layout}: held");
+        t.wait(300);
+        assert_eq!(segs(&t, x, y), want(8, 0), "layout {layout}: gone after 2 s");
+        // the same level again renews it
+        for _ in 0..2 {
+            t.live.slots[a].rssi = -73;
+            t.wait(100);
+            t.live.slots[a].rssi = -100;
+            t.wait(1500);
+        }
+        assert_eq!(segs(&t, x, y), want(8, 17), "layout {layout}: renewed");
+        // a higher one takes over
+        t.live.slots[a].rssi = -33; // 19 segments
+        t.wait(100);
+        t.live.slots[a].rssi = -100;
+        t.wait(100);
+        assert_eq!(segs(&t, x, y), want(8, 19), "layout {layout}: the new peak");
+        // the bar at or above the peak: no mark
+        t.live.slots[a].rssi = -33;
+        t.wait(100);
+        assert_eq!(segs(&t, x, y), want(19, 0), "layout {layout}: the bar is the peak");
+    }
+}
+
+/// A held peak is the signal's: any change of what the meter shows lets it go, and it doesn't come back. The same
+/// frequency on a memory channel, another channel or another scan position is another signal.
+#[test]
+fn meter_peak_lets_go_on_a_change() {
+    type Change = fn(&mut T);
+    let changes: [(&str, Change); 11] = [
+        ("retune", |t| {
+            t.tune(mhz(145) + 2_500);
+            t.live.slots[t.app.active as usize].freq = mhz(145) + 2_500;
+        }),
+        ("memory channel on the same frequency", |t| on_channel(t, 40, mhz(145))),
+        ("slot", |t| t.tap(Key::Slot)),
+        ("keyed", |t| t.live.tx.keyed = true),
+        ("dBm number", |t| t.app.set.smeter_dbm = true),
+        ("activity layout", |t| t.app.set_layout(2)),
+        ("relay", |t| t.live.slots[t.app.active as usize].relay = true),
+        ("unconfirmed retune", |t| t.tune(mhz(146))),
+        ("scan on the same frequency", |t| {
+            let lv = &mut t.live.slots[t.app.active as usize];
+            (lv.scanning, lv.chan) = (true, 3);
+        }),
+        ("slot turned off", |t| t.app.off |= 1 << t.app.active),
+        ("another screen", |t| t.open(Dest::Group(7))),
+    ];
+    for (what, change) in changes {
+        let (mut t, _, _) = peak_held(0);
+        let a = t.app.active;
+        assert_eq!(t.app.meter_peak(a, &t.live, 8), 17, "{what}: held before");
+        let before = (t.live, t.app.active, t.app.set.smeter_dbm, t.app.set.layout, t.app.slots[a as usize], t.app.off);
+        change(&mut t);
+        t.wait(100);
+        for s in 0..3 {
+            assert_eq!(t.app.meter_peak(s, &t.live, 8), 0, "{what}: let go (slot {s})");
+        }
+        // back as it was: the peak stays gone
+        if t.screen() != crate::Screen::Home {
+            t.app.go_home();
+        }
+        (t.live, t.app.active, t.app.set.smeter_dbm, t.app.slots[a as usize], t.app.off) = (before.0, before.1, before.2, before.4, before.5);
+        t.app.set_layout(before.3);
+        t.wait(100);
+        assert_eq!(t.app.meter_peak(a, &t.live, 8), 0, "{what}: not back");
+    }
+    // between two channels on one frequency, and two scan positions on one frequency
+    let (mut t, _, _) = peak_held(0);
+    let a = t.app.active;
+    for (what, first, second) in [("channel", 0u8, 1u8), ("scan position", 2, 3)] {
+        let set = |t: &mut T, k: u8| match k {
+            0 => on_channel(t, 40, mhz(145)),
+            1 => on_channel(t, 41, mhz(145)),
+            k => {
+                let lv = &mut t.live.slots[t.app.active as usize];
+                (lv.scanning, lv.chan, lv.freq) = (true, k as u16, mhz(145));
+            }
+        };
+        set(&mut t, first);
+        t.live.slots[a as usize].rssi = -100;
+        t.wait(300);
+        t.live.slots[a as usize].rssi = -73;
+        t.wait(100);
+        t.live.slots[a as usize].rssi = -100;
+        t.wait(100);
+        assert_eq!(t.app.meter_peak(a, &t.live, 8), 17, "{what}: held on the first");
+        set(&mut t, second);
+        t.wait(100);
+        assert_eq!(t.app.meter_peak(a, &t.live, 8), 0, "{what}: let go on the second");
+    }
+}
+
+/// A new signal's first readings can still be the old one's (the Radio task reads, then retunes, and publishes
+/// both): a strong level seen in the first 200 ms after a change makes no peak; a real one after does.
+#[test]
+fn meter_peak_waits_for_a_new_signal_to_settle() {
+    type Change = fn(&mut T);
+    let changes: [(&str, Change); 4] = [
+        ("retune", |t| {
+            t.tune(mhz(145) + 2_500);
+            t.live.slots[t.app.active as usize].freq = mhz(145) + 2_500;
+        }),
+        ("memory channel on the same frequency", |t| on_channel(t, 40, mhz(145))),
+        ("another channel on the same frequency", |t| on_channel(t, 41, mhz(145))),
+        ("a scan's next position on the same frequency", |t| {
+            let lv = &mut t.live.slots[t.app.active as usize];
+            (lv.scanning, lv.chan) = (true, lv.chan + 1);
+        }),
+    ];
+    for (what, change) in changes {
+        let (mut t, _, _) = peak_held(0);
+        let a = t.app.active;
+        on_channel(&mut t, 40, mhz(145));
+        if what.starts_with("memory") || what.starts_with("retune") {
+            t.app.slots[a as usize].vfo_mode = true;
+        }
+        if what.starts_with("a scan") {
+            let lv = &mut t.live.slots[a as usize];
+            (lv.scanning, lv.chan) = (true, 1);
+        }
+        t.wait(2_500); // settled, nothing held
+        assert_eq!(t.app.meter_peak(a, &t.live, 8), 0, "{what}: nothing held before");
+        t.live.slots[a as usize].rssi = -73; // the old signal's level, published with the new one
+        change(&mut t);
+        t.wait(100);
+        t.live.slots[a as usize].rssi = -100;
+        t.wait(100);
+        assert_eq!(t.app.meter_peak(a, &t.live, 8), 0, "{what}: no peak from the old signal's reading");
+        t.wait(100);
+        t.live.slots[a as usize].rssi = -73; // a real one, settled
+        t.wait(100);
+        t.live.slots[a as usize].rssi = -100;
+        t.wait(100);
+        assert_eq!(t.app.meter_peak(a, &t.live, 8), 17, "{what}: a settled signal's peak");
+    }
+}
+
+/// Only a level the open squelch shows makes a peak: not one under a closed squelch (the closed meter is empty,
+/// SQL-12.4), nor one read while the receivers sleep; a running scan's 70 ms steps never settle, a scan held on a
+/// hit does.
+#[test]
+fn meter_peak_only_from_an_open_squelch() {
+    let (mut t, _, _) = peak_held(0);
+    let a = t.app.active as usize;
+    t.wait(2100); // the held one gone
+    assert_eq!(t.app.meter_peak(a as u8, &t.live, 8), 0);
+    t.live.slots[a].squelch_open = false;
+    t.live.slots[a].rssi = -73;
+    t.wait(100);
+    t.live.slots[a].rssi = -121;
+    t.wait(100);
+    // what stays is the last open level (8), held after the squelch closed; never the closed -73 dBm's 17
+    assert_eq!(t.app.meter_peak(a as u8, &t.live, 1), 8, "closed: no new peak");
+    t.live.slots[a].squelch_open = true;
+    t.live.rx_asleep = true;
+    t.live.slots[a].rssi = -73;
+    t.wait(100);
+    t.live.rx_asleep = false;
+    t.live.slots[a].rssi = -100;
+    t.wait(100);
+    assert_eq!(t.app.meter_peak(a as u8, &t.live, 8), 0, "asleep: no peak");
+    // a running scan: a new position every 70 ms, strong on each, never settles
+    t.live.slots[a] = ferrite_core::msg::SlotLive { freq: mhz(145), squelch_open: true, scanning: true, chan: 1, rssi: -73, ..Default::default() };
+    for k in 2..10 {
+        t.wait(100);
+        (t.live.slots[a].chan, t.live.slots[a].freq) = (k, mhz(145) + 2_500 * k as u32);
+    }
+    t.live.slots[a].rssi = -100;
+    t.wait(100);
+    assert_eq!(t.app.meter_peak(a as u8, &t.live, 8), 0, "a running scan takes no peak");
+    // held on a hit: settled, its peak held
+    t.wait(300);
+    t.live.slots[a].rssi = -73;
+    t.wait(100);
+    t.live.slots[a].rssi = -100;
+    t.wait(100);
+    assert_eq!(t.app.meter_peak(a as u8, &t.live, 8), 17, "a scan held on a hit holds its peak");
+}
+
+/// No peak on a broadcast card, the APRS card, an off slot or Low Power Mode's home, and none on another slot's
+/// card: only the active slot's own meter holds one.
+#[test]
+fn meter_peak_only_on_the_active_slots_own_meter() {
+    let (mut t, _, _) = peak_held(0);
+    let a = t.app.active;
+    for s in (0..3).filter(|&s| s != a) {
+        assert_eq!(t.app.meter_peak(s, &t.live, 0), 0, "slot {s} isn't the peak's");
+    }
+    let strong_then_weak = |t: &mut T, s: u8| {
+        t.live.slots[s as usize].squelch_open = true;
+        t.live.slots[s as usize].rssi = -100;
+        t.wait(300);
+        t.live.slots[s as usize].rssi = -73;
+        t.wait(100);
+        t.live.slots[s as usize].rssi = -100;
+        t.wait(100);
+        t.app.meter_peak(s, &t.live, 8)
+    };
+    // the active slot on broadcast FM
+    t.app.set_vfo(a, mhz(100) + 50_000);
+    t.live.slots[a as usize].freq = mhz(100) + 50_000;
+    t.wait(100);
+    assert_eq!(crate::screens::home::card_kind(&t.app, a), 2);
+    assert_eq!(strong_then_weak(&mut t, a), 0, "no peak on the broadcast card");
+    // the APRS slot active, its card shown
+    let mut t = T::ready();
+    t.app.set_aprs_mode(true);
+    while t.app.active() != APRS_SLOT {
+        t.tap(Key::Slot);
+    }
+    t.live.slots[APRS_SLOT as usize].freq = t.app.tuned_freq(APRS_SLOT);
+    t.wait(100);
+    assert_eq!(crate::screens::home::card_kind(&t.app, APRS_SLOT), 1);
+    assert_eq!(strong_then_weak(&mut t, APRS_SLOT), 0, "no peak on the APRS card");
+    // a slot turned off
+    let (mut t, _, _) = peak_held(0);
+    let a = t.app.active;
+    t.app.off |= 1 << a;
+    assert_eq!(strong_then_weak(&mut t, a), 0, "no peak on an off slot");
+    // Low Power Mode's own home
+    let (mut t, _, _) = peak_held(0);
+    let a = t.app.active;
+    t.app.set.lpm = 0;
+    t.open(Dest::Group(7));
+    assert!(crate::screens::groups::change(&mut t.app, &[7, 7, 2], -1));
+    assert!(t.app.low_power());
+    t.app.go_home();
+    assert_eq!(strong_then_weak(&mut t, a), 0, "no peak in Low Power Mode");
+}
+
+/// A hold running out on the same signal doesn't blind the meter: a burst on the very tick it runs out is held
+/// (only a new signal waits to settle).
+#[test]
+fn meter_peak_is_taken_as_its_hold_runs_out() {
+    let (mut t, _, _) = peak_held(0);
+    let a = t.app.active;
+    t.wait(1800); // the tick before 2 s since -73 dBm
+    t.live.slots[a as usize].rssi = -73;
+    t.wait(100); // the hold runs out and -73 dBm is read on the same tick
+    t.live.slots[a as usize].rssi = -100;
+    t.wait(100);
+    assert_eq!(t.app.meter_peak(a, &t.live, 8), 17, "taken as the old one ran out");
+}
+
+/// The hold runs on the App's millisecond clock, which wraps after 49.7 days: a peak taken just before the wrap is
+/// held across it and let go 2 s after, as any other.
+#[test]
+fn meter_peak_across_the_clock_wrap() {
+    let (mut t, _, _) = peak_held(0);
+    let a = t.app.active;
+    let at = u32::MAX - 500;
+    t.app.meter_peak_tick(at - 300, &t.live); // its hold long gone at this clock: let go, settling from here
+    t.live.slots[a as usize].rssi = -73;
+    t.app.meter_peak_tick(at, &t.live);
+    t.live.slots[a as usize].rssi = -100;
+    for (dt, held) in [(100u32, 17), (1_000, 17), (1_900, 17), (2_000, 0), (5_000, 0)] {
+        let now = at.wrapping_add(dt);
+        t.app.meter_peak_tick(now, &t.live);
+        t.app.now = now;
+        assert_eq!(t.app.meter_peak(a, &t.live, 8), held, "{dt} ms after a peak at {at}");
+    }
+}

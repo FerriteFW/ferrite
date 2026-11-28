@@ -96,6 +96,51 @@ fn a_still_home_frame_costs_nothing() {
     }
 }
 
+/// The S-meter's held peak costs the panel next to nothing, watch and single layouts: while it's held and while the
+/// meter is still, frames send nothing; letting it go is one frame, one segment; a closed squelch's still meter
+/// takes no peak and sends nothing afterwards (the closed meter is empty, SQL-12.4); a running scan marks none.
+#[test]
+fn a_held_peak_costs_one_segment_to_let_go() {
+    for layout in [0, 1] {
+        let (mut t, mut p) = home();
+        t.app.set_layout(layout);
+        t.wait(300); // settled on A's signal
+        frame(&mut t, &mut p);
+        let step = |t: &mut T, p: &mut Probe| {
+            t.wait(100);
+            frame(t, p);
+            p.bytes()
+        };
+        t.live.slots[0].rssi = -73;
+        assert!(step(&mut t, &mut p) > 0, "layout {layout}: the bar up");
+        t.live.slots[0].rssi = -100;
+        assert!(step(&mut t, &mut p) > 0, "layout {layout}: the bar down, the peak marked");
+        let costs: Vec<u64> = (0..30).map(|_| step(&mut t, &mut p)).collect();
+        let drawn: Vec<_> = costs.iter().enumerate().filter(|(_, &b)| b > 0).collect();
+        assert_eq!(drawn.len(), 1, "layout {layout}: one frame lets the peak go: {costs:?}");
+        let (at, &bytes) = drawn[0];
+        assert!((17..=19).contains(&at), "layout {layout}: about 2 s after the peak: frame {at}");
+        assert!(bytes <= 2 * 64 + 4 * 11, "layout {layout}: one 8 x 8 segment: {bytes} bytes");
+        // closed: the meter falls to the clamped level once, then the still meter sends nothing and holds no peak
+        (t.live.slots[0].squelch_open, t.live.slots[0].carrier, t.live.slots[0].rssi) = (false, false, -121);
+        step(&mut t, &mut p);
+        t.wait(2_100);
+        frame(&mut t, &mut p);
+        for _ in 0..30 {
+            assert_eq!(step(&mut t, &mut p), 0, "layout {layout}: a closed, still meter sends nothing");
+        }
+        // a running scan: a new position each frame, open and strong on every other one, never a peak marked
+        t.live.slots[0] = SlotLive { freq: t.freq(), squelch_open: true, scanning: true, chan: 1, rssi: -73, ..Default::default() };
+        for k in 2..20u16 {
+            t.live.slots[0].rssi = if k % 2 == 0 { -73 } else { -100 };
+            (t.live.slots[0].chan, t.live.slots[0].freq) = (k, t.freq() + 2_500 * k as u32);
+            step(&mut t, &mut p);
+            let a = t.app.active() as usize;
+            assert_eq!(t.app.drawn.meter[a].map_or(0, |m| m.2), 0, "layout {layout}: no peak on a running scan");
+        }
+    }
+}
+
 /// DISP-29: SLOT draws the new large card first, runs each card's drawing once (not once per band), writes each
 /// pixel at most once, and ends in the same picture as before (each card drawn once per band, `lcd paint old`).
 #[test]

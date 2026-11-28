@@ -273,12 +273,13 @@ fn aprs_symbol_delay_and_level() {
 
 /// SQL-9.3: SIDE1 is the monitor key on every screen that doesn't give it a job of its own (it worked on home
 /// only: Satellites, the menus and the rest ignored it). A tap latches it, a hold opens it while held, and the
-/// screens with their own SIDE1 (the squelch screen, the key test) keep theirs.
+/// screens with their own SIDE1 (the squelch screen, the key test) keep theirs. Satellites starts with the latch on
+/// (SAT-25: `tests::sat::downlink_starts_open_side1_squelches`).
 #[test]
 fn side1_monitors_on_every_screen() {
     use crate::screens::nav::Dest;
     let mon = |c: &[RadioCmd]| c.iter().find_map(|c| if let RadioCmd::Monitor { slot, on } = c { Some((*slot, *on)) } else { None });
-    for dest in [Dest::Satellites, Dest::Scan, Dest::About] {
+    for dest in [Dest::Scan, Dest::About] {
         let mut t = T::new();
         t.open(dest);
         t.cmds();
@@ -310,7 +311,8 @@ fn side1_monitors_on_every_screen() {
     }
 }
 
-/// SQL-11, SQL-9.3: locked (the keypad lock lets the side keys through), SIDE1 still monitors off home.
+/// SQL-11, SQL-9.3: locked (the keypad lock lets the side keys through), SIDE1 still works off home: on the
+/// satellite screen, which starts open (SAT-25), it puts the squelch on.
 #[test]
 fn side1_monitors_while_locked_off_home() {
     let mut t = T::new();
@@ -318,7 +320,7 @@ fn side1_monitors_while_locked_off_home() {
     lock_in(&mut t, Lock::Keypad);
     t.cmds();
     t.tap(Key::Side(1));
-    assert!(t.cmds().contains(&RadioCmd::Monitor { slot: 0, on: true }));
+    assert!(t.cmds().contains(&RadioCmd::Monitor { slot: 0, on: false }));
 }
 
 /// SAT-1: SIDE2 (scan) does nothing in satellite mode: the satellites own both chips, so no scan starts, tapped

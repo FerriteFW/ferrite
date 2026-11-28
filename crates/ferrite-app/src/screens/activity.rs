@@ -428,7 +428,16 @@ impl App {
             Mode::Counter => self.out.push(RadioCmd::Counter(true)),
             Mode::Fm => {} // the broadcast's start is the reconciler's (MODE-5)
             Mode::Hf => super::hf::send(self),
-            Mode::Sat => self.sat_start(),
+            Mode::Sat => {
+                self.sat_start();
+                // SAT-25: the downlink starts open (no squelch), as satellites are worked on any radio; SIDE1 puts
+                // the squelch on (the monitor latch, SQL-9.4), and leaving the mode takes it off again.
+                let a = self.active;
+                if self.monitor & 1 << a == 0 {
+                    self.monitor |= 1 << a;
+                    self.out.push(RadioCmd::Monitor { slot: a, on: true });
+                }
+            }
             Mode::Acars => {
                 let f = self.acars_freq();
                 self.radio.acars_sent = f;
@@ -459,7 +468,14 @@ impl App {
             Mode::Counter => self.out.push(RadioCmd::Counter(false)),
             Mode::Fm => {} // the broadcast's stop is the reconciler's (MODE-5)
             Mode::Hf => self.out.push(RadioCmd::Hf { freq: self.set.hf.freq, mode: self.set.hf.mode, on: false }),
-            Mode::Sat => self.out.push(RadioCmd::SatRx(0)),
+            Mode::Sat => {
+                self.out.push(RadioCmd::SatRx(0));
+                // SAT-25: no monitor left latched on home by the satellite screen's open downlink
+                if self.monitor & 1 << a != 0 {
+                    self.monitor &= !(1 << a);
+                    self.out.push(RadioCmd::Monitor { slot: a, on: false });
+                }
+            }
             Mode::Acars => {
                 self.radio.acars_sent = 0;
                 self.out.push(RadioCmd::AcarsRx(0));

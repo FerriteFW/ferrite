@@ -112,7 +112,8 @@ impl Radio {
         let mut bk = self.chip(n);
         let (rssi, st) = (bk.rssi_dbm(), bk.status());
         // SQL-9.4: a monitor on the active slot (SIDE1 on the pass page) opens the downlink whatever it hears.
-        let monitored = self.monitor & !(self.user_mute | self.user_off) & 1 << self.active != 0;
+        // SAT-25: the downlink is no slot, so a slot's own mute or off doesn't squelch it
+        let monitored = self.monitor & 1 << self.active != 0;
         let open = st.squelch_open || monitored;
         let hear = open && !(keyed && r.hd) && !self.muted;
         self.chip(n).af_out(if hear { AfOut::Normal } else { AfOut::Mute });

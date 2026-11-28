@@ -640,3 +640,28 @@ fn alarm_survives_a_clock_jump_and_lights_the_screen() {
     assert!(!t.app.dark(), "the screen lit");
     assert!(t.cmds().iter().any(|c| matches!(c, RadioCmd::Beep { .. })), "the alert tone");
 }
+
+/// SAT-25: the downlink starts open (the monitor latch on the active slot); SIDE1 puts the squelch on and off with
+/// the satellite screen's own toast, even with the active slot turned off (HOME-15.4 isn't asked); leaving the
+/// satellite screen takes the latch off, so home isn't left open.
+#[test]
+fn downlink_starts_open_side1_squelches() {
+    let p = a_pass(1);
+    let mut t = sat_app(p.aos + 120);
+    t.open(crate::screens::nav::Dest::Satellites);
+    t.wait(200);
+    assert!(t.cmds().contains(&RadioCmd::Monitor { slot: 0, on: true }), "open to start");
+    assert_eq!(t.app.monitor & 1, 1);
+    t.app.off |= 1; // the active slot turned off: the downlink's squelch still answers SIDE1
+    t.tap(Key::Side(1));
+    assert!(t.cmds().contains(&RadioCmd::Monitor { slot: 0, on: false }), "SIDE1: the squelch on");
+    assert!(t.app.toast.is_some_and(|x| x.head.as_bytes() == b"Squelch" && x.body.as_bytes().starts_with(b"on")));
+    t.tap(Key::Side(1));
+    assert!(t.cmds().contains(&RadioCmd::Monitor { slot: 0, on: true }), "SIDE1 again: open");
+    assert!(t.app.toast.is_some_and(|x| x.body.as_bytes().starts_with(b"off")));
+    t.app.off &= !1;
+    t.hold(Key::Exit);
+    let c = t.cmds();
+    assert!(c.contains(&RadioCmd::SatRx(0)) && c.contains(&RadioCmd::Monitor { slot: 0, on: false }), "home: the latch off: {c:?}");
+    assert_eq!(t.app.monitor & 1, 0);
+}

@@ -1831,12 +1831,17 @@ impl App {
     pub(crate) fn monitor_key(&mut self, press: keys::Press) {
         let a = self.active;
         match press {
-            keys::Press::Short if self.off_refuse(a) => {} // HOME-15.4
+            keys::Press::Short if !self.sat_open() && self.off_refuse(a) => {} // HOME-15.4 (SAT-25: not the downlink's squelch)
             keys::Press::Short => {
                 self.monitor ^= 1 << a;
                 let on = self.monitor & 1 << a != 0;
                 self.out.push(RadioCmd::Monitor { slot: a, on });
-                self.show_toast(b"Monitor", if on { b"on: tap SIDE1 again" } else { b"off" }, false);
+                if self.sat_open() {
+                    // SAT-25: on the satellite screen the latch is the downlink's squelch, open to start
+                    self.show_toast(b"Squelch", if on { b"off: downlink open" } else { b"on: SIDE1 opens" }, false);
+                } else {
+                    self.show_toast(b"Monitor", if on { b"on: tap SIDE1 again" } else { b"off" }, false);
+                }
             }
             keys::Press::Long if self.monitor & 1 << a == 0 => {
                 self.mon_held = a + 1;

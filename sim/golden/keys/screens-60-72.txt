@@ -392,7 +392,7 @@ knob -1    -> =
 
 ## 68 B22 Satellites
 MENU       -> = | SatRx(43779379); SatUp(14599207); SatTone { tone: 670, hd: false, power: 0 }
-BACK       -> Home | SatRx(0); VoxScreen(true)
+BACK       -> Home | SatRx(0); Monitor { slot: 0, on: false }; VoxScreen(true)
 UP         -> =
 DOWN       -> =
 LEFT       -> =
@@ -411,10 +411,10 @@ HASH       -> =
 7          -> =
 8          -> =
 9          -> =
-SIDE1      -> = | Monitor { slot: 0, on: true } | toast "Monitor" "on: tap SIDE1 again"
+SIDE1      -> = | Monitor { slot: 0, on: false } | toast "Squelch" "on: SIDE1 opens"
 SIDE2      -> =
 hold MENU  -> =
-hold BACK  -> Home | SatRx(0); VoxScreen(true)
+hold BACK  -> Home | SatRx(0); Monitor { slot: 0, on: false }; VoxScreen(true)
 hold UP    -> =
 hold DOWN  -> =
 hold LEFT  -> =
@@ -433,9 +433,9 @@ hold 6     -> =
 hold 7     -> =
 hold 8     -> =
 hold 9     -> =
-hold SIDE1 -> = | Monitor { slot: 0, on: true }; Monitor { slot: 0, on: false }
+hold SIDE1 -> =
 hold SIDE2 -> =
-PTT        -> Home | SatRx(0); TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
+PTT        -> Home | SatRx(0); Monitor { slot: 0, on: false }; TxPlan { tx: 14592000, region: 1, extend: false, confirmed: false }; Transmit { slot: 0, on: true }; Transmit { slot: 0, on: false }; PauseWatch(30); VoxScreen(true)
 knob +1    -> =
 knob -1    -> =
 

@@ -583,3 +583,32 @@ fn display_stays_lit_around_a_pass() {
     assert!(t.app.dark(), "the screen closed: the usual timer, pass or not");
     assert_eq!(t.app.sat.awake_until, 0, "the window's end let go with the screen");
 }
+
+/// SAT-12: the alarm set with the picker's keys as on the radio (# on the list, OK), then home with EXIT: the toast
+/// comes at the lead (Discord, Nov 26-27: no tone or toast on the radio; the host gets it, the radio still to explain).
+#[test]
+fn alarm_by_keys_then_home() {
+    let t0 = crate::sat::SIM_T0;
+    let mut t = sat_app(t0);
+    t.open(crate::screens::nav::Dest::Satellites);
+    t.wait(3000); // predicted
+    t.tap(Key::Hash);
+    t.tap(Key::Menu);
+    let p = t.app.sat_data().alarm().expect("an alarm set");
+    std::println!("alarm on sat {} aos {} (+{} s) lead {} fired {}", p.sat, p.aos, p.aos - t0, t.app.sat.alarm_lead, t.app.sat.fired);
+    t.tap(Key::Exit);
+    t.tap(Key::Exit);
+    std::println!("screen {:?}", t.app.screen());
+    let mut toast_at = None;
+    let mut s = 0;
+    while t0 + s < p.aos + 60 {
+        t.app.sat_clock(Some(t0 + s), true, Some(HERE));
+        t.wait(1000);
+        if toast_at.is_none() && t.app.toast.is_some_and(|x| x.icon) {
+            toast_at = Some(p.aos as i64 - (t0 + s) as i64);
+        }
+        s += 1;
+    }
+    std::println!("toast {:?} s before the rise; lead now {}, alarm {:?}", toast_at, t.app.sat.alarm_lead, t.app.sat_data().alarm().map(|a| a.aos));
+    assert!(toast_at.is_some(), "the alarm's toast came");
+}
